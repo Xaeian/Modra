@@ -24,6 +24,13 @@ function render() {
   const [status, regs, serial, config] = await Promise.all([
     API.status(), API.info(), API.serial(), API.config(),
   ]);
+  if(!status || !regs) {
+    document.body.classList.add('app');
+    render();
+    alert_err('Backend unavailable', 0);
+    startPortScan();
+    return;
+  }
   S.regs = regs;
   S.serial = serial;
   S.config = config;

@@ -6,19 +6,23 @@ function parseAddrRange(str) {
     const t = part.trim();
     const range = t.match(/^(\d+)-(\d+)$/);
     if(range) {
-      const a = parseInt(range[1]), b = parseInt(range[2]);
-      for(let i = Math.min(a,b); i <= Math.max(a,b); i++) addrs.add(i);
+      const a = parseInt(range[1]);
+      const b = parseInt(range[2]);
+      for(let i = Math.min(a, b); i <= Math.max(a, b); i++) addrs.add(i);
     } else if(/^\d+$/.test(t)) {
       addrs.add(parseInt(t));
     }
   }
-  return [...addrs].filter(a => a >= 1 && a <= 247).sort((a,b) => a-b);
+  return [...addrs]
+    .filter(a => a >= 1 && a <= 247)
+    .sort((a, b) => a - b);
 }
 
 function applyStatus(s) {
   if(!s) return;
   const newPorts = s.ports || S.ports;
-  const same = newPorts.length === S.ports.length && newPorts.every((p, i) => p === S.ports[i]);
+  const same = newPorts.length === S.ports.length
+    && newPorts.every((p, i) => p === S.ports[i]);
   if(!same) S.ports = newPorts;
   S.connected = s.connected || false;
   S.serial_open = s.serial_open || false;
@@ -44,10 +48,16 @@ function applyCache(cache) {
     if(typeof v === 'object' && v !== null) {
       for(const [n, val] of Object.entries(v)) {
         const key = `${k}:${n}`;
-        if(S.values[key] !== val) { S.values[key] = val; changed = true; }
+        if(S.values[key] !== val) {
+          S.values[key] = val;
+          changed = true;
+        }
       }
     } else {
-      if(S.values[k] !== v) { S.values[k] = v; changed = true; }
+      if(S.values[k] !== v) {
+        S.values[k] = v;
+        changed = true;
+      }
     }
   }
   return changed;
@@ -69,7 +79,13 @@ async function poll() {
     const cache = await API.read();
     if(cache === null) {
       applyStatus(await API.status());
-      if(!S.connected) { stopPoll(); applyCache(null); S.errors = 0; alert_err('Device disconnected'); render(); }
+      if(!S.connected) {
+        stopPoll();
+        applyCache(null);
+        S.errors = 0;
+        alert.err('Device disconnected');
+        render();
+      }
       return;
     }
     S.errors = 0;
@@ -93,7 +109,9 @@ function startPoll() {
 }
 
 function stopPoll() {
-  if(_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  if(!_pollTimer) return;
+  clearInterval(_pollTimer);
+  _pollTimer = null;
 }
 
 let _portTimer = null;
@@ -105,13 +123,21 @@ function startPortScan() {
     const next = status.ports || [];
     const added = next.filter(p => !S.ports.includes(p));
     const removed = S.ports.filter(p => !next.includes(p));
-    if(!added.length && !removed.length) return;
+    if(!added.length && !removed.length)
+      return;
     S.portsAdded = new Set(added);
     S.portsRemoved = new Set(removed);
     S.ports = next;
-    if(added.length) alert_inf(added.map(p => `${p} connected`).join(', '));
-    if(removed.length) alert_wrn(removed.map(p => `${p} disconnected`).join(', '));
-    if(removed.includes(S.port)) { S.port = null; S.serial_open = false; S.connected = false; stopPoll(); }
+    if(added.length)
+      alert.inf(added.map(p => `${p} connected`).join(', '));
+    if(removed.length)
+      alert.wrn(removed.map(p => `${p} disconnected`).join(', '));
+    if(removed.includes(S.port)) {
+      S.port = null;
+      S.serial_open = false;
+      S.connected = false;
+      stopPoll();
+    }
     render();
   }, 1000);
 }

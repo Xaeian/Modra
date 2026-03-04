@@ -35,8 +35,8 @@ function clearPortChanges() { S.portsAdded.clear(); S.portsRemoved.clear(); rend
 async function connect(port) {
   const s = await API.connect(port);
   applyStatus(s);
-  if(S.serial_open) alert_ok(`Serial open: ${port}`);
-  else alert_err(s?.error || `Failed to open ${port}`);
+  if(S.serial_open) alert.ok(`Serial open: ${port}`);
+  else alert.err(s?.error || `Failed to open ${port}`);
   if(S.connected) startPoll(); else stopPoll();
   render();
 }
@@ -45,15 +45,15 @@ async function disconnect() {
   applyStatus(await API.disconnect());
   stopPoll();
   applyCache(null);
-  alert_inf('Disconnected');
+  alert.inf('Disconnected');
   render();
 }
 
 async function addr(a) {
   const s = await API.set_addr(a);
   applyStatus(s);
-  if(S.connected) alert_ok(`Device addr:${a} connected`);
-  else alert_err(s?.error || `No response from addr:${a}`);
+  if(S.connected) alert.ok(`Device addr:${a} connected`);
+  else alert.err(s?.error || `No response from addr:${a}`);
   render();
 }
 
@@ -64,9 +64,9 @@ async function send() {
     applyCache(cache);
     const n = Object.keys(S.dirty).length;
     S.dirty = {};
-    alert_ok(`Write done (${n})`);
+    alert.ok(`Write done (${n})`);
   } else {
-    alert_err(cache?.error || 'Write failed');
+    alert.err(cache?.error || 'Write failed');
   }
   render();
 }
@@ -74,18 +74,18 @@ async function send() {
 async function sync() {
   if(!S.connected) return;
   await API.sync();
-  alert_inf('Sync requested');
+  alert.inf('Sync requested');
 }
 
 async function scanAddrs() {
   if(!S.serial_open || S.addrScanning) return;
   const addrs = parseAddrRange(S.addrScanInput);
-  if(!addrs.length) { alert_wrn('Enter address range (e.g. 1-10)'); return; }
+  if(!addrs.length) { alert.wrn('Enter address range (e.g. 1-10)'); return; }
   S.addrScanning = true; S.addrScanResults = null; render();
   S.addrScanResults = await API.scan_addrs(addrs);
   S.addrScanning = false;
-  if(S.addrScanResults.length) alert_ok(`Found ${S.addrScanResults.length} device(s)`);
-  else alert_wrn('No devices found');
+  if(S.addrScanResults.length) alert.ok(`Found ${S.addrScanResults.length} device(s)`);
+  else alert.wrn('No devices found');
   render();
 }
 
@@ -95,7 +95,7 @@ async function setSerial(params) {
   const changed = ['baudrate','parity','stopbits','timeout'].some(k => S.serial[k] !== prev[k]);
   if(changed && S.serial_open) {
     S.connected = false; S.serial_open = false; stopPoll(); applyCache(null);
-    alert_wrn('Serial params changed, reconnect needed');
+    alert.wrn('Serial params changed, reconnect needed');
   }
   render();
 }
@@ -140,8 +140,8 @@ async function importConfig() {
       if(name && val !== null && val !== '' && rwSet.has(name)) { editSilent({name}, val); count++; }
     }
   }
-  if(count) alert_inf(`Loaded ${count} registers from ${file.name}`);
-  else alert_wrn('No matching registers found');
+  if(count) alert.inf(`Loaded ${count} registers from ${file.name}`);
+  else alert.wrn('No matching registers found');
   render();
 }
 

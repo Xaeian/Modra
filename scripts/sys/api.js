@@ -26,8 +26,11 @@ const API = {
         if(!mute) console.log("API ←", "pywebview."+method, Math.round(performance.now() - t0)+"ms", out);
         return out;
       } catch(e) {
-        if(!mute) console.log("API ✖", "pywebview."+method, Math.round(performance.now() - t0)+"ms", e);
-        throw e;
+        if(!mute) {
+          console.log("API ✖", "pywebview."+method, Math.round(performance.now() - t0)+"ms", e);
+          alert.err(String(e));
+        }
+        return null;
       }
     }
     else {
@@ -44,23 +47,26 @@ const API = {
         if(!mute) console.log("API ←", url, res.status, Math.round(performance.now() - t0)+"ms", json);
         return json;
       } catch(e) {
-        if(!mute) console.log("API ✖", url, Math.round(performance.now() - t0)+"ms", e);
-        throw e;
+        if(!mute) {
+          console.log("API ✖", url, Math.round(performance.now() - t0)+"ms", e);
+          alert.err('Connection lost');
+        }
+        return null;
       }
     }
   },
   sync:       ()       => API.call("sync"),
   status:     ()       => API.call("status"),
   info:       ()       => API.call("info"),
-  read:       ()       => API.call("read", null, true),
   serial:     ()       => API.call("serial"),
   config:     ()       => API.call("config"),
-  scan:       ()       => API.call("scan", null, true),
-  scan_addrs: (addrs)  => API.call("scan_addrs", {addrs}),
-  connect:    (port)   => API.call("connect", {port}),
   disconnect: ()       => API.call("disconnect"),
-  set_addr:   (addr)   => API.call("set_addr", {addr}),
-  set_serial: (params) => API.call("set_serial", params),
-  set_config: (data)   => API.call("set_config", data),
-  write:      (data)   => API.call("write", data)
+  read:       ()       => API.call("read", null, true),
+  scan:       ()       => API.call("scan", null, true),
+  connect:    (port)   => API.call("connect",    {port}),
+  set_addr:   (addr)   => API.call("set_addr",   {addr}),
+  scan_addrs: (addrs)  => API.call("scan_addrs", {addrs}),
+  set_serial: (params) => API.call("set_serial",  params),
+  set_config: (data)   => API.call("set_config",  data),
+  write:      (data)   => API.call("write",        data),
 };

@@ -1,0 +1,56 @@
+/* toolbar.css */
+
+.rb-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+}
+
+.rb-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+/* shared base — same height for all controls */
+.rb-port, .rb-addr, .rb-search, .rb-tbtn, .rb-cfg-input {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.rb-port, .rb-addr { font-family: monospace; cursor: pointer; }
+.rb-addr { width: 36px; text-align: center; }
+.rb-search { flex: 1; min-width: 120px; font-size: 13px; }
+.rb-tbtn { background: var(--bg-alt); cursor: pointer; white-space: nowrap; }
+
+.rb-port:focus, .rb-addr:focus,
+.rb-search:focus, .rb-cfg-input:focus { outline: none; border-color: var(--accent); }
+
+.rb-search::placeholder { color: var(--text-muted); }
+
+.rb-port.ports-added   { border-color: #28a745; border-width: 2px; }
+.rb-port.ports-removed { border-color: #e6a800; border-width: 2px; }
+
+.rb-tbtn:hover:not(:disabled) { background: var(--border); }
+.rb-tbtn:disabled, .rb-tbtn.off { opacity: 0.4; cursor: not-allowed; }
+.rb-tbtn.active { background: var(--border); border-color: var(--accent); }
+
+.rb-send:not(.off) { background: #e8a308; border-color: #c78c00; color: #fff; font-weight: 600; }
+.rb-send:not(.off):hover { background: #d49600; }
+
+.rb-conn { font-weight: 600; }
+.rb-conn.on { background: #28a745; border-color: #1e7e34; color: #fff; }
+.rb-conn.on:hover { background: #218838; }

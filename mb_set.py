@@ -1,0 +1,33 @@
+# mb_set.py
+
+import sys, asyncio
+from xaeian import Print, Color as c
+import config
+
+p = Print()
+
+def parse_arg(value:str) -> tuple:
+  value = value.strip().lower()
+  if value in ("off", "0"): return "off", 0
+  if value == "ai": return "ai", 0
+  if value.endswith("%"): return "%", float(value[:-1])
+  if value.endswith("rpm"): return "rpm", float(value[:-3])
+  if value.endswith("hz"): return "Hz", float(value[:-2])
+  return None, None
+
+async def main():
+  if len(sys.argv) < 2:
+    p.wrn("Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"); return
+  mode, setpoint = parse_arg(sys.argv[1])
+  if mode is None:
+    p.wrn("Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"); return
+  state = config.load_state()
+  mb = config.create_mb(state)
+  await mb.write({"Ctrl": {"Mode": mode, "Setpoint": setpoint}})
+  if mode in ("off", "ai"):
+    p.inf(f"Motor mode {c.SKY}{mode}{c.END}")
+  else:
+    p.inf(f"Motor setpoint {c.SKY}{setpoint}{mode}{c.END}")
+
+if __name__ == "__main__":
+  asyncio.run(main())

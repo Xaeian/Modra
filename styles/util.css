@@ -1,0 +1,43 @@
+/* util.css */
+
+.rb-util {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 5px;
+  background: #f0f4f8;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-theme="dark"] .rb-util { background: #252a30; }
+
+.rb-slider {
+  flex: 1;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.rb-step-btn {
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 28px;
+  text-align: center;
+}
+
+.rb-step-btn:hover { background: var(--border); }
+.rb-step-btn:active { background: var(--accent); color: #fff; }
+
+.rb-util-range {
+  font-family: monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

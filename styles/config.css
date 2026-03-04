@@ -1,0 +1,26 @@
+/* config.css */
+
+.rb-config {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 6px;
+  font-size: 12px;
+}
+
+.rb-cfg-field { display: flex; align-items: center; gap: 4px; }
+.rb-cfg-label { font-size: 11px; color: var(--text-muted); }
+.rb-cfg-input { font-family: monospace; }
+.rb-cfg-num { width: 48px; text-align: right; }
+.rb-cfg-unit { font-size: 11px; color: var(--text-muted); }
+
+.rb-cfg-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.rb-addr-scan { display: flex; align-items: center; gap: 4px; }
+.rb-addr-scan-input { width: 80px; }

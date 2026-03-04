@@ -1,0 +1,42 @@
+/* monitor.css */
+
+.rb-monitor-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.rb-monitor-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rb-monitor-tag {
+  padding: 2px 8px;
+  background: var(--tag-bg, #e0f0ff);
+  border: 1px solid var(--tag-border, #b0d4f1);
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--tag-text, #1a5276);
+}
+
+.rb-monitor-tag:hover {
+  background: var(--tag-hover-bg, #fde8e8);
+  border-color: var(--tag-hover-border, #e6a0a0);
+  color: var(--tag-hover-text, #a02020);
+}
+
+[data-theme="dark"] .rb-monitor-tag {
+  --tag-bg: #1a3040; --tag-border: #2a5070; --tag-text: #90c0e0;
+  --tag-hover-bg: #3a2020; --tag-hover-border: #703030; --tag-hover-text: #e09090;
+}

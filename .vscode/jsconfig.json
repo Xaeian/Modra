@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "module": "none",
+    "target": "esnext",
+    "allowUmdGlobalAccess": true
+  },
+  "typeAcquisition": {
+    "enable": false
+  },
+  "include": [
+    "**/*.js",
+    "**/*.jsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

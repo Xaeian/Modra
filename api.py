@@ -20,6 +20,8 @@ class Api:
 
   def serial(self) -> dict:
     return {
+      "port": link.state.get("port", ""),
+      "addr": link.state.get("addr", ""),
       "baudrate": link.state.get("baudrate", 9600),
       "parity": link.state.get("parity", "N"),
       "stopbits": link.state.get("stopbits", 1),
@@ -48,7 +50,7 @@ class Api:
       return {"error": str(e), **self.status()}
     return self.status()
 
-  def disconnect(self) -> dict:
+  def disconnect(self, _=None) -> dict:
     try:
       link.disconnect()
     except Exception as e:
@@ -80,20 +82,22 @@ class Api:
       log.wrn(f"scan_addrs: {e}")
       return []
 
-  def read(self) -> dict|None:
-    return link.read()
+  def read(self) -> dict:
+    cache = link.read()
+    return {
+      "data": cache,
+      "connected": link.connected,
+      "serial_open": link.serial_open,
+      "port": link.mb.port if link.mb and link.serial_open else None,
+      "addr": link.mb.addr if link.mb and link.connected else None,
+    }
 
   def sync(self) -> dict:
     link.force_sync()
     return {"ok": True}
 
-  def write(self, data:dict) -> dict|None:
-    try:
-      return link.write(data)
-    except Exception as e:
-      return {"error": str(e)}
-
-  def set_config(self, data:dict) -> dict:
+  def write(self, data:dict) -> dict:
+    """Write registers. Used for both direct writes and config changes."""
     try:
       result = link.write(data)
       return result if result is not None else {}
@@ -102,35 +106,19 @@ class Api:
 
   #------------------------------------------------------------------------------------- Store
 
-  def history(
-    self, table:str, names:list, day:str=None,
-    t0:float=None, t1:float=None, limit:int=2000,
-  ) -> list[dict]:
+  def history(self, names:list, t0:float=None, t1:float=None, limit:int=2000) -> list[dict]:
+    if not link.mb or not link.connected: return []
     try:
-      return link._run(
-        link.store.history(table, names, day, t0, t1, limit),
+      return link.run_async(
+        link.store.history(link.mb.addr, names, t0, t1, limit),
         timeout=10,
       ) or []
-    except Exception as e:
+    except Exception:
       return []
-
-  def history_range(
-    self, table:str, names:list,
-    day_from:str, day_to:str=None, limit:int=2000,
-  ) -> list[dict]:
-    try:
-      return link._run(
-        link.store.history_range(table, names, day_from, day_to, limit),
-        timeout=10,
-      ) or []
-    except Exception as e:
-      return []
-
-  def days(self) -> list[str]:
-    return link.store.list_days()
 
 if __name__ == "__main__":
   import webview
   api = Api()
   window = webview.create_window("WebModbus", url="index.html", js_api=api)
   webview.start(debug=True)
+  link.close()

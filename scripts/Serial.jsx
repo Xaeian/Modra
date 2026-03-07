@@ -41,7 +41,10 @@ const Serial = () => {
           ? <div class="rb-addr-scan-result">
               <input class="rb-cfg-input rb-addr-scan-input" type="text"
                 list="rb-addr-list" placeholder="select or type"
-                onInput={(e) => { const v = parseInt(e.target.value); if(v >= 1 && v <= 247) addr(v); }} />
+                onInput={(e) => {
+                  const v = parseInt(e.target.value);
+                  if(v >= 1 && v <= 247) { S.addrInput = String(v); toggleConnection(); }
+                }} />
               <datalist id="rb-addr-list">
                 {S.addrScanResults.map(a => <option value={a} />)}
               </datalist>

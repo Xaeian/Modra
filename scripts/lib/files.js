@@ -179,7 +179,7 @@ const INI = {
   format(value) {
     if(value === null || value === undefined) return "";
     if(typeof value === "boolean") return value ? "true" : "false";
-    if(typeof value === "number") return Number.isInteger(value) ? String(value) : repr(value);
+    if(typeof value === "number") return String(value);
     if(typeof value === "string") {
       const s = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       return `"${s}"`;

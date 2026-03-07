@@ -1,5 +1,9 @@
 // actions.js
 
+function fileStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function edit(reg, val) {
   if(Reg.same(S.values[reg.name], val)) delete S.dirty[reg.name];
   else S.dirty[reg.name] = val;
@@ -15,10 +19,13 @@ function resetOne(reg) { delete S.dirty[reg.name]; render(); }
 
 function reset() { S.dirty = {}; render(); }
 
-function monitor(reg) {
+async function monitor(reg) {
   if(S.monitor.has(reg.name)) S.monitor.delete(reg.name);
   else S.monitor.add(reg.name);
   render();
+  Monitor.mount();
+  await Monitor.refresh();
+  Monitor.mount();
 }
 
 function utilOpen(reg) {
@@ -30,31 +37,41 @@ function search(q) { S.query = q; render(); }
 
 function toggleSerial() { S.serialOpen = !S.serialOpen; render(); }
 
-function clearPortChanges() { S.portsAdded.clear(); S.portsRemoved.clear(); render(); }
-
-async function connect(port) {
-  const s = await API.connect(port);
-  applyStatus(s);
-  if(S.serial_open) alert.ok(`Serial open: ${port}`);
-  else alert.err(s?.error || `Failed to open ${port}`);
-  if(S.connected) startPoll(); else stopPoll();
-  render();
-}
-
-async function disconnect() {
-  applyStatus(await API.disconnect());
-  stopPoll();
-  applyCache(null);
-  alert.inf('Disconnected');
-  render();
-}
-
-async function addr(a) {
-  const s = await API.set_addr(a);
-  applyStatus(s);
-  if(S.connected) alert.ok(`Device addr:${a} connected`);
-  else alert.err(s?.error || `No response from addr:${a}`);
-  render();
+async function toggleConnection() {
+  if(S.busy) return;
+  S.busy = true; render();
+  // Connected → disconnect
+  if(S.connected) {
+    stopPoll();
+    applyStatus(await API.disconnect());
+    applyCache(null);
+    S.errors = 0;
+    S.busy = false; render();
+    return;
+  }
+  // Not connected → advance
+  const port = S.portInput;
+  if(!port) { S.busy = false; render(); return; }
+  if(!S.serial_open || S.port !== port) {
+    if(S.serial_open) {
+      applyStatus(await API.disconnect());
+      applyCache(null);
+    }
+    const s = await API.connect(port);
+    applyStatus(s);
+    if(!S.serial_open) {
+      alert.err(s?.error || `Failed to open ${port}`);
+      S.busy = false; render(); return;
+    }
+  }
+  const a = parseInt(S.addrInput);
+  if(a >= 1 && a <= 247) {
+    const s = await API.set_addr(a);
+    applyStatus(s);
+    if(S.connected) startPoll();
+    else alert.wrn(s?.error || `No response addr:${a}`);
+  }
+  S.busy = false; render();
 }
 
 async function send() {
@@ -97,12 +114,6 @@ async function setSerial(params) {
     S.connected = false; S.serial_open = false; stopPoll(); applyCache(null);
     alert.wrn('Serial params changed, reconnect needed');
   }
-  render();
-}
-
-async function setConfig(data) {
-  const cache = await API.set_config(data);
-  if(cache && !cache.error) applyCache(cache);
   render();
 }
 
@@ -156,7 +167,7 @@ function exportConfigCSV() {
     const unit = Array.isArray(reg.unit) ? reg.unit.join('/') : (reg.unit || '');
     rows.push({id: reg.id, hex: reg.hex, name: reg.name, value: val ?? '', unit, desc: reg.desc || ''});
   }
-  CSV.save('config.csv', rows, ['id', 'hex', 'name', 'value', 'unit', 'desc']);
+  CSV.save(`cfg@${fileStamp()}.csv`, rows, ['id', 'hex', 'name', 'value', 'unit', 'desc']);
 }
 
 function exportConfigINI() {
@@ -177,5 +188,5 @@ function exportConfigINI() {
       if(unit) { if(!commentField[null]) commentField[null] = {}; commentField[null][name] = unit; }
     }
   }
-  INI.save('config.ini', data, {}, commentField);
+  INI.save(`cfg@${fileStamp()}.ini`, data, {}, commentField);
 }

@@ -76,20 +76,22 @@ async function poll() {
   if(_polling) return;
   _polling = true;
   try {
-    const cache = await API.read();
-    if(cache === null) {
-      applyStatus(await API.status());
-      if(!S.connected) {
-        stopPoll();
-        applyCache(null);
-        S.errors = 0;
-        alert.err('Device disconnected');
-        render();
-      }
+    const res = await API.read();
+    if(!res) return;
+    // Always apply connection status from backend
+    applyStatus(res);
+    if(!S.connected) {
+      stopPoll();
+      applyCache(null);
+      S.errors = 0;
+      alert.err('Device disconnected');
+      render();
       return;
     }
+    if(!res.data) return;
     S.errors = 0;
-    const changed = applyCache(cache);
+    const changed = applyCache(res.data);
+    if(S.monitor.size) Monitor.update();
     if(!changed || isUserEditing()) return;
     render();
   } catch(e) {
@@ -115,29 +117,27 @@ function stopPoll() {
 }
 
 let _portTimer = null;
+let _portScanning = false;
 function startPortScan() {
   if(_portTimer) return;
   _portTimer = setInterval(async () => {
-    const status = await API.scan();
-    if(!status) return;
-    const next = status.ports || [];
-    const added = next.filter(p => !S.ports.includes(p));
-    const removed = S.ports.filter(p => !next.includes(p));
-    if(!added.length && !removed.length)
-      return;
-    S.portsAdded = new Set(added);
-    S.portsRemoved = new Set(removed);
-    S.ports = next;
-    if(added.length)
-      alert.inf(added.map(p => `${p} connected`).join(', '));
-    if(removed.length)
-      alert.wrn(removed.map(p => `${p} disconnected`).join(', '));
-    if(removed.includes(S.port)) {
-      S.port = null;
-      S.serial_open = false;
-      S.connected = false;
-      stopPoll();
+    if(_portScanning) return;
+    _portScanning = true;
+    try {
+      const status = await API.scan();
+      if(!status) return;
+      const prevPorts = S.ports;
+      const prev = { connected: S.connected, serial_open: S.serial_open };
+      applyStatus(status);
+      if(prev.connected && !S.connected) {
+        stopPoll();
+        applyCache(null);
+      }
+      if(S.ports !== prevPorts ||
+         prev.connected !== S.connected ||
+         prev.serial_open !== S.serial_open) render();
+    } finally {
+      _portScanning = false;
     }
-    render();
   }, 1000);
 }

@@ -1,4 +1,4 @@
-// scripts/api.js
+// scripts/sys/api.js
 
 const API = {
   MODE: "http", // "webview" | "http"
@@ -56,17 +56,16 @@ const API = {
     }
   },
   sync:       ()       => API.call("sync"),
-  status:     ()       => API.call("status"),
   info:       ()       => API.call("info"),
   serial:     ()       => API.call("serial"),
   config:     ()       => API.call("config"),
-  disconnect: ()       => API.call("disconnect"),
+  disconnect: ()       => API.call("disconnect", {}),
   read:       ()       => API.call("read", null, true),
   scan:       ()       => API.call("scan", null, true),
   connect:    (port)   => API.call("connect",    {port}),
   set_addr:   (addr)   => API.call("set_addr",   {addr}),
   scan_addrs: (addrs)  => API.call("scan_addrs", {addrs}),
   set_serial: (params) => API.call("set_serial",  params),
-  set_config: (data)   => API.call("set_config",  data),
-  write:      (data)   => API.call("write",        data),
+  write:      (data)   => API.call("write",   data),
+  history:    (params) => API.call("history", params),
 };

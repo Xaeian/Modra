@@ -4,11 +4,11 @@ const App = () => (
       <Toolbar />
       {S.serialOpen && <Serial />}
     </div>
-    <Monitor.Bar />
-    <div class="rb-grid">
+    {S.showChart && <Monitor.Bar />}
+    {S.showRegs && <div class="rb-grid">
       {Reg.blocks(Reg.filter(S.regs, S.query)).map(b =>
         <Grid.Block regs={b} />
       )}
-    </div>
+    </div>}
   </div>
 );

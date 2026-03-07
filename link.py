@@ -1,11 +1,12 @@
 import asyncio
 import threading
 from time import time
-from xaeian import Print, serial_scan
+from xaeian import Print, serial_scan, logger
 import config
 from store import Store
 
 log = Print()
+write_log = logger("write", file="write.log", stream=False)
 
 class ModbusLink:
 
@@ -24,40 +25,32 @@ class ModbusLink:
     self._write_pending = False
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
-    self._run(self.store.init())
+    self.run_async(self.store.init())
     if self.state:
       log.inf(f"State loaded: {self.state}")
     else:
       log.wrn("No state file, starting fresh")
     self.scan(False)
-    port = self.state.get("port")
-    addr = int(self.state.get("addr", 1))
-    if port and port in self.ports:
-      self._init_mb(port)
-      if self._run(self.mb.connect(), timeout=5):
-        self.serial_open = True
-        ok = self._run(self._probe_addr(addr), timeout=2)
-        if ok:
-          self.connected = True
-          self._save_state()
-          log.ok(f"Auto-connected {port} addr:{addr}")
-          self._start_reads()
-        else:
-          log.err(f"No response from addr:{addr} on {port}")
-      else:
-        log.err(f"Serial open failed: {port}")
-    elif port:
-      log.wrn(f"Saved port {port} not available")
 
   #----------------------------------------------------------------------------------- Internals
 
-  def _run(self, coro, timeout=30):
+  def run_async(self, coro, timeout=30):
+    """Run coroutine on internal event loop. Thread-safe."""
     try:
       future = asyncio.run_coroutine_threadsafe(coro, self._loop)
       return future.result(timeout=timeout)
     except Exception as e:
       log.err(f"Modbus: {e}")
       return None
+
+  def close(self):
+    """Graceful shutdown."""
+    self._stop_reads()
+    if self.mb:
+      self.run_async(self.mb.disconnect())
+    self._loop.call_soon_threadsafe(self._loop.stop)
+    self._thread.join(timeout=2)
+    log.inf("ModbusLink closed")
 
   def _init_mb(self, port:str):
     self.mb = config.create_mb(self.state, port)
@@ -119,9 +112,9 @@ class ModbusLink:
               log.inf(f"Sync done {(time()-t_read)*1000:.0f}ms")
             else:
               await self.mb.read()
-              log.inf(f"Read done {(time()-t_read)*1000:.0f}ms")
+              # log.inf(f"Read done {(time()-t_read)*1000:.0f}ms")
             errors = 0
-            await self.store.log_reads(self.mb.cache)
+            await self.store.log(self.mb.cache, self.mb.addr)
           except Exception as e:
             errors += 1
             log.wrn(f"Read error ({errors}): {e}")
@@ -154,18 +147,18 @@ class ModbusLink:
     return self.ports
 
   def connect(self, port:str) -> bool:
-    """Step 1: open serial port only."""
+    """Open serial port (step 1)."""
     log.run(f"Open serial: {port}")
     if self.connected:
       self._stop_reads()
       self.connected = False
     if self.serial_open:
-      self._run(self.mb.disconnect())
+      self.run_async(self.mb.disconnect())
       self.serial_open = False
     self._clear_cache()
     self.state["port"] = port
     self._init_mb(port)
-    if not self._run(self.mb.connect(), timeout=5):
+    if not self.run_async(self.mb.connect(), timeout=5):
       log.err(f"Serial open failed: {port}")
       return False
     self.serial_open = True
@@ -175,25 +168,24 @@ class ModbusLink:
 
   def disconnect(self):
     log.run("Disconnect")
+    self._stop_reads()
     self.connected = False
     self.serial_open = False
-    self._stop_reads()
     if self.mb:
-      self._run(self.mb.disconnect())
+      self.run_async(self.mb.disconnect())
+      self.mb = None
     self._clear_cache()
 
   def set_addr(self, addr:int):
-    """Step 2: probe addr and start reads if OK."""
+    """Probe addr and start reads if OK (step 2)."""
     log.run(f"Set addr: {addr}")
-    if not self.mb: return
-    self.mb.addr = addr
-    if not self.serial_open:
-      return
+    if not self.mb or not self.serial_open: return
     if self.connected:
       self._stop_reads()
       self.connected = False
       self._clear_cache()
-    ok = self._run(self._probe_addr(addr), timeout=2)
+    self.mb.addr = addr
+    ok = self.run_async(self._probe_addr(addr), timeout=2)
     if not ok:
       log.err(f"No response from addr:{addr}")
       self._save_state()
@@ -203,7 +195,7 @@ class ModbusLink:
     self._start_reads()
     log.ok(f"Device connected addr:{addr}")
 
-  def set_serial(self, params:dict) -> bool:
+  def set_serial(self, params:dict):
     changed = False
     for k in ("baudrate", "parity", "stopbits", "timeout", "interval"):
       if k in params:
@@ -211,15 +203,14 @@ class ModbusLink:
         if k in ("baudrate", "parity", "stopbits", "timeout"):
           changed = True
     if changed and self.serial_open:
+      self._stop_reads()
       self.connected = False
       self.serial_open = False
-      self._stop_reads()
-      self._run(self.mb.disconnect())
+      self.run_async(self.mb.disconnect())
       self._clear_cache()
       self._init_mb(self.mb.port)
       log.inf("Serial params changed, reconnect needed")
     self._save_state()
-    return changed
 
   #-------------------------------------------------------------------------------------- Data
 
@@ -228,29 +219,36 @@ class ModbusLink:
     return self.mb.cache
 
   def scan_addrs(self, addrs:list[int]) -> list[int]:
+    """Scan addresses. Stops read loop during scan to avoid addr race."""
     if not self.serial_open:
       log.wrn("scan_addrs: serial not open")
       return []
+    was_connected = self.connected
+    saved_addr = self.mb.addr if self.mb else None
+    if was_connected:
+      self._stop_reads()
     log.run(f"Scanning {len(addrs)} addresses")
     found = []
     for addr in addrs:
-      result = self._run(self._probe_addr(addr), timeout=2)
-      if result: found.append(addr)
+      if self.run_async(self._probe_addr(addr), timeout=2):
+        found.append(addr)
+    if was_connected and saved_addr is not None:
+      self.mb.addr = saved_addr
+      self._start_reads()
     log.ok(f"Scan done: {found}")
     return found
 
   async def _probe_addr(self, addr:int) -> bool:
     async with self._mb_lock:
+      orig = self.mb.addr
       try:
-        orig = self.mb.addr
         self.mb.addr = addr
         await self.mb.read_registers([0])
-        self.mb.addr = orig
         return True
       except Exception:
-        try: self.mb.addr = orig
-        except: pass
         return False
+      finally:
+        self.mb.addr = orig
 
   def force_sync(self):
     self._sync_next = True
@@ -260,7 +258,7 @@ class ModbusLink:
       log.wrn("Write but not connected")
       return None
     log.run(f"Write {len(data)} entries")
-    result = self._run(self._async_write(data))
+    result = self.run_async(self._async_write(data))
     if result is None:
       log.err("Write failed")
     return result
@@ -273,7 +271,8 @@ class ModbusLink:
         t = time()
         await self.mb.write(data)
         log.ok(f"Write done {(time()-t)*1000:.0f}ms")
-        await self.store.log_write(data)
+        for k, v in data.items():
+          write_log.info(f"addr:{self.mb.addr} {k} = {v}")
         self._sync_next = True
         return self.mb.cache
       except Exception as e:

@@ -14,6 +14,7 @@ function render() {
   if(root) document.body.replaceChild(el, root);
   else document.body.appendChild(el);
   root = el;
+  Monitor.mount();
   if(wasSearch) {
     const s = root.querySelector('.rb-search');
     if(s) { s.focus(); s.selectionStart = s.selectionEnd = S.query.length; }
@@ -21,13 +22,13 @@ function render() {
 }
 
 (async () => {
-  const [status, regs, serial, config] = await Promise.all([
-    API.status(), API.info(), API.serial(), API.config(),
+  const [scan, regs, serial, config] = await Promise.all([
+    API.scan(), API.info(), API.serial(), API.config(),
   ]);
-  if(!status || !regs) {
+  if(!scan || !regs) {
     document.body.classList.add('app');
     render();
-    alert_err('Backend unavailable', 0);
+    alert.err('Backend unavailable', 0);
     startPortScan();
     return;
   }
@@ -35,7 +36,9 @@ function render() {
   S.serial = serial;
   S.config = config;
   regs.forEach(r => { S.values[r.name] = null; });
-  applyStatus(status);
+  applyStatus(scan);
+  S.portInput = S.port || serial.port || '';
+  S.addrInput = S.addr ? String(S.addr) : (serial.addr ? String(serial.addr) : '');
   if(S.connected) startPoll();
   startPortScan();
   document.body.classList.add('app');

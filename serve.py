@@ -1,7 +1,7 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import json
 from time import time
-from api import Api
+from api import Api, link
 from xaeian import Color, Time
 import threading
 
@@ -22,23 +22,34 @@ class Handler(SimpleHTTPRequestHandler):
     self.send_header("Access-Control-Allow-Origin", "*")
     super().end_headers()
 
-  def _read_json(self):
+  def _read_json(self) -> dict|None:
     length = int(self.headers.get("Content-Length", 0))
     if not length: return {}
-    return json.loads(self.rfile.read(length))
+    try:
+      return json.loads(self.rfile.read(length))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+      return None
+
+  def _error(self, code, msg):
+    self._code = code
+    self.send_response(code)
+    self.send_header("Content-Type", "application/json")
+    self.end_headers()
+    self.wfile.write(json.dumps({"error": msg}).encode())
 
   def do_GET(self):
     start = time()
-    if self.path == "/read": self.json_response(api.read()); return
-    elif self.path == "/scan": self.json_response(api.scan()); return
+    # High-frequency endpoints — no logging
+    if self.path == "/read":
+      self.json_response(api.read()); return
+    elif self.path == "/scan":
+      self.json_response(api.scan()); return
     print(f"→ GET {self.path}")
     if self.path == "/status": self.json_response(api.status())
     elif self.path == "/info": self.json_response(api.info())
     elif self.path == "/serial": self.json_response(api.serial())
     elif self.path == "/config": self.json_response(api.config())
-    elif self.path == "/disconnect": self.json_response(api.disconnect())
     elif self.path == "/sync": self.json_response(api.sync())
-    elif self.path == "/days": self.json_response(api.days())
     else: super().do_GET()
     log("GET", self.path, self._code, (time() - start) * 1000)
 
@@ -46,24 +57,30 @@ class Handler(SimpleHTTPRequestHandler):
     print(f"→ POST {self.path}")
     start = time()
     data = self._read_json()
+    if data is None:
+      self._error(400, "invalid JSON")
+      log("POST", self.path, 400, (time() - start) * 1000)
+      return
     if self.path == "/connect":
       self.json_response(api.connect(data.get("port", "")))
+    elif self.path == "/disconnect":
+      self.json_response(api.disconnect())
     elif self.path == "/set_addr":
       self.json_response(api.set_addr(int(data.get("addr", 1))))
     elif self.path == "/set_serial":
       self.json_response(api.set_serial(data))
-    elif self.path == "/set_config":
-      self.json_response(api.set_config(data))
-    elif self.path == "/scan_addrs":
-      self.json_response(api.scan_addrs(data.get("addrs", [])))
     elif self.path == "/write":
       self.json_response(api.write(data))
+    elif self.path == "/scan_addrs":
+      self.json_response(api.scan_addrs(data.get("addrs", [])))
     elif self.path == "/history":
-      self.json_response(api.history(**data))
-    elif self.path == "/history_range":
-      self.json_response(api.history_range(**data))
+      self.json_response(api.history(
+        names=data.get("names", []),
+        t0=data.get("t0"), t1=data.get("t1"),
+        limit=data.get("limit", 2000),
+      ))
     else:
-      self.json_response({"error": "not found"})
+      self._error(404, "not found")
     log("POST", self.path, self._code, (time() - start) * 1000)
 
   def do_OPTIONS(self):
@@ -95,4 +112,5 @@ if __name__ == "__main__":
   t.start()
   try: input()
   except KeyboardInterrupt: pass
+  link.close()
   print(f"Server stopped {Color.ORANGE}(Ctrl+C){Color.END}")

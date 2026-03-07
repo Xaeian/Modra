@@ -60,7 +60,11 @@ const Reg = {
     if(value === null || value === undefined) return '';
     if(reg.rule?.pair) return '0x' + (value >>> 0).toString(16).toUpperCase().padStart(8, '0');
     if(reg.type === 'hex') return '0x' + (value >>> 0).toString(16).toUpperCase().padStart(4, '0');
-    if(typeof value === 'number') return parseFloat(value.toFixed(3)).toString();
+    if(typeof value === 'number') {
+      const step = Reg.step(reg);
+      const dec = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+      return value.toFixed(dec);
+    }
     return String(value);
   },
 

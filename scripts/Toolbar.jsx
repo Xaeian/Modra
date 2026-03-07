@@ -1,28 +1,22 @@
 const Toolbar = () => {
   const dc = Object.keys(S.dirty).length;
-  const portClass = `rb-port${S.portsAdded.size ? ' ports-added' : S.portsRemoved.size ? ' ports-removed' : ''}`;
-  const portChange = (e) => { clearPortChanges(); e.target.value ? connect(e.target.value) : disconnect(); };
+  const on = S.serial_open || S.connected;
   return (
     <div class="rb-toolbar">
-      <select class={portClass} value={S.port ?? ''}
-        onChange={portChange} onClick={clearPortChanges}
+      <select class="rb-port" value={S.portInput}
+        onChange={(e) => { S.portInput = e.target.value; render(); }}
+        disabled={!S.ports.length}
         onBlur={() => _renderPending && render()}>
-        <option value="">—</option>
         {S.ports.map(p => <option value={p}>{p}</option>)}
       </select>
-      <input class="rb-addr" type="text" value={S.addr ?? ''}
-        title="Modbus device address (1–247)"
-        disabled={!S.serial_open}
-        onBlur={(e) => { const v = parseInt(e.target.value); if(v >= 1 && v <= 247) addr(v); }} />
-      {S.connected
-        ? <button class={`rb-tbtn rb-conn on${S.errors ? ' warn' : ''}`} onClick={disconnect}
-            title={S.errors ? `Errors: ${S.errors}/3` : 'Disconnect'}>
-            ⚡{S.errors ? ` ⚠${S.errors}` : ''}
-          </button>
-        : <button class="rb-tbtn rb-conn" onClick={() => addr(S.addr || 1)}
-            disabled={!S.serial_open || !S.addr}
-            title="Connect to device">⚡ OFF</button>
-      }
+      <input class="rb-addr" type="text" value={S.addrInput}
+        placeholder="addr" title="Modbus device address (1–247)"
+        onInput={(e) => { S.addrInput = e.target.value; }} />
+      <button class={`rb-tbtn rb-conn${S.connected ? ' on' : S.serial_open ? ' open' : ''}`}
+        onClick={toggleConnection}
+        disabled={S.busy || (!on && !S.portInput)}>
+        {S.busy ? '⏳' : '⚡'}
+      </button>
       {dc
         ? <button class="rb-tbtn rb-send" onClick={send} disabled={!S.connected}
             title="Write pending changes">⬆ Send ({dc})</button>
@@ -33,6 +27,12 @@ const Toolbar = () => {
         disabled={!dc} title="Discard pending changes">✕ Reset</button>
       <input class="rb-search" type="text" placeholder="Search..."
         value={S.query || ''} onInput={(e) => search(e.target.value)} />
+      <button class={`rb-tbtn${S.showChart ? ' active' : ''}`}
+        onClick={() => { S.showChart = !S.showChart; render(); }}
+        title="Toggle chart panel">📈</button>
+      <button class={`rb-tbtn${S.showRegs ? ' active' : ''}`}
+        onClick={() => { S.showRegs = !S.showRegs; render(); }}
+        title="Toggle register panel">📋</button>
       <button class={`rb-tbtn${S.serialOpen ? ' active' : ''}`} onClick={toggleSerial}
         title="Settings">☰</button>
     </div>

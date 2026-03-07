@@ -1,42 +1,55 @@
 /* monitor.css */
 
-.rb-monitor-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 4px 8px;
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 12px;
-}
+.rb-monitor { display: flex; flex-direction: column; }
 
-.rb-monitor-label {
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
+.rb-monitor-bar {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  padding: 6px 6px;
+  background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 4px 4px 0 0; font-size: 12px;
 }
 
 .rb-monitor-tag {
-  padding: 2px 8px;
-  background: var(--tag-bg, #e0f0ff);
-  border: 1px solid var(--tag-border, #b0d4f1);
-  border-radius: 3px;
-  font-family: monospace;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 6px; border-radius: 3px; cursor: pointer;
+  font: 10px monospace; white-space: nowrap;
+  background: var(--tag-bg, #e0f0ff); border: 1px solid var(--tag-border, #b0d4f1);
   color: var(--tag-text, #1a5276);
 }
-
 .rb-monitor-tag:hover {
   background: var(--tag-hover-bg, #fde8e8);
   border-color: var(--tag-hover-border, #e6a0a0);
   color: var(--tag-hover-text, #a02020);
 }
-
 [data-theme="dark"] .rb-monitor-tag {
   --tag-bg: #1a3040; --tag-border: #2a5070; --tag-text: #90c0e0;
   --tag-hover-bg: #3a2020; --tag-hover-border: #703030; --tag-hover-text: #e09090;
 }
+
+.rb-tag-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.rb-monitor-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+
+.rb-range-btn {
+  padding: 3px 6px; font: 10px monospace; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--bg); color: var(--text-muted); white-space: nowrap;
+}
+.rb-range-btn:hover { background: var(--border); }
+.rb-range-btn.active {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 600;
+}
+
+.rb-monitor-slot { min-height: 0; }
+
+.rb-charts {
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 4px 4px; overflow: hidden; background: var(--bg);
+}
+
+.rb-monitor:empty + .rb-grid { margin-top: 0; }

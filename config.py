@@ -3,7 +3,6 @@ from xaeian import INI
 
 STATE_FILE = "serial.ini"
 REG_FILE = "reg.csv"
-DATA_DIR = "data"
 
 def load_state() -> dict:
   return INI.load(STATE_FILE) or {}

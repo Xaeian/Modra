@@ -13,7 +13,7 @@ python api.py  # run as integrated desktop .exe app
 
 ## Stack
 
-Frontend built with [TonkaJSX](https://github.com/nicecnt/tonka-jsx): lightweight JSX-to-DOM runtime, no build step, no bundler, no virtual DOM. Scripts load as plain `<script>` tags and render real DOM elements directly.
+Frontend built with [TonkaJSX](https://github.com/Xaeian/TonkaJSX): lightweight JSX-to-DOM runtime, no build step, no bundler, no virtual DOM. Scripts load as plain `<script>` tags and render real DOM elements directly.
 
 Charts use [uPlot](https://github.com/leeoniya/uPlot) via `ChartStack` — synchronized multi-panel wrapper with shared tooltip, zoom, and auto-scroll.
 

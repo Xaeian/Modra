@@ -1,6 +1,5 @@
-from time import time
 from xaeian.db import SqliteAsyncDatabase, ident
-from xaeian import Print, DIR, PATH
+from xaeian import Print, DIR, PATH, Time
 
 p = Print()
 
@@ -68,7 +67,7 @@ class Store:
     if not self._cols or not self.db: return
     try:
       await self._ensure_table(addr)
-      row = {"ts": time()}
+      row = {"ts": Time().to('ts')}
       for col, _, name in self._cols:
         row[col] = self._resolve(cache, name)
       await self.db.insert(self._table(addr), row)
@@ -77,25 +76,18 @@ class Store:
 
   #------------------------------------------------------------------------------ Query
 
-  async def history(
-    self, addr:int, names:list[str],
-    t0:float=None, t1:float=None, limit:int=2000,
+  async def since(
+    self, addr:int, names:list[str], since_ts:float, limit:int=5000,
   ) -> list[dict]:
+    """Rows with ts > since_ts, ascending. Limit capped at 50000."""
     if not self.db: return []
+    limit = min(limit, 50000)
     try:
       await self._ensure_table(addr)
       table = self._table(addr)
       cols_sql = "ts, " + ", ".join(ident(self._col(n)) for n in names)
-      sql = f"SELECT {cols_sql} FROM {ident(table)}"
-      where, params = [], []
-      if t0 is not None: where.append("ts >= ?"); params.append(t0)
-      if t1 is not None: where.append("ts <= ?"); params.append(t1)
-      if where: sql += " WHERE " + " AND ".join(where)
-      sql += " ORDER BY ts DESC LIMIT ?"
-      params.append(limit)
-      rows = await self.db.get_dicts(sql, tuple(params))
-      rows.reverse()
-      return rows
+      sql = f"SELECT {cols_sql} FROM {ident(table)} WHERE ts > ? ORDER BY ts ASC LIMIT ?"
+      return await self.db.get_dicts(sql, (since_ts, limit))
     except Exception as e:
-      p.err(f"history: {e}")
+      p.err(f"since: {e}")
       return []

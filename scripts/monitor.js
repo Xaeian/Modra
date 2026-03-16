@@ -1,11 +1,11 @@
 // monitor.js — data layer for real-time monitoring
 
 const CHART_RANGES = [
-  {label: '2min',  s: 120},
-  {label: '10min', s: 600},
-  {label: '1h',    s: 3600},
-  {label: '6h',    s: 21600},
-  {label: '24h',   s: 86400},
+  {label: '2m',   s: 120},
+  {label: '10m',  s: 600},
+  {label: '1h',   s: 3600},
+  {label: '6h',   s: 21600},
+  {label: '24h',  s: 86400},
 ];
 
 const CHART_COLORS = [
@@ -131,12 +131,74 @@ function chartExportCSV(names, buf) {
 const MonitData = {
   range: 600,
   _buf: {},
-  _histLoaded: new Set(),
-  _loading: false,
+  _lastTs: {},
 
   gapThreshold() {
     const ms = parseInt(S.serial?.interval || 200);
     return Math.max(ms * 15 / 1000, 5);
+  },
+
+  /** Params for POST /read when monitor is active. null if no monitors. */
+  readParams() {
+    if(!S.monitor.size) return null;
+    const vals = Object.values(this._lastTs);
+    return {
+      since: vals.length ? Math.min(...vals) : 0,
+      names: [...S.monitor],
+      limit: 5000,
+    };
+  },
+
+  /** Process rows from backend response — per-name dedup. */
+  ingest(rows) {
+    if(!rows?.length) return;
+    for(const row of rows) {
+      for(const name of S.monitor) {
+        if(row.ts <= (this._lastTs[name] || 0)) continue;
+        if(!this._buf[name]) this._buf[name] = [];
+        const col = name.replace(':', '_');
+        let v = row[col] ?? null;
+        if(v != null && typeof v !== 'number') {
+          const reg = S.regs.find(r => r.name === name);
+          if(reg) v = chartToNum(reg, v);
+        }
+        this._buf[name].push({ts: row.ts, v});
+        this._lastTs[name] = row.ts;
+      }
+    }
+    this.trim();
+  },
+
+  trim() {
+    const cutoff = Date.now() / 1000 - this.range;
+    for(const n of Object.keys(this._buf)) {
+      const buf = this._buf[n];
+      while(buf.length > 1 && buf[0].ts < cutoff) buf.shift();
+    }
+  },
+
+  /** Sync with S.monitor — remove old, backfill new. Preserves existing data. */
+  sync() {
+    for(const n of Object.keys(this._buf)) {
+      if(!S.monitor.has(n)) { delete this._buf[n]; delete this._lastTs[n]; }
+    }
+    const backfill = Date.now() / 1000 - this.range;
+    for(const n of S.monitor) {
+      if(!(n in this._lastTs)) {
+        this._lastTs[n] = backfill;
+        this._buf[n] = [];
+      }
+    }
+  },
+
+  /** Range change — adjust all per-name lastTs, trim buffers. */
+  setRange(s) {
+    this.range = s;
+    const cutoff = Date.now() / 1000 - s;
+    for(const n of Object.keys(this._lastTs))
+      this._lastTs[n] = Math.min(this._lastTs[n], cutoff);
+    for(const n of Object.keys(this._buf))
+      this._buf[n] = (this._buf[n] || []).filter(p => p.ts >= cutoff);
   },
 
   groups() {
@@ -163,53 +225,6 @@ const MonitData = {
       out[key].names.push(name);
     }
     return out;
-  },
-
-  push(values) {
-    if(!S.monitor.size) return;
-    const ts = Date.now() / 1000;
-    const cutoff = ts - this.range;
-    for(const name of S.monitor) {
-      if(!this._buf[name]) this._buf[name] = [];
-      const buf = this._buf[name];
-      let v = values[name] ?? null;
-      if(v != null && typeof v !== 'number') {
-        const reg = S.regs.find(r => r.name === name);
-        if(reg) v = chartToNum(reg, v);
-      }
-      buf.push({ts, v});
-      while(buf.length > 1 && buf[0].ts < cutoff) buf.shift();
-    }
-  },
-
-  async load() {
-    if(!S.monitor.size) return;
-    this._loading = true;
-    const t0 = Date.now() / 1000 - this.range;
-    const interval_s = parseInt(S.serial?.interval || 200) / 1000;
-    const limit = Math.min(Math.ceil(this.range / interval_s * 1.2), 50000);
-    for(const grp of Object.values(this.groups())) {
-      const need = grp.names.filter(n => !this._histLoaded.has(n));
-      if(!need.length) continue;
-      try {
-        const rows = await API.history({names: grp.names, t0, limit});
-        if(!rows?.length) continue;
-        for(const name of grp.names) {
-          const col = name.replace(':', '_');
-          const reg = S.regs.find(r => r.name === name);
-          const hist = rows.map(r => {
-            let v = r[col] ?? null;
-            if(v != null && typeof v !== 'number' && reg) v = chartToNum(reg, v);
-            return {ts: r.ts, v};
-          });
-          const live = this._buf[name] || [];
-          const liveStart = live.length ? live[0].ts : Infinity;
-          this._buf[name] = [...hist.filter(p => p.ts < liveStart), ...live];
-          this._histLoaded.add(name);
-        }
-      } catch(e) { console.error('MonitData.load:', e); }
-    }
-    this._loading = false;
   },
 
   prepare(names, stepped) {
@@ -245,21 +260,5 @@ const MonitData = {
     return [ts, ...vals];
   },
 
-  async rebuild() {
-    for(const n of Object.keys(this._buf))
-      if(!S.monitor.has(n)) { delete this._buf[n]; this._histLoaded.delete(n); }
-    if([...S.monitor].some(n => !this._histLoaded.has(n)))
-      await this.load();
-  },
-
-  async setRange(seconds) {
-    this.range = seconds;
-    this._histLoaded.clear();
-    const cutoff = Date.now() / 1000 - seconds;
-    for(const n of Object.keys(this._buf))
-      this._buf[n] = (this._buf[n] || []).filter(p => p.ts >= cutoff);
-    await this.load();
-  },
-
-  clear() { this._buf = {}; this._histLoaded.clear(); },
+  clear() { this._buf = {}; this._lastTs = {}; },
 };

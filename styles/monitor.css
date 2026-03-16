@@ -40,6 +40,7 @@
   background: var(--bg); color: var(--text-muted); white-space: nowrap;
 }
 .rb-range-btn:hover { background: var(--border); }
+.rb-range-btn.busy { opacity: 0.4; cursor: wait; pointer-events: none; }
 .rb-range-btn.active {
   background: var(--accent); border-color: var(--accent);
   color: #fff; font-weight: 600;

@@ -27,7 +27,8 @@ const Serial = () => {
       </F>
       <F label="Stop"><Sel k="stopbits" opts={[1, 2]} /></F>
       <F label="Timeout" unit="ms"><Num k="timeout" fallback={1000} /></F>
-      <F label="Wait" unit="ms"><Num k="interval" fallback={0} /></F>
+      <F label="Wait" unit="ms"><Num k="interval" fallback={500} /></F>
+      <F label="Retries"><Num k="retries" fallback={3} /></F>
       <div class="rb-cfg-sep" />
       <div class="rb-addr-scan">
         <input class="rb-cfg-input rb-addr-scan-input" type="text"

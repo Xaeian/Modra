@@ -1,13 +1,32 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import json
-from time import time
 from api import Api, link
 from xaeian import Color, Time
 import threading
 
 api = Api()
 
-def log(method, path, code, ms):
+GET_ROUTES = {
+  "/status": api.status,
+  "/info": api.info,
+  "/serial": api.serial,
+  "/config": api.config,
+  "/sync": api.sync,
+}
+
+POST_ROUTES = {
+  "/connect": api.connect,
+  "/disconnect": api.disconnect,
+  "/set_addr": api.set_addr,
+  "/set_serial": api.set_serial,
+  "/write": api.write,
+  "/scan_addrs": api.scan_addrs,
+}
+
+MUTE = {"/read", "/scan"}
+
+def log(method, path, code, dt):
+  ms = dt.total_seconds() * 1000
   if code >= 500: col = Color.RED
   elif code >= 400: col = Color.YELLOW
   elif code >= 200: col = Color.GREEN
@@ -25,10 +44,15 @@ class Handler(SimpleHTTPRequestHandler):
   def _read_json(self) -> dict|None:
     length = int(self.headers.get("Content-Length", 0))
     if not length: return {}
-    try:
-      return json.loads(self.rfile.read(length))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-      return None
+    try: return json.loads(self.rfile.read(length))
+    except (json.JSONDecodeError, UnicodeDecodeError): return None
+
+  def _json(self, data):
+    self._code = 200
+    self.send_response(200)
+    self.send_header("Content-Type", "application/json")
+    self.end_headers()
+    self.wfile.write(json.dumps(data).encode())
 
   def _error(self, code, msg):
     self._code = code
@@ -38,66 +62,40 @@ class Handler(SimpleHTTPRequestHandler):
     self.wfile.write(json.dumps({"error": msg}).encode())
 
   def do_GET(self):
-    start = time()
-    # High-frequency endpoints — no logging
+    start = Time()
+    mute = self.path in MUTE
+    if not mute: print(f"→ GET {self.path}")
     if self.path == "/read":
-      self.json_response(api.read()); return
+      self._json(api.read()); return
     elif self.path == "/scan":
-      self.json_response(api.scan()); return
-    print(f"→ GET {self.path}")
-    if self.path == "/status": self.json_response(api.status())
-    elif self.path == "/info": self.json_response(api.info())
-    elif self.path == "/serial": self.json_response(api.serial())
-    elif self.path == "/config": self.json_response(api.config())
-    elif self.path == "/sync": self.json_response(api.sync())
+      self._json(api.scan()); return
+    fn = GET_ROUTES.get(self.path)
+    if fn: self._json(fn())
     else: super().do_GET()
-    log("GET", self.path, self._code, (time() - start) * 1000)
+    if not mute: log("GET", self.path, self._code, Time() - start)
 
   def do_POST(self):
-    print(f"→ POST {self.path}")
-    start = time()
+    start = Time()
     data = self._read_json()
     if data is None:
       self._error(400, "invalid JSON")
-      log("POST", self.path, 400, (time() - start) * 1000)
+      log("POST", self.path, 400, Time() - start)
       return
-    if self.path == "/connect":
-      self.json_response(api.connect(data.get("port", "")))
-    elif self.path == "/disconnect":
-      self.json_response(api.disconnect())
-    elif self.path == "/set_addr":
-      self.json_response(api.set_addr(int(data.get("addr", 1))))
-    elif self.path == "/set_serial":
-      self.json_response(api.set_serial(data))
-    elif self.path == "/write":
-      self.json_response(api.write(data))
-    elif self.path == "/scan_addrs":
-      self.json_response(api.scan_addrs(data.get("addrs", [])))
-    elif self.path == "/history":
-      self.json_response(api.history(
-        names=data.get("names", []),
-        t0=data.get("t0"), t1=data.get("t1"),
-        limit=data.get("limit", 2000),
-      ))
-    else:
-      self._error(404, "not found")
-    log("POST", self.path, self._code, (time() - start) * 1000)
+    mute = self.path in MUTE
+    if not mute: print(f"→ POST {self.path}")
+    if self.path == "/read":
+      self._json(api.read(data)); return
+    fn = POST_ROUTES.get(self.path)
+    if fn: self._json(fn(data))
+    else: self._error(404, "not found")
+    if not mute: log("POST", self.path, self._code, Time() - start)
 
   def do_OPTIONS(self):
-    start = time()
     self._code = 204
     self.send_response(204)
     self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     self.send_header("Access-Control-Allow-Headers", "Content-Type")
     self.end_headers()
-    log("OPTIONS", self.path, self._code, (time() - start) * 1000)
-
-  def json_response(self, data):
-    self._code = 200
-    self.send_response(200)
-    self.send_header("Content-Type", "application/json")
-    self.end_headers()
-    self.wfile.write(json.dumps(data).encode())
 
   def send_response(self, code, message=None):
     self._code = code

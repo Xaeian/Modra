@@ -21,11 +21,12 @@ class Api:
   def serial(self) -> dict:
     return {
       "port": link.state.get("port", ""),
-      "addr": link.state.get("addr", ""),
+      "addr": link.state.get("addr", 1),
       "baudrate": link.state.get("baudrate", 9600),
       "parity": link.state.get("parity", "N"),
       "stopbits": link.state.get("stopbits", 1),
       "timeout": link.state.get("timeout", 1000),
+      "retries": link.state.get("retries", 3),
       "interval": link.state.get("interval", 200),
     }
 
@@ -42,11 +43,32 @@ class Api:
       return {"error": str(e), **self.status()}
     return self.status()
 
-  def connect(self, port:str) -> dict:
+  def connect(self, params:dict=None) -> dict:
+    if not isinstance(params, dict):
+      return {"error": "Expected dict", **self.status()}
+    port = str(params.get("port", "") or "")
+    if not port:
+      return {"error": "Missing 'port'", **self.status()}
+    addr = params.get("addr")
+    if addr is not None:
+      try: addr = int(addr)
+      except (ValueError, TypeError):
+        return {"error": f"Invalid addr: {addr}", **self.status()}
+    ser_params = {k: params[k] for k in
+      ("baudrate", "parity", "stopbits", "timeout", "retries", "interval")
+      if k in params}
     try:
+      if ser_params:
+        link.set_serial(ser_params)
       if not link.connect(port):
         return {"error": f"Failed to open {port}", **self.status()}
+      if addr is not None:
+        link.set_addr(addr)
+        if not link.connected:
+          link.disconnect()
+          return {"error": f"No response from addr:{addr}", **self.status()}
     except Exception as e:
+      link.disconnect()
       return {"error": str(e), **self.status()}
     return self.status()
 
@@ -57,7 +79,11 @@ class Api:
       return {"error": str(e), **self.status()}
     return self.status()
 
-  def set_addr(self, addr:int) -> dict:
+  def set_addr(self, params=None) -> dict:
+    if isinstance(params, dict): params = params.get("addr")
+    try: addr = int(params)
+    except (ValueError, TypeError):
+      return {"error": f"Invalid addr: {params}", **self.status()}
     try:
       link.set_addr(addr)
     except Exception as e:
@@ -66,59 +92,70 @@ class Api:
       return {"error": f"No response from addr:{addr}", **self.status()}
     return self.status()
 
-  def set_serial(self, params:dict) -> dict:
-    try:
-      link.set_serial(params)
-    except Exception as e:
-      return {"error": str(e), **self.serial()}
-    return self.serial()
-
   #-------------------------------------------------------------------------------------- Data
 
-  def scan_addrs(self, addrs:list) -> list:
+  def scan_addrs(self, params=None) -> dict:
+    if isinstance(params, dict): params = params.get("addrs")
+    if not isinstance(params, list):
+      return {"error": "Expected list", "found": []}
     try:
-      return link.scan_addrs([int(a) for a in addrs])
+      found = link.scan_addrs([int(a) for a in params])
+      return {"found": found}
     except Exception as e:
-      log.wrn(f"scan_addrs: {e}")
-      return []
+      return {"error": str(e), "found": []}
 
-  def read(self) -> dict:
+  def read(self, params:dict=None) -> dict:
     cache = link.read()
-    return {
+    result = {
       "data": cache,
       "connected": link.connected,
       "serial_open": link.serial_open,
       "port": link.mb.port if link.mb and link.serial_open else None,
       "addr": link.mb.addr if link.mb and link.connected else None,
     }
+    if isinstance(params, dict):
+      since = params.get("since")
+      names = params.get("names")
+      limit = params.get("limit")
+    else:
+      since = names = limit = None
+    if since is not None and names and link.mb and link.connected:
+      try: limit = min(int(limit or 5000), 50000)
+      except (ValueError, TypeError): limit = 5000
+      try: since = float(since)
+      except (ValueError, TypeError): since = 0.0
+      rows = link.run_async(
+        link.store.since(link.mb.addr, names, since, limit),
+        timeout=10,
+      )
+      result["rows"] = rows or []
+    return result
 
   def sync(self) -> dict:
+    if not link.connected:
+      return {"error": "Not connected"}
     link.force_sync()
     return {"ok": True}
 
-  def write(self, data:dict) -> dict:
-    """Write registers. Used for both direct writes and config changes."""
+  def write(self, data:dict=None) -> dict:
+    if not isinstance(data, dict) or not data:
+      return {"error": "Expected non-empty dict"}
     try:
       result = link.write(data)
-      return result if result is not None else {}
+      if result is None:
+        return {"error": "Write failed"}
+      return result
     except Exception as e:
       return {"error": str(e)}
 
-  #------------------------------------------------------------------------------------- Store
-
-  def history(self, names:list, t0:float=None, t1:float=None, limit:int=2000) -> list[dict]:
-    if not link.mb or not link.connected: return []
-    try:
-      return link.run_async(
-        link.store.history(link.mb.addr, names, t0, t1, limit),
-        timeout=10,
-      ) or []
-    except Exception:
-      return []
-
 if __name__ == "__main__":
+  from xaeian import file_context, PATH
   import webview
-  api = Api()
-  window = webview.create_window("WebModbus", url="index.html", js_api=api)
-  webview.start(debug=True)
-  link.close()
+  with file_context(bundle=True):
+    api = Api()
+    window = webview.create_window("Modra",
+      url=PATH.resolve("index.html"),
+      js_api=api,
+    )
+    webview.start(debug=False)
+    link.close()

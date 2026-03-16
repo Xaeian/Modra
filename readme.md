@@ -39,3 +39,11 @@ Write operations are audited to `data/audit.log` (rotating, per-register entries
 ## Philosophy
 
 One CSV defines everything. UI is generated from register metadata: types, ranges, enums, units, groups. No per-device frontend code. Change the CSV, get a different device tool.
+
+```sh
+py -m venv .venv
+./.venv/Scripts/activate
+py -m pip install -U pip
+py -m pip install -r requirements.txt
+./build.bat
+```

@@ -1,7 +1,7 @@
 // scripts/sys/api.js
 
 const API = {
-  MODE: "http", // "webview" | "http"
+  MODE: "{{mode}}",
   BASE: "http://localhost:8000",
   isReady: null,
   waitForReady() {
@@ -60,12 +60,18 @@ const API = {
   serial:     ()       => API.call("serial"),
   config:     ()       => API.call("config"),
   disconnect: ()       => API.call("disconnect", {}),
-  read:       ()       => API.call("read", null, true),
+  read:       (params) => API.call("read", params || null, true),
   scan:       ()       => API.call("scan", null, true),
   connect:    (port)   => API.call("connect",    {port}),
   set_addr:   (addr)   => API.call("set_addr",   {addr}),
   scan_addrs: (addrs)  => API.call("scan_addrs", {addrs}),
   set_serial: (params) => API.call("set_serial",  params),
   write:      (data)   => API.call("write",   data),
-  history:    (params) => API.call("history", params),
 };
+
+// 123.22.11.46:80
+// -------
+
+// POST PUT GET DELETE PATCH https://test.pl/xyz/sss/aasas?sss=1&ssss=1 ---> php
+// headers
+// { sss: 12, ss1: 12, ss2: 12, } ??

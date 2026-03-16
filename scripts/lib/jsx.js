@@ -229,7 +229,6 @@ const JSX = {
       target.includes("+") ||
       target.includes("~") ||
       target.includes(",");
-
     try {
       if(isSelector) return document.querySelector(target);
       return document.getElementById(target) || document.querySelector(target);

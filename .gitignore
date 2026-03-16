@@ -1,5 +1,9 @@
 **/__pycache__/
 *.pyc
 *.pyo
+*.spec
+.venv/
+.build/
+.dist/
 *.db
 *.log

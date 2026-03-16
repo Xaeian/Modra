@@ -12,8 +12,8 @@
 .rb-cfg-field { display: flex; align-items: center; gap: 4px; }
 .rb-cfg-label { font-size: 11px; color: var(--text-muted); }
 .rb-cfg-input { font-family: monospace; }
-.rb-cfg-num { width: 48px; text-align: right; }
-.rb-cfg-unit { font-size: 11px; color: var(--text-muted); }
+.rb-cfg-num { width: 48px; text-align: right; margin-right: -2px; }
+.rb-cfg-unit { font-size: 11px; color: var(--text-muted); margin-left: -2px; }
 
 .rb-cfg-sep {
   width: 1px;

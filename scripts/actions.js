@@ -19,12 +19,12 @@ function resetOne(reg) { delete S.dirty[reg.name]; render(); }
 
 function reset() { S.dirty = {}; render(); }
 
-async function monitor(reg) {
+function monitor(reg) {
   if(S.monitor.has(reg.name)) S.monitor.delete(reg.name);
   else S.monitor.add(reg.name);
   render();
   Monitor.mount();
-  await Monitor.refresh();
+  Monitor.refresh();
   Monitor.mount();
 }
 

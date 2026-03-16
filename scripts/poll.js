@@ -76,9 +76,9 @@ async function poll() {
   if(_polling) return;
   _polling = true;
   try {
-    const res = await API.read();
+    const params = MonitData.readParams();
+    const res = await API.read(params);
     if(!res) return;
-    // Always apply connection status from backend
     applyStatus(res);
     if(!S.connected) {
       stopPoll();
@@ -91,7 +91,7 @@ async function poll() {
     if(!res.data) return;
     S.errors = 0;
     const changed = applyCache(res.data);
-    if(S.monitor.size) Monitor.update();
+    if(S.monitor.size) Monitor.update(res.rows);
     if(!changed || isUserEditing()) return;
     render();
   } catch(e) {
@@ -102,6 +102,10 @@ async function poll() {
     _polling = false;
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && _pollTimer) poll();
+});
 
 let _pollTimer = null;
 function startPoll() {

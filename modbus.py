@@ -1,5 +1,6 @@
 # modbus.py
 
+import asyncio
 from pymodbus.client import AsyncModbusSerialClient
 from typing import Literal
 from xaeian import CSV
@@ -59,7 +60,7 @@ class ModbusMaster:
     parity: Literal["N","O","E"] = "N",
     stopbits: Literal[1,2] = 1,
     timeout: float = 1,
-    retries: int = 2,
+    retries: int = 3,
     group: bool = True,
     max_block: int = 64
   ):
@@ -137,6 +138,12 @@ class ModbusMaster:
     if self.client:
       self.client.close()
       self.client = None
+      
+  async def reconnect(self):
+    """Close and reopen serial — resets pymodbus framer state."""
+    await self.disconnect()
+    await asyncio.sleep(0.1)
+    await self.connect()
 
   def reinit(self, addr:int=None, baudrate:int=None,
     parity:Literal["N","O","E"]=None, stopbits:Literal[1,2]=None,

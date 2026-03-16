@@ -1,7 +1,6 @@
 import asyncio
 import threading
-from time import time
-from xaeian import Print, serial_scan, logger
+from xaeian import Print, Time, serial_scan, logger
 import config
 from store import Store
 
@@ -23,6 +22,7 @@ class ModbusLink:
     self._read_task = None
     self._sync_next = False
     self._write_pending = False
+    self._port_miss = 0
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
     self.run_async(self.store.init())
@@ -67,6 +67,7 @@ class ModbusLink:
       "parity": self.mb.parity,
       "stopbits": self.mb.stopbits,
       "timeout": self.state.get("timeout", 1000),
+      "retries": self.state.get("retries", 3),
       "interval": self.state.get("interval", 200),
     })
     config.save_state(self.state)
@@ -96,36 +97,42 @@ class ModbusLink:
     errors = 0
     async with self._mb_lock:
       try:
+        await self.mb.reconnect()
         await self.mb.sync()
         log.ok("Initial sync done")
       except Exception as e:
         log.wrn(f"Initial sync failed: {e}")
+        try: await self.mb.reconnect()
+        except Exception: pass
     while self.connected:
-      t0 = time()
+      t0 = Time()
+      cache = None
       if not self._write_pending:
         async with self._mb_lock:
           try:
-            t_read = time()
+            t_read = Time()
             if self._sync_next:
               await self.mb.sync()
               self._sync_next = False
-              log.inf(f"Sync done {(time()-t_read)*1000:.0f}ms")
+              log.inf(f"Sync done {(Time()-t_read).total_seconds()*1000:.0f}ms")
             else:
               await self.mb.read()
-              # log.inf(f"Read done {(time()-t_read)*1000:.0f}ms")
             errors = 0
-            await self.store.log(self.mb.cache, self.mb.addr)
+            cache = self.mb.cache
           except Exception as e:
             errors += 1
             log.wrn(f"Read error ({errors}): {e}")
-            if errors >= 3:
+            try: await self.mb.reconnect()
+            except Exception: pass
+            if errors >= 5:
               log.err("Too many read errors, disconnecting")
               self._clear_cache()
               self.connected = False
               return
+      if cache is not None:
+        await self.store.log(cache, self.mb.addr)
       interval_s = int(self.state.get("interval", 200)) / 1000
-      elapsed = time() - t0
-      remaining = interval_s - elapsed
+      remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:
         try:
           await asyncio.sleep(remaining)
@@ -138,11 +145,16 @@ class ModbusLink:
     if not mute: log.run("Scanning ports")
     self.ports = serial_scan()
     if self.serial_open and self.mb and self.mb.port not in self.ports:
-      log.wrn(f"Port {self.mb.port} disappeared")
-      self._stop_reads()
-      self._clear_cache()
-      self.connected = False
-      self.serial_open = False
+      self._port_miss += 1
+      if self._port_miss >= 3:
+        log.wrn(f"Port {self.mb.port} disappeared ({self._port_miss} misses)")
+        self._stop_reads()
+        self._clear_cache()
+        self.connected = False
+        self.serial_open = False
+        self._port_miss = 0
+    else:
+      self._port_miss = 0
     if not mute: log.inf(f"Ports: {self.ports}")
     return self.ports
 
@@ -156,6 +168,7 @@ class ModbusLink:
       self.run_async(self.mb.disconnect())
       self.serial_open = False
     self._clear_cache()
+    self._port_miss = 0
     self.state["port"] = port
     self._init_mb(port)
     if not self.run_async(self.mb.connect(), timeout=5):
@@ -171,6 +184,7 @@ class ModbusLink:
     self._stop_reads()
     self.connected = False
     self.serial_open = False
+    self._port_miss = 0
     if self.mb:
       self.run_async(self.mb.disconnect())
       self.mb = None
@@ -197,7 +211,7 @@ class ModbusLink:
 
   def set_serial(self, params:dict):
     changed = False
-    for k in ("baudrate", "parity", "stopbits", "timeout", "interval"):
+    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval"):
       if k in params:
         self.state[k] = params[k]
         if k in ("baudrate", "parity", "stopbits", "timeout"):
@@ -268,13 +282,15 @@ class ModbusLink:
     async with self._mb_lock:
       self._write_pending = False
       try:
-        t = time()
+        t = Time()
         await self.mb.write(data)
-        log.ok(f"Write done {(time()-t)*1000:.0f}ms")
+        log.ok(f"Write done {(Time()-t).total_seconds()*1000:.0f}ms")
         for k, v in data.items():
           write_log.info(f"addr:{self.mb.addr} {k} = {v}")
         self._sync_next = True
         return self.mb.cache
       except Exception as e:
         log.err(f"Write error: {e}")
+        try: await self.mb.reconnect()
+        except Exception: pass
         return None

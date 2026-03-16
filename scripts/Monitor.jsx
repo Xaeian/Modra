@@ -25,7 +25,7 @@ const Monitor = {
           <span class="rb-monitor-sep" />
           {CHART_RANGES.map(r => (
             <button
-              class={`rb-range-btn${MonitData.range === r.s ? ' active' : ''}`}
+              class={`rb-range-btn${MonitData.range === r.s ? ' active' : ''}${Monitor._rangeBusy ? ' busy' : ''}`}
               onClick={() => Monitor.changeRange(r.s)}
               disabled={Monitor._rangeBusy}
             >{r.label}</button>
@@ -49,9 +49,9 @@ const Monitor = {
     slot.appendChild(this._el);
   },
 
-  update() {
+  update(rows) {
     if(!S.monitor.size || !this._stack) return;
-    MonitData.push(S.values);
+    if(rows?.length) MonitData.ingest(rows);
     const now = Date.now() / 1000;
     if(this._stack.autoScroll) {
       this._stack._xMin = now - MonitData.range;
@@ -64,8 +64,8 @@ const Monitor = {
     this._feedAll();
   },
 
-  async refresh() {
-    await MonitData.rebuild();
+  refresh() {
+    MonitData.sync();
     let savedRange = null;
     let savedZoom = null;
     if(this._stack) {
@@ -114,7 +114,6 @@ const Monitor = {
       this._stack.addPanel(panelCfg);
     }
     this._stack.build();
-    // Set range BEFORE feed so _currentRange() has valid values
     if(savedZoom) {
       this._stack._autoScroll = savedZoom[2];
       this._stack._zoomMin = savedZoom[0];
@@ -132,18 +131,22 @@ const Monitor = {
   },
 
   async changeRange(s) {
-    if(MonitData.range === s || this._rangeBusy) return;
+    if(this._rangeBusy) return;
     this._rangeBusy = true;
-    MonitData.range = s;
+    if(MonitData.range !== s) MonitData.setRange(s);
     render();
     this.mount();
-    await MonitData.setRange(s);
+    const params = MonitData.readParams();
+    if(params) {
+      const res = await API.read(params);
+      if(res?.rows?.length) MonitData.ingest(res.rows);
+    }
     if(this._stack) {
       this._stack._autoScroll = true;
       this._stack._zoomMin = null;
       this._stack._zoomMax = null;
       const now = Date.now() / 1000;
-      this._stack._xMin = now - s;
+      this._stack._xMin = now - MonitData.range;
       this._stack._xMax = now;
       this._feedAll();
     }

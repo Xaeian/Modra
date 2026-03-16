@@ -1,8 +1,4 @@
 {
-  "javascript.suggest.autoImports": true,
-  "javascript.suggest.completeFunctionCalls": true,
-  "javascript.implicitProjectConfig.checkJs": true,
-  "typescript.tsserver.maxTsServerMemory": 4096,
     "files.exclude": {
     "**/__pycache__": true
   },

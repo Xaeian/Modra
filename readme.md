@@ -1,6 +1,6 @@
 # 🟣 Modra
 
-Modbus RTU register viewer/editor. Dual-mode: **PyWebview** desktop app or **HTTP** + browser.
+**Modbus RTU** register viewer/editor. Dual-mode: **PyWebview** desktop app or **HTTP** + browser.
 
 Reads [`reg.csv`](reg.csv): register map defining all device registers _(`id`, `name`, `type`, `scale`, `min`/`max`, `rws`)_. Format described in [`modbus.md`](modbus.md).
 

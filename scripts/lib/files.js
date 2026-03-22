@@ -118,7 +118,9 @@ const CSV = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
 
@@ -153,7 +155,9 @@ const CSV = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
 
@@ -193,19 +197,27 @@ const INI = {
     if(!text) return null;
     if(text[0] === '"' || text[0] === "'") {
       const quote = text[0];
-      const end = text.indexOf(quote, 1);
-      const inner = end > 0 ? text.slice(1, end) : text.slice(1);
-      return inner.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      let i = 1; const chars = [];
+      while(i < text.length) {
+        const ch = text[i];
+        if(ch === "\\" && i + 1 < text.length) {
+          const nxt = text[i + 1];
+          if(nxt === quote) { chars.push(quote); i += 2; continue; }
+          if(nxt === "\\") { chars.push("\\"); i += 2; continue; }
+        }
+        if(ch === quote) break;
+        chars.push(ch);
+        i++;
+      }
+      return chars.join("");
     }
     const low = text.toLowerCase();
     if(low === "true") return true;
     if(low === "false") return false;
-    if(!text.startsWith("+")) {
-      if(/^-?0x[0-9a-fA-F]+$/.test(text)) return parseInt(text, 16);
-      if(/^-?0b[01]+$/.test(text)) return parseInt(text, 2);
-      if(/^-?0o[0-7]+$/.test(text)) return parseInt(text, 8);
-      if(/^-?\d+$/.test(text)) return parseInt(text, 10);
-    }
+    if(/^-?0x[0-9a-fA-F]+$/.test(text)) return parseInt(text, 16);
+    if(/^0b[01]+$/.test(text)) return Number(text);
+    if(/^0o[0-7]+$/.test(text)) return Number(text);
+    if(/^[+-]?\d+$/.test(text)) return parseInt(text, 10);
     const f = parseFloat(text);
     if(!isNaN(f)) return f;
     return text;
@@ -299,7 +311,9 @@ const INI = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
 
@@ -414,7 +428,9 @@ JSON.save = function(filename, data, pretty=false, indent=2) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
 
@@ -423,7 +439,9 @@ JSON.save_smart = function(filename, data, maxLine=100, arrayWrap=10, compactDic
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
 

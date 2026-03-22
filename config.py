@@ -1,8 +1,9 @@
 from modbus import ModbusMaster
-from xaeian import INI
+from xaeian import INI, JSON
 
 STATE_FILE = "serial.ini"
-REG_FILE = "reg.csv"
+REGS_FILE = "regs.csv"
+MONITOR_FILE = "monitor.json"
 
 STATE_DEFAULT = {
   "port": "COM3",
@@ -12,7 +13,7 @@ STATE_DEFAULT = {
   "stopbits": 1,
   "timeout": 1000,
   "retries": 3,
-  "interval": 500,
+  "interval": 500
 }
 
 def load_state() -> dict:
@@ -31,7 +32,7 @@ def _int(val, default:int) -> int:
 def create_mb(state:dict, port:str=None) -> ModbusMaster:
   return ModbusMaster(
     port=port or str(state.get("port", "")),
-    regmap_file=REG_FILE,
+    regmap_file=REGS_FILE,
     addr=_int(state.get("addr"), 1),
     baudrate=_int(state.get("baudrate"), 9600),
     parity=str(state.get("parity", "N")),
@@ -44,3 +45,13 @@ def load_regs(state:dict=None) -> list[dict]:
   """Parse reg.csv via temporary ModbusMaster."""
   if state is None: state = load_state()
   return create_mb(state).regs_info()
+
+def load_monitor() -> list:
+  try:
+    data = JSON.load(MONITOR_FILE)
+    if isinstance(data, list): return data
+  except Exception: pass
+  return []
+
+def save_monitor(panels:list):
+  JSON.save_smart(MONITOR_FILE, panels)

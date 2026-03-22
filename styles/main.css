@@ -1,4 +1,4 @@
-/* main.css */
+/* styles/main.css */
 
 :root {
   --bg: #fff;
@@ -28,6 +28,19 @@ body.app {
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
-  padding: 0 16px;
+  padding: 0 16px 24px;
   min-height: 100vh;
 }
+
+.rb-footer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9;
+  display: flex; gap: 16px; justify-content: center;
+  padding: 2px 0 3px 0;
+  font-size: 10px; color: var(--text-muted);
+  background: var(--text-muted); border-top: 1px solid var(--text);
+  color: var(--bg-alt);
+}
+.rb-footer a {
+  color: #b4d7ff; text-decoration: none;
+}
+.rb-footer a:hover { text-decoration: underline; color: var(--text); }

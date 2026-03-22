@@ -1,7 +1,21 @@
-// actions.js
+// scripts/actions.js
 
 function fileStamp() {
   return new Date().toISOString().slice(0, 10);
+}
+
+let _saveMonTimer = null;
+function saveMonitor() {
+  clearTimeout(_saveMonTimer);
+  _saveMonTimer = setTimeout(() => {
+    const groups = MonitData.groups();
+    const panels = Object.entries(groups).map(([key, grp]) => {
+      const panel = {traces: grp.names};
+      panel.size = S.chartSizes[key] || CHART_SIZE_DEFAULT;
+      return panel;
+    });
+    API.monitor_save(panels);
+  }, 500);
 }
 
 function edit(reg, val) {
@@ -26,6 +40,7 @@ function monitor(reg) {
   Monitor.mount();
   Monitor.refresh();
   Monitor.mount();
+  saveMonitor();
 }
 
 function utilOpen(reg) {

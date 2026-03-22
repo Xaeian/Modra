@@ -12,6 +12,7 @@ GET_ROUTES = {
   "/serial": api.serial,
   "/config": api.config,
   "/sync": api.sync,
+  "/monitor_load": api.monitor_load,
 }
 
 POST_ROUTES = {
@@ -21,6 +22,7 @@ POST_ROUTES = {
   "/set_serial": api.set_serial,
   "/write": api.write,
   "/scan_addrs": api.scan_addrs,
+  "/monitor_save": api.monitor_save,
 }
 
 MUTE = {"/read", "/scan"}

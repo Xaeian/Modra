@@ -1,4 +1,6 @@
-// chart.js — ChartStack: synchronized multi-panel uPlot wrapper
+// scripts/chart.jsx
+//
+// ChartStack: synchronized multi-panel uPlot wrapper
 //
 // Usage:
 //   const stack = new ChartStack(container, {formatX, formatXValue, height});

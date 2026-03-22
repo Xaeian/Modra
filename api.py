@@ -1,5 +1,7 @@
 from link import ModbusLink
 from xaeian import Print
+import config
+
 log = Print()
 
 link = ModbusLink()
@@ -34,7 +36,7 @@ class Api:
     if not link.mb: return {}
     return link.mb.decode(rws_filter=["RWs"])
 
-  #-------------------------------------------------------------------------------- Connection
+  #--------------------------------------------------------------------------------- Connection
 
   def scan(self) -> dict:
     try:
@@ -92,7 +94,16 @@ class Api:
       return {"error": f"No response from addr:{addr}", **self.status()}
     return self.status()
 
-  #-------------------------------------------------------------------------------------- Data
+  def set_serial(self, params:dict=None) -> dict:
+    if not isinstance(params, dict):
+      return {"error": "Expected dict"}
+    try:
+      link.set_serial(params)
+    except Exception as e:
+      return {"error": str(e)}
+    return self.serial()
+
+  #--------------------------------------------------------------------------------------- Data
 
   def scan_addrs(self, params=None) -> dict:
     if isinstance(params, dict): params = params.get("addrs")
@@ -119,13 +130,16 @@ class Api:
       limit = params.get("limit")
     else:
       since = names = limit = None
-    if since is not None and names and link.mb and link.connected:
+    addr = result.get("addr")
+    if not addr and link.state.get("addr"):
+      addr = int(link.state["addr"])
+    if since is not None and names and addr:
       try: limit = min(int(limit or 5000), 50000)
       except (ValueError, TypeError): limit = 5000
       try: since = float(since)
       except (ValueError, TypeError): since = 0.0
       rows = link.run_async(
-        link.store.since(link.mb.addr, names, since, limit),
+        link.store.since(addr, names, since, limit),
         timeout=10,
       )
       result["rows"] = rows or []
@@ -148,9 +162,24 @@ class Api:
     except Exception as e:
       return {"error": str(e)}
 
+  #----------------------------------------------------------------------------- Monitor config
+
+  def monitor_load(self) -> list:
+    return config.load_monitor()
+
+  def monitor_save(self, data=None) -> dict:
+    if not isinstance(data, list):
+      return {"error": "Expected list"}
+    try:
+      config.save_monitor(data)
+      return {"ok": True}
+    except Exception as e:
+      return {"error": str(e)}
+
 if __name__ == "__main__":
   from xaeian import file_context, PATH
   import webview
+  webview.settings['ALLOW_DOWNLOADS'] = True
   with file_context(bundle=True):
     api = Api()
     window = webview.create_window("Modra",

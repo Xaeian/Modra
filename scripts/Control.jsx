@@ -1,3 +1,5 @@
+// scripts/Control.jsx
+
 const Control = {
 
   Enum: ({ reg, value, isDirty, ro }) => (

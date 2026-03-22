@@ -1,4 +1,4 @@
-
+// scripts/Config.jsx
 
 const Config = () => (
   <div class="rb-config">

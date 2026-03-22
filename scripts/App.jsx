@@ -1,3 +1,5 @@
+// scripts/App.jsx
+
 const App = () => (
   <div class="rb-panel">
     <div class="rb-header">
@@ -10,5 +12,10 @@ const App = () => (
         <Grid.Block regs={b} />
       )}
     </div>}
+    <footer class="rb-footer">
+      <span>Modra © {{ver}}</span>
+      <span>Design by <a href="https://github.com/Xaeian" target="_blank">Xaeian</a></span>
+      <span>{{foot}} with <a href="https://tonkajsx.com" target="_blank">TonkaJSX</a></span>
+    </footer>
   </div>
 );

@@ -55,23 +55,18 @@ const API = {
       }
     }
   },
-  sync:       ()       => API.call("sync"),
-  info:       ()       => API.call("info"),
-  serial:     ()       => API.call("serial"),
-  config:     ()       => API.call("config"),
-  disconnect: ()       => API.call("disconnect", {}),
-  read:       (params) => API.call("read", params || null, true),
-  scan:       ()       => API.call("scan", null, true),
-  connect:    (port)   => API.call("connect",    {port}),
-  set_addr:   (addr)   => API.call("set_addr",   {addr}),
-  scan_addrs: (addrs)  => API.call("scan_addrs", {addrs}),
-  set_serial: (params) => API.call("set_serial",  params),
-  write:      (data)   => API.call("write",   data),
+  sync:         ()       => API.call("sync"),
+  info:         ()       => API.call("info"),
+  serial:       ()       => API.call("serial"),
+  config:       ()       => API.call("config"),
+  disconnect:   ()       => API.call("disconnect", {}),
+  read:         (params) => API.call("read", params || null, true),
+  scan:         ()       => API.call("scan", null, true),
+  connect:      (port)   => API.call("connect",    {port}),
+  set_addr:     (addr)   => API.call("set_addr",   {addr}),
+  scan_addrs:   (addrs)  => API.call("scan_addrs", {addrs}),
+  set_serial:   (params) => API.call("set_serial",  params),
+  write:        (data)   => API.call("write",   data),
+  monitor_load: ()       => API.call("monitor_load"),
+  monitor_save: (data)   => API.call("monitor_save", data),
 };
-
-// 123.22.11.46:80
-// -------
-
-// POST PUT GET DELETE PATCH https://test.pl/xyz/sss/aasas?sss=1&ssss=1 ---> php
-// headers
-// { sss: 12, ss1: 12, ss2: 12, } ??

@@ -32,7 +32,7 @@ class ModbusLink:
       log.wrn("No state file, starting fresh")
     self.scan(False)
 
-  #----------------------------------------------------------------------------------- Internals
+  #---------------------------------------------------------------------------------- Internals
 
   def run_async(self, coro, timeout=30):
     """Run coroutine on internal event loop. Thread-safe."""
@@ -77,7 +77,7 @@ class ModbusLink:
     if self.mb:
       self.mb.cache_raw = {rid: None for rid in self.mb.id_map}
 
-  #------------------------------------------------------------------------------- Read Loop
+  #---------------------------------------------------------------------------------- Read Loop
 
   def _start_reads(self):
     if self._read_task and not self._read_task.done(): return
@@ -139,7 +139,7 @@ class ModbusLink:
         except asyncio.CancelledError:
           return
 
-  #-------------------------------------------------------------------------------- Connection
+  #--------------------------------------------------------------------------------- Connection
 
   def scan(self, mute:bool=True) -> list[str]:
     if not mute: log.run("Scanning ports")
@@ -226,7 +226,7 @@ class ModbusLink:
       log.inf("Serial params changed, reconnect needed")
     self._save_state()
 
-  #-------------------------------------------------------------------------------------- Data
+  #--------------------------------------------------------------------------------------- Data
 
   def read(self) -> dict|None:
     if not self.mb or not self.connected: return None

@@ -33,7 +33,7 @@ class Store:
   def _table(self, addr:int) -> str:
     return f"addr_{addr}"
 
-  #----------------------------------------------------------------------------- Init
+  #--------------------------------------------------------------------------------------- Init
 
   async def init(self):
     path = PATH.resolve("data.db")
@@ -50,7 +50,7 @@ class Store:
     await self.db.exec(f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {ident(table)}(ts)")
     self._tables.add(addr)
 
-  #------------------------------------------------------------------------------ Resolve
+  #------------------------------------------------------------------------------------ Resolve
 
   @staticmethod
   def _resolve(data:dict, name:str):
@@ -61,7 +61,7 @@ class Store:
       if isinstance(v, dict): return v.get(n)
     return None
 
-  #------------------------------------------------------------------------------ Logging
+  #------------------------------------------------------------------------------------ Logging
 
   async def log(self, cache:dict, addr:int):
     if not self._cols or not self.db: return
@@ -74,7 +74,7 @@ class Store:
     except Exception as e:
       p.err(f"log: {e}")
 
-  #------------------------------------------------------------------------------ Query
+  #-------------------------------------------------------------------------------------- Query
 
   async def since(
     self, addr:int, names:list[str], since_ts:float, limit:int=5000,

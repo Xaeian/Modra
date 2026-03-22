@@ -1,4 +1,4 @@
-// state.js
+// scripts/sys/state.js
 
 const S = {
   regs: [], values: {}, dirty: {},
@@ -14,5 +14,6 @@ const S = {
   addrScanInput: '',
   addrScanResults: null,
   addrScanning: false,
+  chartSizes: {},
   errors: 0,
 };

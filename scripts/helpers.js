@@ -1,3 +1,5 @@
+// scripts/helpers.js
+
 const Reg = {
 
   lo(reg) { return Array.isArray(reg.id) ? Math.min(...reg.id) : reg.id; },

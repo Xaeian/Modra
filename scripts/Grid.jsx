@@ -1,3 +1,5 @@
+// scripts/Grid.jsx
+
 const Grid = {
 
   Row: ({ reg }) => {

@@ -1,4 +1,4 @@
-// poll.js
+// scripts/poll.js
 
 function parseAddrRange(str) {
   const addrs = new Set();
@@ -23,7 +23,11 @@ function applyStatus(s) {
   const newPorts = s.ports || S.ports;
   const same = newPorts.length === S.ports.length
     && newPorts.every((p, i) => p === S.ports[i]);
-  if(!same) S.ports = newPorts;
+  if(!same) {
+    S.ports = newPorts;
+    if(!S.portInput || !newPorts.includes(S.portInput))
+      S.portInput = newPorts[0] || '';
+  }
   S.connected = s.connected || false;
   S.serial_open = s.serial_open || false;
   if(S.serial_open) {

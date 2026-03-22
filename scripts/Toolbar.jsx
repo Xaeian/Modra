@@ -1,3 +1,5 @@
+// scripts/Toolbar.jsx
+
 const Toolbar = () => {
   const dc = Object.keys(S.dirty).length;
   const on = S.serial_open || S.connected;

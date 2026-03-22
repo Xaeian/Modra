@@ -2,8 +2,9 @@
 *.pyc
 *.pyo
 *.spec
+*.db
+*.log
 .venv/
 .build/
 .dist/
-*.db
-*.log
+monitor.json

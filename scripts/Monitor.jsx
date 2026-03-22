@@ -1,4 +1,4 @@
-// Monitor.jsx — monitoring UI (uses ChartStack from lib/chart.js)
+// scripts/Monitor.jsx
 
 const Monitor = {
   _stack: null,
@@ -52,14 +52,14 @@ const Monitor = {
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
     if(rows?.length) MonitData.ingest(rows);
-    const now = Date.now() / 1000;
+    const [xMin, xMax] = MonitData.xRange();
     if(this._stack.autoScroll) {
-      this._stack._xMin = now - MonitData.range;
-      this._stack._xMax = now;
-    } else if(this._stack._zoomMax != null && now - this._stack._zoomMax < 2) {
+      this._stack._xMin = xMin;
+      this._stack._xMax = xMax;
+    } else if(this._stack._zoomMax != null && xMax - this._stack._zoomMax < 2) {
       const w = this._stack._zoomMax - this._stack._zoomMin;
-      this._stack._zoomMin = now - w;
-      this._stack._zoomMax = now;
+      this._stack._zoomMin = xMax - w;
+      this._stack._zoomMax = xMax;
     }
     this._feedAll();
   },
@@ -86,7 +86,7 @@ const Monitor = {
     }
     this._el.innerHTML = '';
     const groups = MonitData.groups();
-    const now = Date.now() / 1000;
+    const [xMin, xMax] = MonitData.xRange();
     this._stack = new ChartStack(this._el, {
       formatX: chartFmtAxisX(),
       formatXValue: chartFmtFull,
@@ -111,9 +111,28 @@ const Monitor = {
         const labels = grp.enumLabels;
         panelCfg.yFormat = v => v == null ? '—' : (labels[Math.round(v)] ?? csFmtVal(v));
       }
+      const sz = CHART_SIZE_CYCLE.includes(S.chartSizes[key]) ? S.chartSizes[key] : CHART_SIZE_DEFAULT;
+      panelCfg.height = CHART_SIZES[sz];
       this._stack.addPanel(panelCfg);
     }
     this._stack.build();
+    this._keys.forEach((key, i) => {
+      const wrap = this._stack._entries[i]?.wrap;
+      if(!wrap) return;
+      const sz = S.chartSizes[key] || CHART_SIZE_DEFAULT;
+      const btn = document.createElement('button');
+      btn.className = 'cs-size-btn';
+      btn.textContent = sz;
+      btn.onclick = () => {
+        const cur = S.chartSizes[key] || 'S';
+        const idx = CHART_SIZE_CYCLE.indexOf(cur);
+        S.chartSizes[key] = CHART_SIZE_CYCLE[(idx + 1) % CHART_SIZE_CYCLE.length];
+        Monitor.refresh();
+        Monitor.mount();
+        saveMonitor();
+      };
+      wrap.appendChild(btn);
+    });
     if(savedZoom) {
       this._stack._autoScroll = savedZoom[2];
       this._stack._zoomMin = savedZoom[0];
@@ -123,8 +142,8 @@ const Monitor = {
       this._stack._xMin = savedRange[0];
       this._stack._xMax = savedRange[1];
     } else {
-      this._stack._xMin = now - MonitData.range;
-      this._stack._xMax = now;
+      this._stack._xMin = xMin;
+      this._stack._xMax = xMax;
     }
     this._feedAll();
     this._stack.seedRange(this._stack._xMin, this._stack._xMax);
@@ -145,13 +164,14 @@ const Monitor = {
       this._stack._autoScroll = true;
       this._stack._zoomMin = null;
       this._stack._zoomMax = null;
-      const now = Date.now() / 1000;
-      this._stack._xMin = now - MonitData.range;
-      this._stack._xMax = now;
+      const [xMin, xMax] = MonitData.xRange();
+      this._stack._xMin = xMin;
+      this._stack._xMax = xMax;
       this._feedAll();
     }
     this._rangeBusy = false;
     render();
+    this.mount();
   },
 
   destroy() {

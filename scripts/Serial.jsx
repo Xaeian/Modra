@@ -1,3 +1,5 @@
+// scripts/Serial.jsx
+
 const Serial = () => {
   const F = ({label, unit, children}) => (
     <label class="rb-cfg-field">

@@ -1,4 +1,3 @@
-```markdown
 # 🟣 Modra
 
 **Modbus RTU** register viewer/editor. Dual-mode: **PyWebview** desktop app or **HTTP** + browser.

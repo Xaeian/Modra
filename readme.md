@@ -65,4 +65,3 @@ py -m pip install -r requirements.txt
 Produces single `Modra.exe` in `.dist/`. Place alongside `reg.csv` and run. Files `serial.ini`, `monitor.json`, `data.db` are created automatically on first use.
 
 Pre-built exe available on the [Releases](https://github.com/EctraGroup/Modra/releases) page.
-```

@@ -175,10 +175,7 @@ function exportConfigCSV() {
   const rows = [];
   for(const reg of S.regs) {
     if(reg.rws !== 'RWs') continue;
-    const ci = reg.name.indexOf(':');
-    const group = ci >= 0 ? reg.name.slice(0, ci) : null;
-    const name = ci >= 0 ? reg.name.slice(ci + 1) : reg.name;
-    const val = group ? S.config[group]?.[name] : S.config[name];
+    const val = S.values[reg.name];
     const unit = Array.isArray(reg.unit) ? reg.unit.join('/') : (reg.unit || '');
     rows.push({id: reg.id, hex: reg.hex, name: reg.name, value: val ?? '', unit, desc: reg.desc || ''});
   }
@@ -192,7 +189,7 @@ function exportConfigINI() {
     const ci = reg.name.indexOf(':');
     const group = ci >= 0 ? reg.name.slice(0, ci) : null;
     const name = ci >= 0 ? reg.name.slice(ci + 1) : reg.name;
-    const val = group ? S.config[group]?.[name] : S.config[name];
+    const val = S.values[reg.name];
     const unit = Array.isArray(reg.unit) ? reg.unit.join('/') : (reg.unit || '');
     if(group) {
       if(!data[group]) { data[group] = {}; commentField[group] = {}; }

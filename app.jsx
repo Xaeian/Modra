@@ -2,9 +2,20 @@
 
 let root = null;
 let _renderPending = false;
+let _pointerDown = false;
+
+document.addEventListener('pointerdown', () => { _pointerDown = true; });
+document.addEventListener('pointerup', () => {
+  _pointerDown = false;
+  if(_renderPending) render();
+});
+document.addEventListener('click', () => {
+  _pointerDown = false;
+  if(_renderPending) render();
+});
 
 function render() {
-  if(document.activeElement?.tagName === 'SELECT') {
+  if(_pointerDown || document.activeElement?.tagName === 'SELECT') {
     _renderPending = true;
     return;
   }

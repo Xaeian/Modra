@@ -45,10 +45,17 @@ const Reg = (() => {
   // Slot index for a `type=rule` register: case-insensitive lookup of the
   // switch register's current value against `reg.unit` labels. Returns null
   // when not a rule, switch unpolled, or no matching label (inactive slot).
-  function ruleIndex(reg) {
+  //
+  // `confirmed=true` ignores pending edits and reads only `S.values` so chart
+  // panels wait for device feedback before regrouping. Offline (no feedback
+  // source) falls back to the dirty-aware behavior.
+  function ruleIndex(reg, confirmed = false) {
     if(reg.type !== "rule" || !reg.rule?.switch) return null;
     const switchName = reg.rule.switch;
-    const sv = switchName in S.dirty ? S.dirty[switchName] : S.values[switchName];
+    const useConfirmed = confirmed && S.connected;
+    const sv = useConfirmed
+      ? S.values[switchName]
+      : (switchName in S.dirty ? S.dirty[switchName] : S.values[switchName]);
     if(sv == null) return null;
     const units = reg.unit;
     if(!Array.isArray(units)) return null;
@@ -64,8 +71,8 @@ const Reg = (() => {
 
   //---------------------------------------------------------- Per-slot accessors
 
-  function unit(reg) {
-    const ri = ruleIndex(reg);
+  function unit(reg, confirmed = false) {
+    const ri = ruleIndex(reg, confirmed);
     if(Array.isArray(reg.unit)) return ri !== null ? reg.unit[ri] : "";
     return reg.unit || "";
   }
@@ -73,6 +80,10 @@ const Reg = (() => {
   // Falls back to 0 / 65535 so OOR checks always have concrete bounds.
   const min = (reg) => _pickSlot(reg.min, ruleIndex(reg), 0);
   const max = (reg) => _pickSlot(reg.max, ruleIndex(reg), 65535);
+
+  // Currently active scale - rule-aware so chart panels regroup when the
+  // switch flips (e.g. Ctrl:Setpoint rpm → Hz remaps unit AND scale).
+  const scale = (reg, confirmed = false) => _pickSlot(reg.scale, ruleIndex(reg, confirmed), 1);
 
   // Smallest meaningful increment. scale=1000 → 0.001 etc. Pair registers
   // fix step at 1 (they're 32-bit ints or floats - sliders skip them anyway).
@@ -224,7 +235,7 @@ const Reg = (() => {
   return {
     lo, hi, label,
     ruleIndex, isInactive,
-    unit, min, max, step,
+    unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, parse, same, snap,
     isNumeric, isEnum, isBool, isVer,

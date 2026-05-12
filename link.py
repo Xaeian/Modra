@@ -31,6 +31,10 @@ class ModbusLink:
     self._sync_next = False
     self._write_pending = False
     self._port_miss = 0
+    # Sim state lives at link level so it survives mb rebuilds (ignore
+    # toggle, serial params change, port change). Without this, every
+    # rebuild reseeds the random walk and traces visibly jump.
+    self._sim_client = None
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
     self.run_async(self.store.init())
@@ -64,6 +68,13 @@ class ModbusLink:
     timeout = self.state.get("timeout", 1000)
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
             f" baud:{self.mb.baudrate} timeout:{timeout}ms")
+    if self.mb.sim:
+      if self._sim_client is None:
+        from sim import SimulatedClient
+        self._sim_client = SimulatedClient(self.mb.id_map)
+      else:
+        self._sim_client.reattach(self.mb.id_map)
+      self.mb.client = self._sim_client
 
   def _save_state(self):
     if not self.mb: return

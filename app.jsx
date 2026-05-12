@@ -38,8 +38,16 @@ function render() {
   // where the user was typing.
   const wasSearch = document.activeElement?.classList.contains("rb-search");
   const el = <App />;
-  if(root) document.body.replaceChild(el, root);
-  else document.body.appendChild(el);
+  // `root` may be detached out-of-band: a deferred render races with an
+  // async handler that reparents body, or an extension wipes the tree.
+  // `replaceChild` then throws NotFoundError. Check parentage and fall
+  // back to a plain append so render never hard-fails.
+  if(root?.parentNode === document.body) {
+    document.body.replaceChild(el, root);
+  } else {
+    if(root?.parentNode) root.parentNode.removeChild(root);
+    document.body.appendChild(el);
+  }
   root = el;
   Monitor.mount();
   if(wasSearch) {

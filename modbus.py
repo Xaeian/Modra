@@ -149,13 +149,14 @@ class ModbusMaster:
 
   async def connect(self) -> AsyncModbusSerialClient:
     if self.client and self.client.connected: return self.client
-    if self.sim:
-      from sim import SimulatedClient
-      self.client = SimulatedClient(self.id_map)
-    else:
-      self.client = AsyncModbusSerialClient(
-        port=self.port, baudrate=self.baudrate, parity=self.parity,
-        stopbits=self.stopbits, bytesize=8, timeout=self.timeout)
+    if self.client is None:
+      if self.sim:
+        from sim import SimulatedClient
+        self.client = SimulatedClient(self.id_map)
+      else:
+        self.client = AsyncModbusSerialClient(
+          port=self.port, baudrate=self.baudrate, parity=self.parity,
+          stopbits=self.stopbits, bytesize=8, timeout=self.timeout)
     await self.client.connect()
     if not self.client.connected:
       raise RuntimeError(f"Connect error: {self.port}")

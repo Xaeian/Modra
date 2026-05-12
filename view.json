@@ -1,10 +1,10 @@
 {
   "version": 1,
   "monitor": [
-    {"traces": ["RS485:Baudrate"], "size": "M"},
-    {"traces": ["RS485:StopBits"], "size": "S"},
-    {"traces": ["MeasFast:Temp", "MeasFast:ExTemp"], "size": "M"},
-    {"traces": ["Ctrl:Mode"], "size": "M"}
+    {"traces": ["MeasSlow:Freq", "Feedback:SetpointFreq"], "size": "M"},
+    {"traces": ["Ctrl:Setpoint"], "size": "S"},
+    {"traces": ["MeasSlow:Temp"], "size": "S"},
+    {"traces": ["MeasSlow:CurrAvg", "MeasSlow:PeakMax"], "size": "M"}
   ],
   "ignore": [
     "Journal:0Event",
@@ -71,6 +71,8 @@
     "Journal:30Hours",
     "Journal:31Event",
     "Journal:31Hours",
-    "Journal:Count"
+    "Journal:Count",
+    "Journal:Skip",
+    "Journal:Read"
   ]
 }

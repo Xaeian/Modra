@@ -68,6 +68,17 @@ const Monitor = {
   // their context unless they wanted to follow the stream.
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
+    // Detect rule slot flips (e.g. Ctrl:mode rpm → Hz) BEFORE ingest -
+    // refresh() clears buffers via MonitData.sync(), and these rows were
+    // fetched with stale `since` so we discard them; next tick backfills
+    // the new slot from the window edge.
+    const newKeys = Object.keys(MonitData.groups());
+    if(newKeys.length !== this._keys.length
+      || newKeys.some((k, i) => k !== this._keys[i])) {
+      this.refresh();
+      this.mount();
+      return;
+    }
     if(rows?.length) MonitData.ingest(rows);
     const [xMin, xMax] = MonitData.xRange();
     if(this._stack.autoScroll) {

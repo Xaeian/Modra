@@ -66,6 +66,18 @@ class SimulatedClient:
     for rid, entry in id_map.items():
       self.values[rid] = self._initial(entry)
 
+  def reattach(self, id_map:dict):
+    """Bind to a fresh `id_map` after a ModbusMaster rebuild while keeping
+    the random-walk state. Seeds entries new to this id_map; drops entries
+    that disappeared. Without this, every ignore/serial toggle would reset
+    all telemetry traces to their initial midpoint."""
+    self.id_map = id_map
+    for rid in list(self.values):
+      if rid not in id_map: del self.values[rid]
+    for rid, entry in id_map.items():
+      if rid not in self.values:
+        self.values[rid] = self._initial(entry)
+
   #---------------------------------------------------------- Helpers
 
   @staticmethod
@@ -185,8 +197,10 @@ class SimulatedClient:
     if not entry: return
     rws = entry.get("rws", "R")
     typ = entry.get("type", "uint")
-    # User-controlled (config + write-only) stays put.
-    if rws in ("RWs", "W"): return
+    # Only pure read-only telemetry drifts. Anything writable (W/RW/RWs)
+    # stays where the user / firmware put it - otherwise a written setpoint
+    # would walk off into nonsense values on the next tick.
+    if rws != "R": return
     # Identity types (firmware version, status codes) aren't telemetry.
     if typ in ("hex", "ver"): return
 

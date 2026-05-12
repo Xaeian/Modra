@@ -33,7 +33,15 @@
 
 .rb-port, .rb-addr { font-family: monospace; cursor: pointer; }
 .rb-addr { width: 36px; text-align: center; }
-.rb-search { flex: 1; min-width: 120px; font-size: 13px; }
+.rb-search-wrap { flex: 1; min-width: 120px; position: relative; display: flex; }
+.rb-search { flex: 1; min-width: 0; font-size: 13px; padding-right: 26px; }
+.rb-search-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; padding: 0; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; font-size: 12px; line-height: 1;
+  border-radius: 3px;
+}
+.rb-search-clear:hover { color: var(--text); background: var(--border); }
 .rb-tbtn { background: var(--bg-alt); cursor: pointer; white-space: nowrap; }
 
 .rb-port:focus, .rb-addr:focus,

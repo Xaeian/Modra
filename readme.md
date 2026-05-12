@@ -1,4 +1,4 @@
-# 🟣 Modra
+# 🥬🟣 Modra
 
 **Modbus RTU client that generates its entire UI from a single CSV file.**
 
@@ -15,10 +15,12 @@ There is no per-device configuration UI. The grid, controls, validation rules an
 ## Quick start
 
 ```bash
-py -3.12 -m venv .venv && ./.venv/Scripts/activate
+py -3.12 -m venv .venv 
+./.venv/Scripts/activate
+py -m pip install -i pip
 py -m pip install -r requirements.txt
-py api.py        # desktop window
-py serve.py      # HTTP server
+py api.py # desktop window
+py serve.py # HTTP server
 ```
 
 Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases), drop next to `regs.csv`, run.
@@ -28,7 +30,7 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 ## The grid
 
 ```
-[id]  Group:Name   [control]  [unit]  📊  🚫  ⚙  [rws]
+[id]  Group:Name   [control]  [unit]  📊  🚫  ☰  [rws]
 ```
 
 **Controls by type:**
@@ -61,13 +63,11 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 ## Toolbar
 
-```
-[port▼] [addr] ⚡  ⬇Read | ⬆Send(n) ✕Reset  [search]  📈 🚫 ☰
-```
+![Toolbar with settings panel open](options-menu.png)
 
 - **⚡** - connect / disconnect
 - **⬇ Read** - force full sync _(when no dirty edits)_
-- **⬆ Send (n)** - flush pending edits to device
+- **⬆ Send(n)** - flush pending edits to device
 - **✕ Reset** - discard pending edits
 - **📈** - toggle chart panel
 - **🚫** - toggle show-disabled mode
@@ -77,10 +77,12 @@ Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads R/
 
 ## Charts
 
+![Chart panel bar with monitored tags and range picker](plots-menu.png)
+
 Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
 
 - **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d` / `∞`
-- **S / M / L** - cycle panel size
+- **`S` / `M` / `L`** - cycle panel size
 - **tag click** - remove trace
 - **💾** - export all series to CSV
 - **drag on plot** - zoom _(freezes window)_
@@ -141,15 +143,15 @@ simulator = true
 ## CLI tools
 
 ```bash
-py mb_ctrl.py import          # device → config.ini  (RWs only)
-py mb_ctrl.py export          # config.ini → device
-py mb_ctrl.py import cfg.csv  # device → CSV
-py mb_ctrl.py sudo            # unlock admin via Auth:SecretKey
+py mb_ctrl.py import # device → config.ini  (RWs only)
+py mb_ctrl.py export # config.ini → device
+py mb_ctrl.py import cfg.csv # device → CSV
+py mb_ctrl.py sudo # unlock admin via Auth:SecretKey
 
-py mb_set.py 1500rpm          # motor setpoint
-py mb_set.py 75%              # duty mode
-py mb_set.py 50hz             # frequency
-py mb_set.py off              # motor off
+py mb_set.py 1500rpm # motor setpoint
+py mb_set.py 75% # duty mode
+py mb_set.py 50hz # frequency
+py mb_set.py off # motor off
 ```
 
 ## Build

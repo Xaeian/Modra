@@ -30,8 +30,15 @@ const Toolbar = () => {
             disabled={!S.connected} title="Force full sync">⬇ Read</button>}
       <button class={cls("rb-tbtn", !dc && "off")} onClick={reset}
         disabled={!dc} title="Discard pending changes">✕ Reset</button>
-      <input class="rb-search" type="text" placeholder="Search..."
-        value={S.query || ""} onInput={(e) => search(e.target.value)} />
+      <div class="rb-search-wrap">
+        <input class="rb-search" type="text" placeholder="Search..."
+          value={S.query || ""} onInput={(e) => search(e.target.value)} />
+        {S.query && (
+          <button class="rb-search-clear" title="Clear search"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => search("")}>✕</button>
+        )}
+      </div>
       <button class={cls("rb-tbtn", S.showChart && "active")}
         onClick={() => { S.showChart = !S.showChart; render(); }}
         title="Toggle chart panel (p)">📈</button>

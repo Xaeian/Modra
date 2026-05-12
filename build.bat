@@ -1,6 +1,3 @@
-pip show pyinstaller > nul 2>&1 ^
-  || pip install -U pyinstaller
-
 if exist .\.dist\Modra.exe ^
   del .\.dist\Modra.exe
 

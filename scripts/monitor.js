@@ -103,13 +103,13 @@ function chartIsStepped(reg) {
 
 // Group key = unit + scale fingerprint. Two registers share a panel iff
 // their engineering unit and scale match. bool/enum get their own panel each
-// (different y-axis semantics).
+// (different y-axis semantics). Rule registers use the *confirmed* (device-
+// acknowledged) slot so the chart only regroups after the device reports the
+// new mode - clicking Hz on Ctrl:mode doesn't relabel until the write is ack'd.
 function chartGroupKey(reg) {
   if(reg.type === "bool") return "bool|" + reg.name;
   if(reg.type === "enum") return "enum|" + reg.name;
-  const unit = Array.isArray(reg.unit) ? reg.unit[0] : (reg.unit || "");
-  const scale = Array.isArray(reg.scale) ? reg.scale[0] : (reg.scale || 1);
-  return unit + "|" + scale;
+  return Reg.unit(reg, true) + "|" + Reg.scale(reg, true);
 }
 
 // name → hex, so the tag bar in Monitor.jsx mirrors the panel series colors.
@@ -181,6 +181,10 @@ const MonitData = {
   range: 600,
   _buf: {},
   _lastTs: {},
+  // Last active slot column ingested per monitored name. Used by `sync()`
+  // to detect rule slot flips (e.g. Ctrl:mode rpm→Hz) and reset the buffer
+  // so the next poll backfills the new slot from `backfill` onward.
+  _activeSlot: {},
 
   //---------------------------------------------------------- X range
 
@@ -232,6 +236,22 @@ const MonitData = {
 
   //---------------------------------------------------------- Ingest / trim
 
+  // Column name for the register's *currently active* slot. Plain regs go
+  // straight to their base column. Rule regs (slot-switching) pick the slot
+  // matching the switch register's confirmed value (`S.values`, not dirty).
+  // Returns null when the switch hasn't been polled or its value doesn't
+  // match any slot label - ingest skips those rows without advancing lastTs.
+  _activeColumn(reg) {
+    if(!reg) return null;
+    const base = reg.name.replace(":", "_");
+    if(reg.type !== "rule" || !reg.rule?.switch || !Array.isArray(reg.unit)) return base;
+    const sv = S.values[reg.rule.switch];
+    if(sv == null) return null;
+    const label = String(sv).toLowerCase();
+    const idx = reg.unit.findIndex(u => String(u).toLowerCase() === label);
+    return idx >= 0 ? base + "__" + idx : null;
+  },
+
   // Backend may return overlapping ranges, so rows older than the per-name
   // `lastTs` are skipped. Trim afterwards drops samples past the window.
   ingest(rows) {
@@ -239,19 +259,24 @@ const MonitData = {
     for(const row of rows) {
       for(const name of S.monitor) {
         if(row.ts <= (this._lastTs[name] || 0)) continue;
-        // `:` is unsafe in SQLite identifiers, so columns use `_`.
-        const col = name.replace(":", "_");
-        // Skip rows that don't carry this column - the trace was added
-        // mid-poll and these rows came from a request that didn't include it.
-        // Updating lastTs here would block the next backfill from filling
-        // the gap, leaving the new series permanently empty.
+        const reg = S.regs.find(r => r.name === name);
+        const col = this._activeColumn(reg);
+        // Switch unpolled / no matching slot - skip without advancing lastTs
+        // so a later poll backfills once the slot is resolvable.
+        if(!col) continue;
+        // Trace added mid-poll, this column wasn't projected - same logic.
         if(!(col in row)) continue;
-        if(!this._buf[name]) this._buf[name] = [];
-        let v = row[col] ?? null;
-        if(v != null && typeof v !== "number") {
-          const reg = S.regs.find(r => r.name === name);
-          if(reg) v = chartToNum(reg, v);
+        const raw = row[col];
+        // NULL = sample taken while a different slot was active. Advance
+        // lastTs so we don't refetch this row, but don't push - the chart
+        // shows a natural gap until the active slot has data again.
+        if(raw == null) {
+          this._lastTs[name] = row.ts;
+          continue;
         }
+        if(!this._buf[name]) this._buf[name] = [];
+        let v = raw;
+        if(typeof v !== "number" && reg) v = chartToNum(reg, v);
         this._buf[name].push({ ts: row.ts, v });
         this._lastTs[name] = row.ts;
       }
@@ -286,20 +311,31 @@ const MonitData = {
   },
 
   // Reconcile with `S.monitor`: drop unsubscribed, seed new ones with
-  // `lastTs` at the window edge so first poll fetches full history.
+  // `lastTs` at the window edge so first poll fetches full history. Also
+  // detects rule slot flips (Ctrl:mode rpm→Hz): the active DB column
+  // changes, so the buffer is cleared and lastTs is reset to backfill -
+  // next poll fetches the new slot's history from the window edge.
   sync() {
     for(const n of Object.keys(this._buf)) {
       if(!S.monitor.has(n)) {
         delete this._buf[n];
         delete this._lastTs[n];
+        delete this._activeSlot[n];
       }
     }
     const backfill = isFinite(this.range) ? Date.now() / 1000 - this.range : 0;
     for(const n of S.monitor) {
+      const reg = S.regs.find(r => r.name === n);
+      const col = this._activeColumn(reg);
       if(!(n in this._lastTs)) {
         this._lastTs[n] = backfill;
         this._buf[n] = [];
       }
+      else if(this._activeSlot[n] !== col) {
+        this._buf[n] = [];
+        this._lastTs[n] = backfill;
+      }
+      this._activeSlot[n] = col;
     }
   },
 
@@ -315,9 +351,8 @@ const MonitData = {
       if(!reg) continue;
       const key = chartGroupKey(reg);
       if(!out[key]) {
-        const unit = Array.isArray(reg.unit) ? reg.unit[0] : (reg.unit || "");
         const grp = {
-          unit, key, idx: idx++,
+          unit: Reg.unit(reg, true), key, idx: idx++,
           stepped: chartIsStepped(reg),
           type: reg.type,
           names: [],

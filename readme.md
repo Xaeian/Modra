@@ -29,9 +29,7 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 ## The grid
 
-```
-[id]  Group:Name   [control]  [unit]  📊  🚫  ☰  [rws]
-```
+![REG](register-grid.png)
 
 **Controls by type:**
 
@@ -63,7 +61,7 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 ## Toolbar
 
-![Toolbar with settings panel open](options-menu.png)
+![OPT](options-menu.png)
 
 - **⚡** - connect / disconnect
 - **⬇ Read** - force full sync _(when no dirty edits)_
@@ -77,7 +75,7 @@ Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads R/
 
 ## Charts
 
-![Chart panel bar with monitored tags and range picker](plots-menu.png)
+![PLT](plots-menu.png)
 
 Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
 

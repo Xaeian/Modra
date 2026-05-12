@@ -2,7 +2,6 @@
   "version": 1,
   "monitor": [
     {"traces": ["MeasSlow:Freq", "Feedback:SetpointFreq"], "size": "M"},
-    {"traces": ["Ctrl:Setpoint"], "size": "S"},
     {"traces": ["MeasSlow:Temp"], "size": "S"},
     {"traces": ["MeasSlow:CurrAvg", "MeasSlow:PeakMax"], "size": "M"}
   ],
@@ -73,6 +72,7 @@
     "Journal:31Hours",
     "Journal:Count",
     "Journal:Skip",
-    "Journal:Read"
+    "Journal:Read",
+    "Ctrl:Setpoint"
   ]
 }

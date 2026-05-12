@@ -3,6 +3,8 @@
 *.pyo
 *.spec
 *.db
+*.db-shm
+*.db-wal
 *.log
 .venv/
 .build/

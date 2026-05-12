@@ -23,17 +23,17 @@ Modbus RTU register viewer/editor. Desktop app _(PyWebview)_ or browser _(HTTP s
 - Register map driven by single `regs.csv`: change CSV, get a different device tool
 - All register types: numeric, enum, bool, hex, version, rule-based
 - Live monitoring with synchronized multi-panel charts _(uPlot)_
-- Per-panel chart sizing _(S/M/L)_, time ranges _(2m → 7d → ∞)_, CSV export
+- Per-panel chart sizing _(`S`/`M`/`L`)_, time ranges _(`2m`, `7d`, `∞`)_, CSV export
 - Monitor configuration persisted across sessions _(`monitor.json`)_
 - Inline editing with dirty tracking, slider/stepper controls, out-of-range warnings
 - Address scanning, serial parameter tuning, auto port detection
 - Write audit logging
 - SQLite storage: every poll cycle logged, full history queryable
-- Config import/export _(INI/CSV)_
+- Config import and export to INI or CSV
 - CLI tools: `mb_ctrl.py` _(import/export/sudo)_, `mb_set.py` _(quick setpoint)_
 
 **Stack**
 
 - Backend: Python, pymodbus, aiosqlite, pywebview
-- Frontend: [TonkaJSX](https://tonkajsx.com), uPlot
+- Frontend: [TonkaJSX](https://tonkajsx.com), [uPlot](https://github.com/leeoniya/uplot)
 - Builtto single `.exe` via PyInstaller

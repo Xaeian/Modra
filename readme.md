@@ -119,7 +119,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 |---|---|---|
 | [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you |
 | `serial.ini` | connection state + simulator flag | app + you |
-| `view.json` | UI state _(monitor panels, ignored list)_ | app |
+| `view.json` | UI state _(monitor panels, ignored list)_ | app + you |
 | `data.db` | SQLite poll history, one table per addr | app |
 | `write.log` | audit log of every write | app |
 

@@ -1,4 +1,12 @@
-# mb_set.py
+"""
+CLI: quick motor control.
+
+  mb_set off       motor off
+  mb_set ai        analog input mode
+  mb_set 1500rpm   speed setpoint
+  mb_set 75%       duty setpoint
+  mb_set 50hz      frequency setpoint
+"""
 
 import sys, asyncio
 from xaeian import Print, Color as c

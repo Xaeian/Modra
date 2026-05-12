@@ -1,8 +1,10 @@
-from link import ModbusLink
-from xaeian import Print
-import config
+"""
+Frontend-facing API surface. Each method is callable from pywebview
+(`js_api=api`) and from serve.py as a JSON HTTP handler. Returns
+JSON-safe dicts; errors become `{"error": str}`.
+"""
 
-log = Print()
+from link import ModbusLink
 
 link = ModbusLink()
 
@@ -15,6 +17,9 @@ class Api:
       "serial_open": link.serial_open,
       "connected": link.connected,
       "addr": link.mb.addr if link.mb and link.connected else None,
+      # Store sets this on boot when DB schema didn't match regs.csv. The
+      # frontend surfaces it as a one-shot warning toast.
+      "migrated_to": link.store.migrated_to,
     }
 
   def info(self) -> list[dict]:
@@ -29,12 +34,8 @@ class Api:
       "stopbits": link.state.get("stopbits", 1),
       "timeout": link.state.get("timeout", 1000),
       "retries": link.state.get("retries", 3),
-      "interval": link.state.get("interval", 200),
+      "interval": link.state.get("interval", 500),
     }
-
-  def config(self) -> dict:
-    if not link.mb: return {}
-    return link.mb.decode(rws_filter=["RWs"])
 
   #--------------------------------------------------------------------------------- Connection
 
@@ -162,24 +163,32 @@ class Api:
     except Exception as e:
       return {"error": str(e)}
 
-  #----------------------------------------------------------------------------- Monitor config
+  #------------------------------------------------------------------------------ View state
 
-  def monitor_load(self) -> list:
-    return config.load_monitor()
+  def view_get(self) -> dict:
+    return link.view
 
-  def monitor_save(self, data=None) -> dict:
-    if not isinstance(data, list):
-      return {"error": "Expected list"}
+  def view_set(self, data=None) -> dict:
+    """Patch the view. Missing keys stay - lets the frontend send a sparse
+    `{ignore: [...]}` without echoing the whole document."""
+    if not isinstance(data, dict):
+      return {"error": "Expected dict"}
+    monitor = data.get("monitor")
+    ignore = data.get("ignore")
+    if monitor is not None and not isinstance(monitor, list):
+      return {"error": "monitor must be list"}
+    if ignore is not None and not isinstance(ignore, list):
+      return {"error": "ignore must be list"}
     try:
-      config.save_monitor(data)
-      return {"ok": True}
+      view = link.update_view(monitor=monitor, ignore=ignore)
+      return {"ok": True, "view": view}
     except Exception as e:
       return {"error": str(e)}
 
 if __name__ == "__main__":
   from xaeian import file_context, PATH
   import webview
-  webview.settings['ALLOW_DOWNLOADS'] = True
+  webview.settings["ALLOW_DOWNLOADS"] = True
   with file_context(bundle=True):
     api = Api()
     window = webview.create_window("Modra",

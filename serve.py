@@ -1,18 +1,21 @@
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+"""
+HTTP front for Api: routes GET/POST → Api methods, serves static frontend
+files. CORS open, port 8000. Counterpart to the pywebview launcher in api.py.
+"""
+
 import json
-from api import Api, link
-from xaeian import Color, Time
 import threading
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from xaeian import Color, Time
+from api import Api, link
 
 api = Api()
 
 GET_ROUTES = {
-  "/status": api.status,
   "/info": api.info,
   "/serial": api.serial,
-  "/config": api.config,
   "/sync": api.sync,
-  "/monitor_load": api.monitor_load,
+  "/view_get": api.view_get,
 }
 
 POST_ROUTES = {
@@ -22,7 +25,7 @@ POST_ROUTES = {
   "/set_serial": api.set_serial,
   "/write": api.write,
   "/scan_addrs": api.scan_addrs,
-  "/monitor_save": api.monitor_save,
+  "/view_set": api.view_set,
 }
 
 MUTE = {"/read", "/scan"}

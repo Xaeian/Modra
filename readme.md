@@ -1,66 +1,173 @@
 # 🟣 Modra
 
-**Modbus RTU** register viewer/editor. Dual-mode: **PyWebview** desktop app or **HTTP** + browser.
+**Modbus RTU client that generates its entire UI from a single CSV file.**
 
-Reads [`reg.csv`](reg.csv): register map defining all device registers _(`id`, `name`, `type`, `scale`, `min`/`max`, `rws`)_. Format described in [`modbus.md`](modbus.md).
+Modbus carries no metadata about registers. Type, unit, range and factory values live separately in firmware, client code, UI and docs. Modra closes that loop: one `regs.csv` describes every register, the entire client surface generates from it.
 
-## Run
+There is no per-device configuration UI. The grid, controls, validation rules and history schema all live in `regs.csv`. Change the file, restart, get a different device tool.
+
+**Modes:**
+
+- **Desktop** - `Modra.exe` via PyWebview
+- **HTTP** - `py serve.py` → `localhost:8000`, any browser
+- **Simulator** - `simulator = true` in `serial.ini`, no hardware
+
+## Quick start
 
 ```bash
-py serve.py    # HTTP server (dev / remote access)
-python api.py  # integrated desktop app
+py -3.12 -m venv .venv && ./.venv/Scripts/activate
+py -m pip install -r requirements.txt
+py api.py        # desktop window
+py serve.py      # HTTP server
 ```
 
-## Stack
+Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases), drop next to `regs.csv`, run.
 
-Frontend built with [TonkaJSX](https://tonkajsx.com): lightweight JSX-to-DOM runtime, no build step, no bundler, no virtual DOM. Scripts load as plain `<script>` tags and render real DOM elements directly.
+First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
-Charts use [uPlot](https://github.com/leeoniya/uPlot) via `ChartStack`: synchronized multi-panel wrapper with shared tooltip, zoom, and auto-scroll.
+## The grid
 
-Backend: Python HTTP server _(`serve.py`)_ wrapping async Modbus RTU communication _(`link.py`)_ with SQLite storage _(`store.py`)_. Uses [`xaeian`](https://github.com/Xaeian/Python) utilities throughout.
+```
+[id]  Group:Name   [control]  [unit]  📊  🚫  ⚙  [rws]
+```
 
-## Monitor
+**Controls by type:**
 
-Click 📊 on any register to add it to live charts. All register types supported:
+- **`uint` / `int` / `float` / `rule`** - numeric input, accepts `0x..` / `0b..`
+- **`bool`** - HIGH / LOW buttons
+- **`enum`** - one button per label, exclusive
+- **`hex`** - input formatted as `0xNNNN`
+- **`ver`** - read-only `X.YY.ZZ`
 
-- **Numeric** (R/RW/RWs/Rt/W): continuous line, auto-scaled Y axis
-- **Enum**: stepped line, Y axis shows labels
-- **Bool**: stepped line, ON/OFF
-- **Hex**: stepped line, numeric value
+**Access badges:**
 
-Per-panel sizing (S/M/L), time ranges from 2m to ∞, CSV export. Monitor configuration persisted in `monitor.json` — survives restarts.
+- **🟡 R** - read-only
+- **🔴 W** - write-only
+- **🔵 RW** - volatile read/write
+- **🟢 RWs** - persisted read/write
 
-## Data
+**Visual states:**
 
-Single `data.db` SQLite database. One table per device address _(`addr_1`, `addr_5`, ...)_. Every poll cycle logs **all** registers from cache. History queryable even when disconnected.
+- **yellow** - pending edit _(not sent)_
+- **red outline** - out of range
+- **blank** - rule register with no active slot
+- **strikethrough** - ignored
 
-Write operations audited to `write.log`.
+**Row icons:**
 
-## CLI Tools
+- **📊** - add to chart
+- **🚫** - ignore _(stop polling, hide row)_
+- **⚙** - open slider tweaker _(editable numerics only)_
+
+## Toolbar
+
+```
+[port▼] [addr] ⚡  ⬇Read | ⬆Send(n) ✕Reset  [search]  📈 🚫 ☰
+```
+
+- **⚡** - connect / disconnect
+- **⬇ Read** - force full sync _(when no dirty edits)_
+- **⬆ Send (n)** - flush pending edits to device
+- **✕ Reset** - discard pending edits
+- **📈** - toggle chart panel
+- **🚫** - toggle show-disabled mode
+- **☰** - toggle settings panel
+
+Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads R/RW/RWs at the configured interval. Validation runs on both sides: frontend marks out-of-range, backend rejects writes outside `min/max`.
+
+## Charts
+
+Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
+
+- **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d` / `∞`
+- **S / M / L** - cycle panel size
+- **tag click** - remove trace
+- **💾** - export all series to CSV
+- **drag on plot** - zoom _(freezes window)_
+- **double-click** - release zoom _(back to live)_
+
+History backfills from `data.db` on range change, so newly added traces fill the full window from disk.
+
+## Hiding registers
+
+- **🚫 on row** - ignore _(stop polling, hide row)_
+- **🚫 in toolbar** - switch to show-disabled mode _(only ignored visible)_
+- **🚫 on row in show-disabled mode** - un-ignore
+
+History column is preserved; new rows after the ignore land as `NULL`. Membership stored in `view.json`.
+
+## Settings ☰
+
+- **Baud / Parity / Stop / Timeout** - wire-level, changing forces reconnect
+- **Interval** - polling interval _(ms)_, drives both device polling and UI refresh rate
+- **Retries** - per-block retry budget on read errors
+- **Address scan** - enter `1-10, 12, 100-110` → **🔍 Scan**, click result to connect
+- **📂 Import** - load `.ini` / `.csv` into pending edits _(no auto-send)_
+- **💾 CSV / 💾 INI** - export current RWs values to file
+
+## Keyboard shortcuts
+
+Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
+
+- **`i`** - **i**gnore mode _(toggle show-disabled)_
+- **`o`** - **o**ptions _(toggle settings panel)_
+- **`p`** - **p**lots _(toggle chart panel)_
+
+## Files
+
+| File | Role | Edited by |
+|---|---|---|
+| [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you |
+| `serial.ini` | connection state + simulator flag | app + you |
+| `view.json` | UI state _(monitor panels, ignored list)_ | app |
+| `data.db` | SQLite poll history, one table per addr | app |
+| `write.log` | audit log of every write | app |
+
+**Schema drift:** if `regs.csv` drops a column or changes a type, the existing DB rotates to `data-YYYYMMDD-HHMMSS.db` and a fresh one is created. A toast on boot tells you where.
+
+## Simulator
+
+In `serial.ini`:
+
+```ini
+simulator = true
+```
+
+- **numeric R** - mean-reverting random walk, edge-biased to stay in range
+- **bool R** - rare random toggle
+- **enum R** - rare advance to neighbour state
+- **RWs / W** - static, only user writes change them
+
+## CLI tools
 
 ```bash
-py mb_ctrl.py import          # device → config.ini (RWs only)
+py mb_ctrl.py import          # device → config.ini  (RWs only)
 py mb_ctrl.py export          # config.ini → device
 py mb_ctrl.py import cfg.csv  # device → CSV
-py mb_ctrl.py sudo            # unlock admin
-py mb_set.py 1500rpm          # quick setpoint
+py mb_ctrl.py sudo            # unlock admin via Auth:SecretKey
+
+py mb_set.py 1500rpm          # motor setpoint
+py mb_set.py 75%              # duty mode
+py mb_set.py 50hz             # frequency
 py mb_set.py off              # motor off
 ```
 
-## Philosophy
-
-One CSV defines everything. UI is generated from register metadata: types, ranges, enums, units, groups. No per-device frontend code. Change the CSV, get a different device tool.
-
 ## Build
 
-```sh
-py -m venv .venv
+```bash
+py -3.12 -m venv .venv
 ./.venv/Scripts/activate
-py -m pip install -U pip
 py -m pip install -r requirements.txt
 ./build.bat
 ```
 
-Produces single `Modra.exe` in `.dist/`. Place alongside `reg.csv` and run. Files `serial.ini`, `monitor.json`, `data.db` are created automatically on first use.
+`Modra.exe` lands in `.dist/`. Place next to `regs.csv` and run.
 
-Pre-built exe available on the [Releases](https://github.com/EctraGroup/Modra/releases) page.
+## Stack
+
+- **Frontend** - [TonkaJSX](https://tonkajsx.com), JSX-to-DOM at runtime, no build
+- **Charts** - [uPlot](https://github.com/leeoniya/uPlot) via `ChartStack` _(synced multi-panel)_
+- **Modbus** - [`pymodbus`](https://github.com/pymodbus-dev/pymodbus)
+- **Storage** - [`aiosqlite`](https://github.com/omnilib/aiosqlite)
+- **Desktop** - [`pywebview`](https://pywebview.flowrl.com/)
+- **Utils** - [`xaeian`](https://github.com/Xaeian/Python)

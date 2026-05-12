@@ -1,3 +1,10 @@
+"""
+Thread+async wrapper around ModbusMaster. Owns the read loop, port scan,
+write queue, SQLite store. Bridges sync Api callers (HTTP/webview) into
+the async pymodbus client. `update_view()` rewires the poll filter on
+ignore-set changes without dropping the connection.
+"""
+
 import asyncio
 import threading
 from xaeian import Print, Time, serial_scan, logger
@@ -15,7 +22,8 @@ class ModbusLink:
     self.serial_open = False
     self.ports = []
     self.state = config.load_state()
-    self.regs = config.load_regs(self.state)
+    self.view = config.load_view()
+    self.regs = config.load_regs(self.state, self.view)
     self.store = Store(self.regs)
     self._loop = asyncio.new_event_loop()
     self._mb_lock = asyncio.Lock()
@@ -44,7 +52,6 @@ class ModbusLink:
       return None
 
   def close(self):
-    """Graceful shutdown."""
     self._stop_reads()
     if self.mb:
       self.run_async(self.mb.disconnect())
@@ -53,7 +60,7 @@ class ModbusLink:
     log.inf("ModbusLink closed")
 
   def _init_mb(self, port:str):
-    self.mb = config.create_mb(self.state, port)
+    self.mb = config.create_mb(self.state, self.view, port)
     timeout = self.state.get("timeout", 1000)
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
             f" baud:{self.mb.baudrate} timeout:{timeout}ms")
@@ -68,7 +75,7 @@ class ModbusLink:
       "stopbits": self.mb.stopbits,
       "timeout": self.state.get("timeout", 1000),
       "retries": self.state.get("retries", 3),
-      "interval": self.state.get("interval", 200),
+      "interval": self.state.get("interval", 500),
     })
     config.save_state(self.state)
     log.inf("State saved")
@@ -98,7 +105,7 @@ class ModbusLink:
     async with self._mb_lock:
       try:
         await self.mb.reconnect()
-        await self.mb.sync()
+        await self.mb.read(rws_filter=["R", "RW", "RWs"])
         log.ok("Initial sync done")
       except Exception as e:
         log.wrn(f"Initial sync failed: {e}")
@@ -112,7 +119,7 @@ class ModbusLink:
           try:
             t_read = Time()
             if self._sync_next:
-              await self.mb.sync()
+              await self.mb.read(rws_filter=["R", "RW", "RWs"])
               self._sync_next = False
               log.inf(f"Sync done {(Time()-t_read).total_seconds()*1000:.0f}ms")
             else:
@@ -131,7 +138,7 @@ class ModbusLink:
               return
       if cache is not None:
         await self.store.log(cache, self.mb.addr)
-      interval_s = int(self.state.get("interval", 200)) / 1000
+      interval_s = int(self.state.get("interval", 500)) / 1000
       remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:
         try:
@@ -144,6 +151,10 @@ class ModbusLink:
   def scan(self, mute:bool=True) -> list[str]:
     if not mute: log.run("Scanning ports")
     self.ports = serial_scan()
+    # Sim mode advertises a "SIM" pseudo-port so the toolbar select has
+    # something to pick. SimulatedClient ignores the port name anyway.
+    if config._bool(self.state.get("simulator")) and "SIM" not in self.ports:
+      self.ports = ["SIM"] + self.ports
     if self.serial_open and self.mb and self.mb.port not in self.ports:
       self._port_miss += 1
       if self._port_miss >= 3:
@@ -159,7 +170,7 @@ class ModbusLink:
     return self.ports
 
   def connect(self, port:str) -> bool:
-    """Open serial port (step 1)."""
+    """Open the serial port (step 1 of the connect handshake)."""
     log.run(f"Open serial: {port}")
     if self.connected:
       self._stop_reads()
@@ -191,7 +202,7 @@ class ModbusLink:
     self._clear_cache()
 
   def set_addr(self, addr:int):
-    """Probe addr and start reads if OK (step 2)."""
+    """Probe addr and start the read loop on response (step 2)."""
     log.run(f"Set addr: {addr}")
     if not self.mb or not self.serial_open: return
     if self.connected:
@@ -208,6 +219,53 @@ class ModbusLink:
     self._save_state()
     self._start_reads()
     log.ok(f"Device connected addr:{addr}")
+
+  def reload_mb(self):
+    """Rebuild ModbusMaster after view.ignore changed. Preserves connection."""
+    was_connected = self.connected
+    was_serial = self.serial_open
+    saved_port = self.mb.port if self.mb else None
+    saved_addr = self.mb.addr if self.mb else None
+    log.run("Reload mb: ignore changed")
+    if was_connected:
+      self._stop_reads()
+      self.connected = False
+    if was_serial and self.mb:
+      self.run_async(self.mb.disconnect())
+      self.serial_open = False
+    self._clear_cache()
+    self.regs = config.load_regs(self.state, self.view)
+    self.store.reload(self.regs)
+    if not saved_port:
+      self.mb = None
+      return
+    self._init_mb(saved_port)
+    if not was_serial: return
+    if not self.run_async(self.mb.connect(), timeout=5):
+      log.err(f"Reload: failed to reopen {saved_port}")
+      return
+    self.serial_open = True
+    if not was_connected or saved_addr is None: return
+    self.mb.addr = saved_addr
+    if not self.run_async(self._probe_addr(saved_addr), timeout=2):
+      log.err(f"Reload: no response from addr:{saved_addr}")
+      return
+    self.connected = True
+    self._start_reads()
+    log.ok(f"Reload done addr:{saved_addr}")
+
+  def update_view(self, *, monitor=None, ignore=None) -> dict:
+    """Patch + persist the view. Only an ignore-set change rebuilds the
+    ModbusMaster; monitor edits don't affect the poll filter."""
+    changed_filter = False
+    if monitor is not None:
+      self.view["monitor"] = monitor
+    if ignore is not None and set(ignore) != set(self.view.get("ignore", [])):
+      self.view["ignore"] = list(ignore)
+      changed_filter = True
+    config.save_view(self.view)
+    if changed_filter: self.reload_mb()
+    return self.view
 
   def set_serial(self, params:dict):
     changed = False
@@ -233,7 +291,7 @@ class ModbusLink:
     return self.mb.cache
 
   def scan_addrs(self, addrs:list[int]) -> list[int]:
-    """Scan addresses. Stops read loop during scan to avoid addr race."""
+    """Probe each addr. Stops the read loop first to avoid addr races."""
     if not self.serial_open:
       log.wrn("scan_addrs: serial not open")
       return []

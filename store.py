@@ -1,3 +1,13 @@
+"""
+SQLite store for poll-cycle history. One table per address (`addr_1`,
+`addr_5`, ...) with columns typed from regs.csv (INTEGER/REAL/TEXT). On
+boot the schema is compared against the current map - any dropped columns
+or type mismatches rotate the file to `data-YYYYMMDD-HHMMSS.db` and start
+fresh. `self.migrated_to` carries the backup path for the UI.
+"""
+
+import os, shutil
+from datetime import datetime
 from xaeian.db import SqliteAsyncDatabase, ident
 from xaeian import Print, DIR, PATH, Time
 
@@ -9,6 +19,15 @@ class Store:
     self.db:SqliteAsyncDatabase|None = None
     self._cols:list[tuple] = []  # (col, typ, name)
     self._tables:set[int] = set()
+    # Backup path if migration just ran, else None. Surfaced to the UI
+    # one-shot via api.status() → frontend toast.
+    self.migrated_to:str|None = None
+    self._parse_regs(regs)
+
+  def reload(self, regs:list[dict]):
+    """Swap register set; next `log()` re-syncs schema (ADD COLUMN if needed)."""
+    self._cols = []
+    self._tables = set()
     self._parse_regs(regs)
 
   @staticmethod
@@ -20,7 +39,7 @@ class Store:
     typ = reg.get("type", "uint")
     if typ in ("enum", "ver"): return "TEXT"
     if typ in ("bool", "hex"): return "INTEGER"
-    if typ == "rule": return "REAL"
+    if typ in ("rule", "float"): return "REAL"
     scale = reg.get("scale", 1)
     if isinstance(scale, list): return "REAL"
     if scale != 1 and scale != 1.0: return "REAL"
@@ -38,9 +57,80 @@ class Store:
   async def init(self):
     path = PATH.resolve("data.db")
     DIR.ensure(path, is_file=True)
+    # Check schema before opening for write. Drift → rotate the legacy
+    # file (with WAL/SHM sidecars) and start fresh. Noop on first boot.
+    if os.path.exists(path):
+      await self._migrate_if_drift(path)
     self.db = SqliteAsyncDatabase(path)
     await self.db.exec("PRAGMA journal_mode=WAL")
     p.ok(f"Store: {path} ({len(self._cols)} cols)")
+
+  #--------------------------------------------------------------------------------- Migration
+
+  async def _migrate_if_drift(self, path:str):
+    """Compare each addr_X table against current `_cols`; back the file up
+    if any column was dropped or its type changed (additions are recoverable
+    via ALTER TABLE ADD COLUMN)."""
+    tmp = SqliteAsyncDatabase(path)
+    try:
+      tables = await tmp.get_dicts(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'addr_%'"
+      )
+      addrs = []
+      for r in tables or []:
+        n = r.get("name", "")
+        try: addrs.append(int(n.split("_", 1)[1]))
+        except (IndexError, ValueError): pass
+      if not addrs: return  # empty DB, nothing to compare against
+
+      expected_types = {c: t.upper() for c, t, _ in self._cols}
+      expected_cols = set(expected_types)
+      drift_lines = []
+      for addr in addrs:
+        table = self._table(addr)
+        info = await tmp.get_dicts(f"PRAGMA table_info({ident(table)})")
+        actual_types = {r["name"]: str(r["type"]).upper()
+                        for r in (info or []) if r["name"] != "ts"}
+        actual_cols = set(actual_types)
+        dropped = actual_cols - expected_cols
+        retyped = {c for c in actual_cols & expected_cols
+                   if actual_types[c] != expected_types[c]}
+        if dropped or retyped:
+          parts = []
+          if dropped: parts.append(f"-{len(dropped)}")
+          if retyped: parts.append(f"~{len(retyped)}")
+          drift_lines.append(f"{table} ({', '.join(parts)})")
+      if not drift_lines: return
+
+      ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+      backup = path.replace(".db", f"-{ts}.db")
+      # Release the handle before move - Windows holds locks on open DBs.
+      await self._close(tmp)
+      tmp = None
+      shutil.move(path, backup)
+      # WAL/SHM sidecars exist only when WAL is active; move them too so
+      # the new DB starts clean.
+      for suffix in ("-wal", "-shm"):
+        side = path + suffix
+        if os.path.exists(side): shutil.move(side, backup + suffix)
+      self.migrated_to = backup
+      p.wrn(f"DB schema drift: {', '.join(drift_lines)}")
+      p.wrn(f"Backed up to {backup} - fresh DB will be created.")
+    finally:
+      if tmp is not None: await self._close(tmp)
+
+  @staticmethod
+  async def _close(db):
+    """Best-effort close. SqliteAsyncDatabase exposes `close` or `aclose`
+    depending on version - we just want the handle released."""
+    for name in ("close", "aclose"):
+      fn = getattr(db, name, None)
+      if callable(fn):
+        try:
+          result = fn()
+          if hasattr(result, "__await__"): await result
+        except Exception: pass
+        return
 
   async def _ensure_table(self, addr:int):
     if addr in self._tables: return
@@ -48,6 +138,12 @@ class Store:
     defs = ", ".join(f"{c} {t}" for c, t, _ in self._cols)
     await self.db.exec(f"CREATE TABLE IF NOT EXISTS {ident(table)} (ts REAL NOT NULL, {defs})")
     await self.db.exec(f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {ident(table)}(ts)")
+    # ALTER TABLE for cols missing in an existing table (post-reload).
+    existing = await self.db.get_dicts(f"PRAGMA table_info({ident(table)})")
+    have = {r["name"] for r in (existing or [])}
+    for col, typ, _ in self._cols:
+      if col not in have:
+        await self.db.exec(f"ALTER TABLE {ident(table)} ADD COLUMN {col} {typ}")
     self._tables.add(addr)
 
   #------------------------------------------------------------------------------------ Resolve
@@ -67,7 +163,7 @@ class Store:
     if not self._cols or not self.db: return
     try:
       await self._ensure_table(addr)
-      row = {"ts": Time().to('ts')}
+      row = {"ts": Time().to("ts")}
       for col, _, name in self._cols:
         row[col] = self._resolve(cache, name)
       await self.db.insert(self._table(addr), row)
@@ -79,7 +175,7 @@ class Store:
   async def since(
     self, addr:int, names:list[str], since_ts:float, limit:int=5000,
   ) -> list[dict]:
-    """Rows with ts > since_ts, ascending. Limit capped at 50000."""
+    """Rows with `ts > since_ts`, ascending. Limit capped at 50000."""
     if not self.db: return []
     limit = min(limit, 50000)
     try:

@@ -1,7 +1,7 @@
 /* styles/chart.css */
 
 .cs-panel { position: relative; }
-.cs-plot { width: 100%; overflow: hidden; }
+.cs-plot { width: 100%; }
 
 .cs-unit {
   position: absolute; top: 17px; z-index: 3;

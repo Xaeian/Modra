@@ -1,6 +1,14 @@
-# modbus.py
+"""
+Async Modbus RTU master with CSV-based register descriptor.
 
-import asyncio
+Parses regs.csv → typed map for uint/int/bool/enum/hex/ver/rule, supports
+`switch=` / `high=` / `low=` rules, caches raw 16-bit values. The map is
+always complete - `ignore_set` filters at read time only (pair-aware) so
+the DB schema and `regs_info()` cover every register and the frontend
+can show or hide ignored entries on its own.
+"""
+
+import asyncio, struct
 from pymodbus.client import AsyncModbusSerialClient
 from typing import Literal
 from xaeian import CSV
@@ -51,18 +59,30 @@ class ModbusMaster:
         out[k.strip()] = v.strip()
     return out if out else None
 
+  @staticmethod
+  def _parse_default(val:str):
+    s = str(val).strip()
+    if s == "" or s == "-": return None
+    if "/" in s: return [ModbusMaster._parse_default(x) for x in s.split("/")]
+    try: return int(s)
+    except ValueError:
+      try: return float(s)
+      except ValueError: return s
+
   def __init__(
     self,
-    port: str,
-    regmap_file: str,
-    addr: int = 1,
-    baudrate: int = 9600,
-    parity: Literal["N","O","E"] = "N",
-    stopbits: Literal[1,2] = 1,
-    timeout: float = 1,
-    retries: int = 3,
-    group: bool = True,
-    max_block: int = 64
+    port:str,
+    regmap_file:str,
+    addr:int = 1,
+    baudrate:int = 9600,
+    parity:Literal["N","O","E"] = "N",
+    stopbits:Literal[1,2] = 1,
+    timeout:float = 1,
+    retries:int = 3,
+    group:bool = True,
+    max_block:int = 64,
+    ignore_set:set[str] = None,
+    sim:bool = False,
   ):
     self.port = port
     self.addr = addr
@@ -73,15 +93,17 @@ class ModbusMaster:
     self.retries = max(1, retries)
     self.group = group
     self.max_block = max_block
+    # Read-time filter only; the map below stays complete.
+    self.ignore_set: set[str] = set(ignore_set) if ignore_set else set()
+    self.sim = sim
     self.groups: dict[str, dict[str, dict]] = {}
     self.id_map: dict[int, dict] = {}
     self.name_map: dict[str, dict] = {}
     self.pairs: dict[str, dict] = {}
-    # Load register map
     for reg_row in CSV.load(regmap_file):
-      if str(reg_row.get("hide", "")).strip().lower() == "true": continue  # hide
       entry = self._parse_reg_row(reg_row)
-      reg_id, group, name, fullname = entry["id"], entry["group"], entry["name"], entry["fullname"]
+      reg_id, fullname = entry["id"], entry["fullname"]
+      group, name = entry["group"], entry["name"]
       self.id_map[reg_id] = entry
       self.name_map[fullname] = entry
       if group not in self.groups: self.groups[group] = {}
@@ -106,7 +128,7 @@ class ModbusMaster:
     try: hex_val = int(hex_str, 0)
     except ValueError: hex_val = reg_id
     if hex_val != reg_id: hex_str = f"0x{reg_id:02X}"
-    rws_map = {"R": "R", "RT": "Rt", "RW": "RW", "RWS": "RWs", "W": "W"}
+    rws_map = {"R": "R", "RW": "RW", "RWS": "RWs", "W": "W"}
     rws_val = rws_map.get(str(row.get("rws", "R")).strip().upper(), "R")
     type_val = str(row.get("type", "uint")).strip().lower()
     entry = {
@@ -118,6 +140,7 @@ class ModbusMaster:
       "max": self._parse_minmax(row.get("max", "")),
       "desc": row.get("desc") if row.get("desc") not in ("", "-") else None,
       "rule": self._parse_rule(row.get("rule", "")),
+      "default": self._parse_default(row.get("default", "")),
     }
     if type_val == "enum": entry["enum"] = self._parse_enum(row.get("unit", ""))
     return entry
@@ -126,9 +149,13 @@ class ModbusMaster:
 
   async def connect(self) -> AsyncModbusSerialClient:
     if self.client and self.client.connected: return self.client
-    self.client = AsyncModbusSerialClient(
-      port=self.port, baudrate=self.baudrate, parity=self.parity,
-      stopbits=self.stopbits, bytesize=8, timeout=self.timeout)
+    if self.sim:
+      from sim import SimulatedClient
+      self.client = SimulatedClient(self.id_map)
+    else:
+      self.client = AsyncModbusSerialClient(
+        port=self.port, baudrate=self.baudrate, parity=self.parity,
+        stopbits=self.stopbits, bytesize=8, timeout=self.timeout)
     await self.client.connect()
     if not self.client.connected:
       raise RuntimeError(f"Connect error: {self.port}")
@@ -140,7 +167,7 @@ class ModbusMaster:
       self.client = None
       
   async def reconnect(self):
-    """Close and reopen serial — resets pymodbus framer state."""
+    """Close + reopen. Resets pymodbus framer state after a stalled frame."""
     await self.disconnect()
     await asyncio.sleep(0.1)
     await self.connect()
@@ -230,6 +257,23 @@ class ModbusMaster:
 
   #------------------------------------------------------------------------------------ helpers
 
+  @staticmethod
+  def _pair_decode(raw32:int, ptype:str):
+    """uint32 word → engineering value. `float` pairs reinterpret as IEEE
+    754 single-precision (big-endian); other types stay as plain uint32."""
+    if ptype == "float":
+      return struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
+    return raw32
+
+  @staticmethod
+  def _pair_encode(val, ptype:str) -> int:
+    """Inverse of `_pair_decode`. Non-float accepts int or `0x..` string."""
+    if val is None: return 0
+    if ptype == "float":
+      return int.from_bytes(struct.pack(">f", float(val)), "big")
+    if isinstance(val, str): return int(val, 0) & 0xFFFFFFFF
+    return int(val) & 0xFFFFFFFF
+
   def _get_pair_maps(self) -> tuple[dict[int, str], dict[int, list[str]]]:
     pair_part, pair_anchor = {}, {}
     for pair_key, info in self.pairs.items():
@@ -295,13 +339,15 @@ class ModbusMaster:
   def _get_scale(self, entry:dict, index:int=None) -> float:
     scale = entry.get("scale", 1.0)
     if isinstance(scale, list):
-      return scale[index] if index is not None and 0 <= index < len(scale) else scale[0] if scale else 1.0
+      if index is not None and 0 <= index < len(scale): return scale[index]
+      return scale[0] if scale else 1.0
     return scale if scale else 1.0
 
   def _get_unit(self, entry:dict, index:int=None) -> str|None:
     unit = entry.get("unit")
     if isinstance(unit, list):
-      return unit[index] if index is not None and 0 <= index < len(unit) else unit[0] if unit else None
+      if index is not None and 0 <= index < len(unit): return unit[index]
+      return unit[0] if unit else None
     return unit
 
   def _get_minmax(self, entry:dict, index:int=None) -> tuple[float|None, float|None]:
@@ -332,7 +378,10 @@ class ModbusMaster:
     else: val = int(raw)
     return (val, unit)
 
-  def _encode_value(self, reg_id:int, value:any, pending_raw:dict[int, int]=None,validate:bool=True) -> int:
+  def _encode_value(
+    self, reg_id:int, value:any,
+    pending_raw:dict[int, int]=None, validate:bool=True,
+  ) -> int:
     entry = self.id_map.get(reg_id)
     if not entry: return int(value) & 0xFFFF
     typ = entry.get("type", "uint")
@@ -361,7 +410,7 @@ class ModbusMaster:
         raise ValueError(f"{entry['fullname']}: invalid version '{value}' (expected X.YY.ZZ)")
       raw = int(parts[0]) * 10000 + int(parts[1]) * 100 + int(parts[2])
       if raw > 65535:
-        raise ValueError(f"{entry['fullname']}: version '{value}' exceeds uint16 (max 6.55.35)")
+        raise ValueError(f"{entry['fullname']}: version '{value}' over uint16 max 6.55.35")
       return raw
     elif typ == "int":
       return int(round(float(value) * scale)) & 0xFFFF
@@ -387,7 +436,7 @@ class ModbusMaster:
           if rws_filter and h["rws"] not in rws_filter: continue
           hr, lr = raw_data.get(h["id"]), raw_data.get(l["id"])
           if hr is not None and lr is not None:
-            val = (hr << 16) | lr
+            val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"))
             emitted_pairs.add(pair_key)
             group, name = info.get("group"), info.get("name")
             if grouped:
@@ -428,8 +477,9 @@ class ModbusMaster:
         val = data.get(pair_key)
       if val is not None:
         if isinstance(val, tuple): val = val[0]
-        val32 = int(val, 0) if isinstance(val, str) else int(val)
         h, l = pair_info.get("high"), pair_info.get("low")
+        ptype = h.get("type", "uint") if h else "uint"
+        val32 = self._pair_encode(val, ptype)
         if h and (rws_filter is None or h["rws"] in rws_filter):
           raw[h["id"]] = (val32 >> 16) & 0xFFFF
         if l and (rws_filter is None or l["rws"] in rws_filter):
@@ -474,7 +524,18 @@ class ModbusMaster:
       reg_ids = self._keys_to_ids(keys)
     else:
       if rws_filter is None: rws_filter = ["R"]
-      reg_ids = [rid for rid, e in self.id_map.items() if e["rws"] in rws_filter]
+      # Resolve `ignore_set` to ids. pair_keys (e.g. "Auth:SecretKey")
+      # expand to both halves so ignoring a 32-bit composite drops the
+      # whole pair, not just one register.
+      ignored_ids = {rid for rid, e in self.id_map.items()
+                     if e["fullname"] in self.ignore_set}
+      for pair_key in self.ignore_set:
+        if pair_key in self.pairs:
+          p = self.pairs[pair_key]
+          if p.get("high"): ignored_ids.add(p["high"]["id"])
+          if p.get("low"):  ignored_ids.add(p["low"]["id"])
+      reg_ids = [rid for rid, e in self.id_map.items()
+                 if e["rws"] in rws_filter and rid not in ignored_ids]
     if not reg_ids: return {}
     await self.read_registers(reg_ids)
     return self.decode(
@@ -487,7 +548,7 @@ class ModbusMaster:
     return await self.write_registers(raw_data)
 
   async def write_sync(self, data:dict) -> tuple[dict, dict|list|None]:
-    """Write RW/RWs, read back per block. Returns (cache, diff)."""
+    """Write RW/RWs and read back per block. Returns (cache, diff)."""
     grouped = self._detect_grouped(data)
     raw_write = self.encode(data, ["RW", "RWs"])
     blocks = self._write_blocks(raw_write)
@@ -531,7 +592,7 @@ class ModbusMaster:
           if h and l:
             hr, lr = self.cache_raw.get(h["id"]), self.cache_raw.get(l["id"])
             if hr is not None and lr is not None:
-              val = (hr << 16) | lr
+              val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"))
           group, name = info.get("group"), info.get("name")
           if grouped:
             if group not in data: data[group] = {}
@@ -573,7 +634,7 @@ class ModbusMaster:
 
   #--------------------------------------------------------------------------------------- info
 
-  def reg_info(self, reg_id: int) -> dict|None:
+  def reg_info(self, reg_id:int) -> dict|None:
     entry = self.id_map.get(reg_id)
     if not entry: return None
     info = {
@@ -581,6 +642,7 @@ class ModbusMaster:
       "group": entry["group"], "type": entry["type"], "rws": entry["rws"],
       "unit": entry.get("unit"), "scale": entry.get("scale", 1.0),
       "min": entry.get("min"), "max": entry.get("max"), "desc": entry.get("desc"),
+      "default": entry.get("default"),
     }
     if entry["type"] == "enum": info["enum"] = entry.get("enum", {})
     rule = entry.get("rule")
@@ -598,11 +660,20 @@ class ModbusMaster:
     if not pair: return None
     h, l = pair.get("high"), pair.get("low")
     if not h or not l: return None
+    ptype = h.get("type", "uint")
+    # Float pairs carry engineering values - unit/scale/min/max come from
+    # the high half. uint32 pairs (no scaling) default to the full 32-bit
+    # range with no unit.
+    is_float = ptype == "float"
     return {
       "id": [h["id"], l["id"]], "hex": [h["hex"], l["hex"]],
-      "name": pair_key, "group": pair.get("group"), "type": h.get("type", "uint"),
-      "rws": h["rws"], "unit": None, "scale": 1.0, "min": 0, "max": 0xFFFFFFFF,
-      "desc": h.get("desc"), "rule": {"pair": [h["id"], l["id"]]},
+      "name": pair_key, "group": pair.get("group"), "type": ptype,
+      "rws": h["rws"],
+      "unit":  h.get("unit")        if is_float else None,
+      "scale": h.get("scale", 1.0)  if is_float else 1.0,
+      "min":   h.get("min")         if is_float else 0,
+      "max":   h.get("max")         if is_float else 0xFFFFFFFF,
+      "desc": h.get("desc"), "rule": {"pair": [h["id"], l["id"]], "type": ptype},
     }
 
   def regs_info(self) -> list[dict]:
@@ -623,8 +694,8 @@ class ModbusMaster:
     return result
 
   def annotate(self, data:dict=None, fields:list[str]=None) -> dict:
-    """Add metadata to values as tuples: (value, field1, field2, ...)
-    Fields: 'unit', 'min', 'max', 'scale', 'type', 'desc'"""
+    """Wrap values as `(value, field1, field2, ...)`. Supported field names:
+    `unit`, `min`, `max`, `scale`, `type`, `desc`."""
     if data is None: data = self.cache
     if not fields: return data
     grouped = self._detect_grouped(data)
@@ -638,7 +709,7 @@ class ModbusMaster:
       rule_idx = None
       if entry.get("type") == "rule":
         try: rule_idx = self._resolve_rule_index(entry)
-        except: pass
+        except Exception: pass
       result = []
       for f in fields:
         if f == "unit": result.append(self._get_unit(entry, rule_idx))

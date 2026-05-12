@@ -1,4 +1,10 @@
-# mb_ctrl.py
+"""
+CLI: device ↔ config file admin tool.
+
+  mb_ctrl import [file]  device → file (.ini default, .csv supported)
+  mb_ctrl export [file]  file → device
+  mb_ctrl sudo           unlock admin via Auth:SecretKey
+"""
 
 import sys, asyncio, os
 from xaeian import INI, CSV, Print, Color as c

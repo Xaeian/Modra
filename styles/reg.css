@@ -15,6 +15,10 @@
 .rb-reg.rb-inactive { opacity: 0.4; }
 .rb-reg.rb-inactive .rb-name { color: var(--text-muted); }
 .rb-reg.rb-inactive .rb-val  { background: var(--disabled); }
+/* Ignored: row visible only in show-disabled view; muted + struck-through
+   name signals "currently disabled, click ghost to re-enable". */
+.rb-reg.rb-ignored { opacity: 0.55; }
+.rb-reg.rb-ignored .rb-name { text-decoration: line-through; color: var(--text-muted); }
 .rb-row-wrap { display: contents; }
 
 [data-theme="dark"] .rb-reg.rb-dirty { background: #3a3520; }
@@ -119,9 +123,10 @@
   text-align: center;
 }
 
-.rb-r  { background: #6c757d; }
-.rb-w  { background: #dc3545; }
-.rb-rw { background: #0d6efd; }
+.rws-r   { background: #d4a017; }  /* gold - read-only telemetry */
+.rws-w   { background: #dc3545; }  /* red - write-only trigger */
+.rws-rw  { background: #0d6efd; }  /* blue - volatile read/write */
+.rws-rws { background: #0d9488; }  /* teal - persisted read/write */
 
 .rb-icon-btn {
   padding: 2px 0 0;

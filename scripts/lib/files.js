@@ -1,5 +1,15 @@
 // scripts/lib/files.js
 
+function _download(filename, content, type="text/plain") {
+  const url = URL.createObjectURL(new Blob([content], {type}));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+//----------------------------------------------------------------------------------------- CSV
+
 const CSV = {
 
   _cast(value, type) {
@@ -31,10 +41,10 @@ const CSV = {
     return fields;
   },
 
-  _formatField(value) {
+  _formatField(value, delimiter=",") {
     if(value === null || value === undefined) return "";
     const s = String(value);
-    if(s.includes(",") || s.includes('"') || s.includes("\n"))
+    if(s.includes(delimiter) || s.includes('"') || s.includes("\n"))
       return '"' + s.replace(/"/g, '""') + '"';
     return s;
   },
@@ -97,9 +107,9 @@ const CSV = {
   stringify(data, fieldNames=null, delimiter=",") {
     if(!data || !data.length) return "";
     const fields = fieldNames || Object.keys(data[0]);
-    const lines = [fields.map(CSV._formatField).join(delimiter)];
+    const lines = [fields.map(f => CSV._formatField(f, delimiter)).join(delimiter)];
     for(const row of data) {
-      lines.push(fields.map(f => CSV._formatField(row[f])).join(delimiter));
+      lines.push(fields.map(f => CSV._formatField(row[f], delimiter)).join(delimiter));
     }
     return lines.join("\n") + "\n";
   },
@@ -110,18 +120,11 @@ const CSV = {
     if(columns.some(c => c.length !== len)) throw new Error("All vectors must have same length");
     if(header && header.length !== columns.length) throw new Error("Header length must match vectors");
     const lines = [];
-    if(header) lines.push(header.map(CSV._formatField).join(delimiter));
+    if(header) lines.push(header.map(h => CSV._formatField(h, delimiter)).join(delimiter));
     for(let i = 0; i < len; i++) {
-      lines.push(columns.map(c => CSV._formatField(c[i])).join(delimiter));
+      lines.push(columns.map(c => CSV._formatField(c[i], delimiter)).join(delimiter));
     }
-    const blob = new Blob([lines.join("\n") + "\n"], {type: "text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    _download(filename, lines.join("\n") + "\n", "text/csv");
   },
 
   // Open file picker and return parsed as vectors
@@ -151,14 +154,7 @@ const CSV = {
   // Trigger download of CSV file
   save(filename, data, fieldNames=null, delimiter=",") {
     const content = CSV.stringify(data, fieldNames, delimiter);
-    const blob = new Blob([content], {type: "text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    _download(filename, content, "text/csv");
   },
 
   // Open file picker and return parsed CSV
@@ -177,6 +173,8 @@ const CSV = {
     });
   },
 };
+
+//----------------------------------------------------------------------------------------- INI
 
 const INI = {
 
@@ -223,33 +221,65 @@ const INI = {
     return text;
   },
 
-  _stripInlineComment(text) {
-    for(let i = 0; i < text.length; i++) {
-      if(text[i] === ";" || text[i] === "#") return text.slice(0, i).trimEnd();
+  _splitInlineComment(text) {
+    let i = 0;
+    if(text[0] === '"' || text[0] === "'") {
+      const q = text[0];
+      i = 1;
+      while(i < text.length) {
+        if(text[i] === "\\" && i + 1 < text.length) { i += 2; continue; }
+        if(text[i] === q) { i++; break; }
+        i++;
+      }
     }
-    return text;
+    for(; i < text.length; i++) {
+      if(text[i] === ";" || text[i] === "#") {
+        return [text.slice(0, i).trimEnd(), text.slice(i + 1).trim()];
+      }
+    }
+    return [text, null];
   },
 
-  parse_text(content) {
+  parse_text(content, opts={}) {
     const ini = {};
+    const wc = opts.comments || false;
+    const commentSection = {};
+    const commentField = {};
     let section = null;
+    let pending = [];
     for(const raw of content.split(/\r?\n/)) {
       const line = raw.trim();
-      if(!line || line[0] === ";" || line[0] === "#") continue;
+      if(!line || line[0] === ";" || line[0] === "#") {
+        if(wc && line) pending.push(line.slice(1).trim());
+        continue;
+      }
       if(line.startsWith("[") && line.includes("]")) {
         section = line.slice(1, line.indexOf("]")).trim();
         ini[section] = {};
+        if(wc && pending.length) commentSection[section] = pending.join("\n");
+        pending = [];
         continue;
       }
+      pending = [];
       if(!line.includes("=")) continue;
       const eq = line.indexOf("=");
       const key = line.slice(0, eq).trim();
       let rest = line.slice(eq + 1).trim();
-      if(rest && rest[0] !== '"' && rest[0] !== "'") rest = INI._stripInlineComment(rest);
+      let inlineComment = null;
+      if(rest) {
+        if(wc) [rest, inlineComment] = INI._splitInlineComment(rest);
+        else rest = INI._splitInlineComment(rest)[0];
+      }
       const value = INI.parse(rest);
       if(section !== null) ini[section][key] = value;
       else ini[key] = value;
+      if(wc && inlineComment) {
+        const sk = section !== null ? section : null;
+        if(!commentField[sk]) commentField[sk] = {};
+        commentField[sk][key] = inlineComment;
+      }
     }
+    if(wc) return { data: ini, commentSection, commentField };
     return ini;
   },
 
@@ -307,14 +337,7 @@ const INI = {
   // Trigger download of INI file
   save(filename, data, commentSection, commentField) {
     const content = INI.stringify(data, commentSection, commentField);
-    const blob = new Blob([content], {type: "text/plain"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    _download(filename, content);
   },
 
   // Open file picker and return parsed INI
@@ -333,6 +356,8 @@ const INI = {
     });
   },
 };
+
+//---------------------------------------------------------------------------------------- JSON
 
 JSON.smart = function(obj, indent=2, maxLine=100, arrayWrap=10, compactDict=true) {
   function isPrimitive(v) {
@@ -424,25 +449,11 @@ JSON.load = async function(file) {
 
 JSON.save = function(filename, data, pretty=false, indent=2) {
   const content = pretty ? JSON.stringify(data, null, indent) + "\n" : JSON.stringify(data);
-  const blob = new Blob([content], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  _download(filename, content, "application/json");
 };
 
 JSON.save_smart = function(filename, data, maxLine=100, arrayWrap=10, compactDict=true) {
-  const blob = new Blob([JSON.smart(data, 2, maxLine, arrayWrap, compactDict)], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  _download(filename, JSON.smart(data, 2, maxLine, arrayWrap, compactDict), "application/json");
 };
 
 JSON.open = async function(accept=".json") {
@@ -458,4 +469,112 @@ JSON.open = async function(accept=".json") {
     input.oncancel = () => resolve(null);
     input.click();
   });
+};
+
+//---------------------------------------------------------------------------------------- YAML
+
+const YAML = {
+
+  parse(text) {
+    if(!text) return null;
+    return jsyaml.load(text);
+  },
+
+  stringify(data, opts={}) {
+    return jsyaml.dump(data, {
+      indent: 2, lineWidth: 95, sortKeys: false,
+      quotingType: '"', forceQuotes: false, noRefs: true,
+      ...opts
+    });
+  },
+
+  async load(file) {
+    const text = await file.text();
+    return YAML.parse(text);
+  },
+
+  save(filename, data, opts) {
+    _download(filename, YAML.stringify(data, opts), "application/x-yaml");
+  },
+
+  async open(accept=".yaml,.yml") {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file"; input.accept = accept;
+      input.onchange = async () => {
+        const file = input.files[0];
+        if(!file) { resolve(null); return; }
+        try { resolve(await YAML.load(file)); }
+        catch(e) { reject(e); }
+      };
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  },
+};
+//----------------------------------------------------------------------------------------- ZIP
+
+// Wymaga fflate (CDN UMD) - window.fflate. Input w `pack` moze byc string
+// (UTF-8), Uint8Array, ArrayBuffer lub Blob. Output `unpack` to Uint8Array
+// per entry - caller decyduje jak czyta (TextDecoder albo jako bajty).
+
+const ZIP = {
+
+  // Konwersja dowolnego contentu do Uint8Array (fflate input format).
+  async _toBytes(content) {
+    if(typeof content === "string") return new TextEncoder().encode(content);
+    if(content instanceof Uint8Array) return content;
+    if(content instanceof ArrayBuffer) return new Uint8Array(content);
+    if(content instanceof Blob) return new Uint8Array(await content.arrayBuffer());
+    throw new TypeError("ZIP: content must be string, Uint8Array, ArrayBuffer or Blob");
+  },
+
+  // entries: [{name, content}]. Zwraca Blob (application/zip).
+  async pack(entries) {
+    const input = {};
+    for(const { name, content } of entries) {
+      input[name] = await ZIP._toBytes(content);
+    }
+    return new Promise((resolve, reject) => {
+      fflate.zip(input, { level: 6 }, (err, data) => {
+        if(err) reject(err);
+        else resolve(new Blob([data], { type: "application/zip" }));
+      });
+    });
+  },
+
+  // data: Blob | ArrayBuffer | Uint8Array. Zwraca [{name, content: Uint8Array}].
+  async unpack(data) {
+    const bytes = await ZIP._toBytes(data);
+    return new Promise((resolve, reject) => {
+      fflate.unzip(bytes, (err, unzipped) => {
+        if(err) reject(err);
+        else resolve(Object.entries(unzipped).map(([name, content]) => ({ name, content })));
+      });
+    });
+  },
+
+  async load(file) {
+    return ZIP.unpack(file);
+  },
+
+  async save(filename, entries) {
+    const blob = await ZIP.pack(entries);
+    _download(filename, blob, "application/zip");
+  },
+
+  async open(accept=".zip") {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file"; input.accept = accept;
+      input.onchange = async () => {
+        const file = input.files[0];
+        if(!file) { resolve(null); return; }
+        try { resolve(await ZIP.load(file)); }
+        catch(e) { reject(e); }
+      };
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  },
 };

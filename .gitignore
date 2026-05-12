@@ -7,4 +7,5 @@
 .venv/
 .build/
 .dist/
-monitor.json
+ignore.txt
+skip.txt

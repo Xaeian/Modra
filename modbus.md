@@ -29,51 +29,70 @@ await mb.disconnect()
 
 ## Register Map CSV
 
-| Column  | Description                              | Example               |
-| ------- | ---------------------------------------- | --------------------- |
-| `id`    | Register address                         | `10`                  |
-| `hex`   | Hex address (optional)                   | `0x0A`                |
-| `name`  | `Group:Name` format                      | `Ctrl:Mode`           |
-| `rws`   | Access: R, Rt, W, RW, RWs (storage)      | `RW`                  |
-| `type`  | Data type                                | `uint`                |
-| `unit`  | Unit or enum definition                  | `rpm` or `0=off 1=on` |
-| `scale` | Multiplier (or `/` separated list)       | `10` or `1/10/100`    |
-| `min`   | Minimum value                            | `0`                   |
-| `max`   | Maximum value                            | `10000`               |
-| `desc`  | Description                              | `Motor speed`         |
-| `rule`  | Special rules                            | `switch=Ctrl:Mode`    |
-| `hide`  | If `true`, register excluded from map   | `true`                |
+| Column    | Description                              | Example               |
+| --------- | ---------------------------------------- | --------------------- |
+| `id`      | Register address                         | `10`                  |
+| `hex`     | Hex address (optional)                   | `0x0A`                |
+| `name`    | `Group:Name` format                      | `Ctrl:Mode`           |
+| `rws`     | Access: R, W, RW, RWs                    | `RW`                  |
+| `type`    | Data type                                | `uint`                |
+| `unit`    | Unit or enum definition                  | `rpm` or `0=off 1=on` |
+| `scale`   | Multiplier (or `/` separated list)       | `10` or `1/10/100`    |
+| `min`     | Minimum value                            | `0`                   |
+| `max`     | Maximum value                            | `10000`               |
+| `desc`    | Description                              | `Motor speed`         |
+| `rule`    | Special rules                            | `switch=Ctrl:Mode`    |
+| `default` | Factory value (RWs); `/`-list per variant | `1500` or `3700/2600/1500` |
 
 ### Access Modes (rws)
 
 | Value | Description                                                  |
 | ----- | ------------------------------------------------------------ |
 | `R`   | Read-only, included in regular polling                       |
-| `Rt`  | Read transient — readable on demand, excluded from polling   |
 | `W`   | Write-only                                                   |
 | `RW`  | Read/write                                                   |
 | `RWs` | Read/write, persisted to storage on device                   |
 
+### Runtime exclusions
+
+`ignore_set` (`__init__` param) provides *user-level* register filtering outside the
+descriptor. Names in the set are excluded from the `read()` polling cycle but stay in
+the map (so the SQLite schema and `regs_info()` catalog cover every register). Still
+readable explicitly via `read(keys=[...])` and `sync()` (full read for admin tools).
+Pair_keys (e.g. `Auth:SecretKey`) expand to both underlying halves when matched.
+
 ### Types
 
-| Type   | Description                        |
-| ------ | ---------------------------------- |
-| `uint` | Unsigned 16-bit                    |
-| `int`  | Signed 16-bit                      |
-| `bool` | Boolean (0/1)                      |
-| `enum` | Enumeration (parsed from `unit`)   |
-| `hex`  | Hex display                        |
-| `ver`  | Version X.YY.ZZ (max 6.55.35)      |
-| `rule` | Dynamic scale/unit based on switch |
+| Type    | Description                           |
+| ------- | ------------------------------------- |
+| `uint`  | Unsigned 16-bit                       |
+| `int`   | Signed 16-bit                         |
+| `bool`  | Boolean (0/1)                         |
+| `enum`  | Enumeration (parsed from `unit`)      |
+| `hex`   | Hex display                           |
+| `ver`   | Version X.YY.ZZ (max 6.55.35)         |
+| `rule`  | Dynamic scale/unit based on switch    |
+| `float` | IEEE 754 single, used in `high`/`low` pair (32-bit) |
 
 ### Rules
 
-**32-bit pairs** - combine two registers into single value:
+**32-bit pairs** - combine two adjacent registers into one value. The pair's
+type is taken from the high half: `uint` produces a plain uint32 (displayed
+as hex), `float` reinterprets the 32-bit word as an IEEE 754 single.
+
 ```csv
-20,0x14,Data:KeyHigh,R,uint,-,-,-,-,high=Key
-21,0x15,Data:KeyLow,R,uint,-,-,-,-,low=Key
+20,0x14,Data:KeyHigh,R,uint,-,-,-,-,Secret key high word,high=Key
+21,0x15,Data:KeyLow,R,uint,-,-,-,-,Secret key low word,low=Key
 ```
 Result: `{"Data": {"Key": 0x12345678}}`
+
+```csv
+30,0x1E,Calib:GainHigh,RWs,float,V,1,-100,100,Calibration gain high word,high=Gain
+31,0x1F,Calib:GainLow,RWs,float,V,1,-100,100,Calibration gain low word,low=Gain
+```
+Result: `{"Calib": {"Gain": 1.234}}` (decoded via IEEE 754, big-endian).
+For float pairs, `unit`/`scale`/`min`/`max` are taken from the high half so
+the pair carries real engineering metadata.
 
 **Switch-based scaling** - dynamic unit/scale based on another register (case-insensitive matching):
 ```csv
@@ -97,7 +116,8 @@ ModbusMaster(
   parity: "N"|"O"|"E" = "N",
   stopbits: 1|2 = 1,
   group: bool = True, # Default output format
-  max_block: int = 64  # Max registers per read
+  max_block: int = 64,  # Max registers per read
+  ignore_set: set[str] = None,  # Names excluded from read() polling (pair-aware)
 )
 ```
 

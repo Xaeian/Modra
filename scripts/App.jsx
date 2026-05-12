@@ -1,5 +1,8 @@
 // scripts/App.jsx
 
+// Root component. Toolbar (+ optional Serial row), optional chart bar, grid,
+// footer. Fully re-rendered on every state change - see `app.jsx`/`render()`.
+
 const App = () => (
   <div class="rb-panel">
     <div class="rb-header">
@@ -7,11 +10,9 @@ const App = () => (
       {S.serialOpen && <Serial />}
     </div>
     {S.showChart && <Monitor.Bar />}
-    {S.showRegs && <div class="rb-grid">
-      {Reg.blocks(Reg.filter(S.regs, S.query)).map(b =>
-        <Grid.Block regs={b} />
-      )}
-    </div>}
+    <div class="rb-grid">
+      {Reg.blocks(Reg.filter(Reg.visibility(S.regs), S.query)).map(b => <Grid.Block regs={b} />)}
+    </div>
     <footer class="rb-footer">
       <span>Modra © {{ver}}</span>
       <span>Design by <a href="https://github.com/Xaeian" target="_blank">Xaeian</a></span>

@@ -2,14 +2,14 @@
 
 ## `1.2.0` NULL
 
-- Nullable registers _(`?` type)_: "no data" reads show as a gap, not an out-of-scale spike
-- Database stops growing without bound: keeps the last N days _(`history` setting)_, prunes the rest
-- Long chart ranges stay smooth: history is downsampled, `∞` replaced by the retention window
-- 🧹 Clear DB button in settings _(wipes stored history)_
-- Config import reads locale CSV _(`;` separator, decimal comma; e.g. a PL Windows regional setting)_
-- First click registers while editing a field; Enter confirms a value
-- Simulator: each register animated only from its own descriptor row _(type, rws, min/max)_, no cross-register logic; settings hold, telemetry is live from the start, and the random N/A blips are gone
-- Fixed chart crash when a `rule` register's active unit changed its panel grouping _(e.g. after a mode/setpoint write or Clear DB)_
+- Nullable registers _(`?`)_: N/A reads render as gaps, not out-of-scale spikes
+- Bounded history: keep last N days _(`history`)_, old rows pruned automatically
+- Long chart ranges downsampled; `∞` replaced by the retention window
+- 🧹 Clear DB button
+- Config import reads locale CSV _(`;`, decimal comma)_
+- First click works while editing a field; Enter confirms
+- Simulator driven only by each register's own CSV row _(type, rws, min/max)_, no random N/A
+- Fixed chart crash on rule-unit panel regroup
 
 ## `1.1.0` Paper
 

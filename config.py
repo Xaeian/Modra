@@ -22,6 +22,7 @@ STATE_DEFAULT = {
   "timeout": 1000,
   "retries": 3,
   "interval": 500,
+  "history": 14,
   "simulator": False,
 }
 

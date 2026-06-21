@@ -9,6 +9,7 @@ const Monitor = {
   _stack: null,        // ChartStack instance (persists across renders)
   _el: null,           // <div class="rb-charts"> hosting the stack
   _keys: [],           // group keys aligned with _stack._entries
+  _sig: null,          // built layout signature (keys + names per group)
   _rangeBusy: false,   // guards changeRange() against double-clicks
 
   //---------------------------------------------------------- JSX bar
@@ -32,7 +33,7 @@ const Monitor = {
             );
           })}
           <span class="rb-monitor-sep" />
-          {CHART_RANGES.map(r => (
+          {chartRanges().map(r => (
             <button class={"rb-range-btn"
               + (MonitData.range === r.s ? " active" : "")
               + (Monitor._rangeBusy ? " busy" : "")}
@@ -68,13 +69,11 @@ const Monitor = {
   // their context unless they wanted to follow the stream.
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
-    // Detect rule slot flips (e.g. Ctrl:mode rpm → Hz) BEFORE ingest -
-    // refresh() clears buffers via MonitData.sync(), and these rows were
-    // fetched with stale `since` so we discard them; next tick backfills
-    // the new slot from the window edge.
-    const newKeys = Object.keys(MonitData.groups());
-    if(newKeys.length !== this._keys.length
-      || newKeys.some((k, i) => k !== this._keys[i])) {
+    // Rebuild on a layout change BEFORE ingest. A rule slot flip can leave a
+    // same-unit co-member behind (a group keeps its key but loses a member),
+    // so compare the full key+names signature, not just keys, or the fed
+    // series count desyncs from the panel and uPlot throws.
+    if(this._groupSig() !== this._sig) {
       this.refresh();
       this.mount();
       return;
@@ -98,6 +97,7 @@ const Monitor = {
   // trace toggle, panel size change, and boot. Preserves user zoom.
   refresh() {
     MonitData.sync();
+    this._sig = this._groupSig();
     let savedRange = null;
     let savedZoom = null;
     if(this._stack) {
@@ -234,6 +234,14 @@ const Monitor = {
 
   //---------------------------------------------------------- Internals
 
+  // Layout signature: each group key plus its member names. A rule-slot flip
+  // can change a group's members while its key stays, so comparing this (not
+  // keys alone) catches layouts that need a rebuild before the data desyncs.
+  _groupSig() {
+    const groups = MonitData.groups();
+    return Object.keys(groups).map(k => k + "=" + groups[k].names.join(",")).join("|");
+  },
+
   // Push each group's prepared data into its stack panel.
   _feedAll() {
     if(!this._stack) return;
@@ -241,6 +249,11 @@ const Monitor = {
     this._keys.forEach((key, i) => {
       const grp = groups[key];
       if(!grp) return;
+      // Safety net: a series count != the panel's makes uPlot read past its
+      // data array and throw. `update`'s signature check handles real layout
+      // changes; this just refuses to crash if one ever slips through.
+      const panel = this._stack._panels[i];
+      if(panel && grp.names.length !== panel.series.length) return;
       const data = MonitData.prepare(grp.names, grp.stepped);
       if(data) this._stack.setData(i, data);
     });

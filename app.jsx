@@ -12,19 +12,33 @@ let _pointerDown = false;
 
 // Mid-gesture renders tear sliders / selects out from under the user.
 // Defer until the gesture ends.
-function _releasePointer() {
+let _flushTimer = null;
+
+function _flush() {
+  if(_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
   _pointerDown = false;
   if(_renderPending) render();
 }
 document.addEventListener("pointerdown", () => { _pointerDown = true; });
-document.addEventListener("pointerup", _releasePointer);
-// `click` covers synthetic activations (keyboard Enter on a button) that
-// never fired pointerdown.
-document.addEventListener("click", _releasePointer);
-// Safety nets: `pointerdown` without `pointerup` (browser steals the
+// When an input loses focus to a button, its `onBlur` commit queues a
+// deferred render. Flushing it here on `pointerup` would rebuild the DOM and
+// replace the button *before* its `click` arrives, so the first click only
+// commits the input and the button needs a second click. Instead defer the
+// flush by a macrotask: the `click` fires synchronously right after
+// `pointerup`, runs the button's handler on the still-intact DOM, and flushes
+// via the `click` listener below. Only a gesture with no trailing click
+// (a drag, a slider release) falls through to the timer.
+document.addEventListener("pointerup", () => {
+  _pointerDown = false;
+  _flushTimer = setTimeout(_flush, 0);
+});
+// Bubbles after the target button's own `onClick`, so the handler already ran
+// on the intact DOM. Also covers keyboard Enter (synthetic click, no pointer).
+document.addEventListener("click", _flush);
+// Safety nets: a `pointerdown` with no `pointerup` (browser steals the
 // gesture, user Alt+Tabs mid-drag) would otherwise leave the flag stuck.
-document.addEventListener("pointercancel", _releasePointer);
-window.addEventListener("blur", _releasePointer);
+document.addEventListener("pointercancel", _flush);
+window.addEventListener("blur", _flush);
 
 //---------------------------------------------------------- render()
 
@@ -73,10 +87,6 @@ function render() {
     alert.err("Backend unavailable", 0);
     startPortScan();
     return;
-  }
-  // Sticky toast (ms=0) - the user should notice the rotated DB filename.
-  if(scan.migrated_to) {
-    alert.wrn(`Old data.db backed up to ${scan.migrated_to} (regs.csv schema changed)`, 0);
   }
 
   S.regs = regs;

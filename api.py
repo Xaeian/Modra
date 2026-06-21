@@ -17,9 +17,6 @@ class Api:
       "serial_open": link.serial_open,
       "connected": link.connected,
       "addr": link.mb.addr if link.mb and link.connected else None,
-      # Store sets this on boot when DB schema didn't match regs.csv. The
-      # frontend surfaces it as a one-shot warning toast.
-      "migrated_to": link.store.migrated_to,
     }
 
   def info(self) -> list[dict]:
@@ -35,6 +32,7 @@ class Api:
       "timeout": link.state.get("timeout", 1000),
       "retries": link.state.get("retries", 3),
       "interval": link.state.get("interval", 500),
+      "history": link.state.get("history", 14),
     }
 
   #--------------------------------------------------------------------------------- Connection
@@ -129,8 +127,9 @@ class Api:
       since = params.get("since")
       names = params.get("names")
       limit = params.get("limit")
+      bucket = params.get("bucket")
     else:
-      since = names = limit = None
+      since = names = limit = bucket = None
     addr = result.get("addr")
     if not addr and link.state.get("addr"):
       addr = int(link.state["addr"])
@@ -140,7 +139,7 @@ class Api:
       try: since = float(since)
       except (ValueError, TypeError): since = 0.0
       rows = link.run_async(
-        link.store.since(addr, names, since, limit),
+        link.store.since(addr, names, since, limit, bucket),
         timeout=10,
       )
       result["rows"] = rows or []
@@ -182,6 +181,17 @@ class Api:
     try:
       view = link.update_view(monitor=monitor, ignore=ignore)
       return {"ok": True, "view": view}
+    except Exception as e:
+      return {"error": str(e)}
+
+  #----------------------------------------------------------------------------------- Database
+
+  def delete_database(self, _=None) -> dict:
+    """Wipe all stored poll history. Rebuilds an empty DB on next write."""
+    try:
+      if link.reset_database():
+        return {"ok": True}
+      return {"error": "Could not delete data.db (file in use)"}
     except Exception as e:
       return {"error": str(e)}
 

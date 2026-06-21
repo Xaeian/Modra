@@ -1,19 +1,19 @@
 """
 SQLite store for poll-cycle history. One table per address (`addr_1`,
-`addr_5`, ...) with columns typed from regs.csv (INTEGER/REAL/TEXT). On
-boot the schema is compared against the current map - any dropped columns
-or type mismatches rotate the file to `data-YYYYMMDD-HHMMSS.db` and start
-fresh. `self.migrated_to` carries the backup path for the UI.
+`addr_5`, ...) with columns typed from regs.csv (INTEGER/REAL/TEXT).
+Schema is created lazily per addr on first log/query and kept in sync with
+regs.csv by adding any missing columns (`ALTER TABLE ADD COLUMN`). New
+registers migrate in place; only a column removal or type change needs
+`data.db` deleted so it rebuilds fresh.
 
 Rule registers (type=rule with switch + unit list) get one column per slot:
-`Ctrl_Setpoint__0`, `Ctrl_Setpoint__1`, ... Each sample writes only the
+`Ctrl_Setpoint_0`, `Ctrl_Setpoint_1`, ... Each sample writes only the
 currently-active slot; inactive slots are NULL. The framework stays
 agnostic - slots are independent measurements that happen to share a
 modbus address, never combined into one mixed-unit column.
 """
 
-import os, shutil
-from datetime import datetime
+import os, math
 from xaeian.db import SqliteAsyncDatabase, ident
 from xaeian import Print, DIR, PATH, Time
 
@@ -30,9 +30,6 @@ class Store:
     # Used at log time to resolve the active slot from the cache.
     self._rule_meta:dict[str, dict] = {}
     self._tables:set[int] = set()
-    # Backup path if migration just ran, else None. Surfaced to the UI
-    # one-shot via api.status() → frontend toast.
-    self.migrated_to:str|None = None
     self._parse_regs(regs)
 
   def reload(self, regs:list[dict]):
@@ -69,7 +66,7 @@ class Store:
         base = self._col(r["name"])
         for i in range(len(units)):
           self._cols.append({
-            "col": f"{base}__{i}",
+            "col": f"{base}_{i}",
             "type": "REAL",
             "name": r["name"],
             "slot_idx": i,
@@ -99,80 +96,9 @@ class Store:
   async def init(self):
     path = PATH.resolve("data.db")
     DIR.ensure(path, is_file=True)
-    # Check schema before opening for write. Drift → rotate the legacy
-    # file (with WAL/SHM sidecars) and start fresh. Noop on first boot.
-    if os.path.exists(path):
-      await self._migrate_if_drift(path)
     self.db = SqliteAsyncDatabase(path)
     await self.db.exec("PRAGMA journal_mode=WAL")
     p.ok(f"Store: {path} ({len(self._cols)} cols)")
-
-  #--------------------------------------------------------------------------------- Migration
-
-  async def _migrate_if_drift(self, path:str):
-    """Compare each addr_X table against current `_cols`; back the file up
-    if any column was dropped or its type changed (additions are recoverable
-    via ALTER TABLE ADD COLUMN)."""
-    tmp = SqliteAsyncDatabase(path)
-    try:
-      tables = await tmp.get_dicts(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'addr_%'"
-      )
-      addrs = []
-      for r in tables or []:
-        n = r.get("name", "")
-        try: addrs.append(int(n.split("_", 1)[1]))
-        except (IndexError, ValueError): pass
-      if not addrs: return  # empty DB, nothing to compare against
-
-      expected_types = {c["col"]: c["type"].upper() for c in self._cols}
-      expected_cols = set(expected_types)
-      drift_lines = []
-      for addr in addrs:
-        table = self._table(addr)
-        info = await tmp.get_dicts(f"PRAGMA table_info({ident(table)})")
-        actual_types = {r["name"]: str(r["type"]).upper()
-                        for r in (info or []) if r["name"] != "ts"}
-        actual_cols = set(actual_types)
-        dropped = actual_cols - expected_cols
-        retyped = {c for c in actual_cols & expected_cols
-                   if actual_types[c] != expected_types[c]}
-        if dropped or retyped:
-          parts = []
-          if dropped: parts.append(f"-{len(dropped)}")
-          if retyped: parts.append(f"~{len(retyped)}")
-          drift_lines.append(f"{table} ({', '.join(parts)})")
-      if not drift_lines: return
-
-      ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-      backup = path.replace(".db", f"-{ts}.db")
-      # Release the handle before move - Windows holds locks on open DBs.
-      await self._close(tmp)
-      tmp = None
-      shutil.move(path, backup)
-      # WAL/SHM sidecars exist only when WAL is active; move them too so
-      # the new DB starts clean.
-      for suffix in ("-wal", "-shm"):
-        side = path + suffix
-        if os.path.exists(side): shutil.move(side, backup + suffix)
-      self.migrated_to = backup
-      p.wrn(f"DB schema drift: {', '.join(drift_lines)}")
-      p.wrn(f"Backed up to {backup} - fresh DB will be created.")
-    finally:
-      if tmp is not None: await self._close(tmp)
-
-  @staticmethod
-  async def _close(db):
-    """Best-effort close. SqliteAsyncDatabase exposes `close` or `aclose`
-    depending on version - we just want the handle released."""
-    for name in ("close", "aclose"):
-      fn = getattr(db, name, None)
-      if callable(fn):
-        try:
-          result = fn()
-          if hasattr(result, "__await__"): await result
-        except Exception: pass
-        return
 
   async def _ensure_table(self, addr:int):
     if addr in self._tables: return
@@ -233,29 +159,92 @@ class Store:
 
   async def since(
     self, addr:int, names:list[str], since_ts:float, limit:int=5000,
+    bucket:float|None=None,
   ) -> list[dict]:
     """Rows with `ts > since_ts`, ascending. Limit capped at 50000.
 
     Rule registers expand to all slot columns - the frontend picks the
     column matching the currently-active slot. Non-active slots come back
-    as NULL, which the ingest layer treats as "no sample for this slot"."""
+    as NULL, which the ingest layer treats as "no sample for this slot".
+
+    `bucket` (seconds, optional) downsamples long ranges: rows are grouped
+    into `bucket`-wide time buckets and one representative row per bucket is
+    returned - the latest in the bucket, via SQLite's bare-column rule
+    (`MAX(ts)` pulls its whole row). Keeps any range to a bounded point
+    count without per-type aggregation, so enum/bool values stay exact."""
     if not self.db: return []
     limit = min(limit, 50000)
+    # Sanitize bucket: only positive numbers downsample; anything else is raw.
+    try:
+      b = float(bucket) if bucket is not None else None
+    except (ValueError, TypeError):
+      b = None
+    if b is None or not math.isfinite(b) or b <= 0: b = None
     try:
       await self._ensure_table(addr)
       table = self._table(addr)
-      cols = ["ts"]
+      vcols = []
       for n in names:
         meta = self._rule_meta.get(n)
         if meta:
           base = self._col(n)
           for i in range(len(meta["units"])):
-            cols.append(f"{base}__{i}")
+            vcols.append(f"{base}_{i}")
         else:
-          cols.append(self._col(n))
-      cols_sql = ", ".join(ident(c) for c in cols)
-      sql = f"SELECT {cols_sql} FROM {ident(table)} WHERE ts > ? ORDER BY ts ASC LIMIT ?"
-      return await self.db.get_dicts(sql, (since_ts, limit))
+          vcols.append(self._col(n))
+      vcols_sql = ", ".join(ident(c) for c in vcols)
+      if b is None:
+        cols_sql = ", ".join(["ts", vcols_sql]) if vcols_sql else "ts"
+        sql = f"SELECT {cols_sql} FROM {ident(table)} WHERE ts > ? ORDER BY ts ASC LIMIT ?"
+        return await self.db.get_dicts(sql, (since_ts, limit))
+      # Bucketed: MAX(ts) AS ts makes every bare value column take its value
+      # from the latest row in each bucket.
+      sel = ", ".join(["MAX(ts) AS ts", vcols_sql]) if vcols_sql else "MAX(ts) AS ts"
+      sql = (f"SELECT {sel} FROM {ident(table)} WHERE ts > ? "
+             f"GROUP BY CAST(ts / ? AS INT) ORDER BY ts ASC LIMIT ?")
+      return await self.db.get_dicts(sql, (since_ts, b, limit))
     except Exception as e:
       p.err(f"since: {e}")
       return []
+
+  #----------------------------------------------------------------------------------- Retention
+
+  async def prune(self, days:int) -> int:
+    """Delete rows older than `days` from every addr table. Indexed delete,
+    cheap when run often (only newly-aged rows go). SQLite reuses the freed
+    pages for new inserts, so the file size plateaus without VACUUM. Returns
+    total rows removed. `days <= 0` disables retention (keep forever)."""
+    if not self.db or not days or days <= 0: return 0
+    cutoff = Time().to("ts") - days * 86400
+    total = 0
+    try:
+      tables = await self.db.tables() or []
+      for t in tables:
+        if not str(t).startswith("addr_"): continue
+        n = await self.db.exec(f"DELETE FROM {ident(t)} WHERE ts < ?", (cutoff,))
+        total += n or 0
+      if total: p.inf(f"Prune: removed {total} rows older than {days}d")
+    except Exception as e:
+      p.err(f"prune: {e}")
+    return total
+
+  async def reset(self) -> bool:
+    """Wipe history: delete the DB file (and WAL/SHM sidecars), reclaim WAL
+    mode on a fresh file. Tables re-create lazily on the next log/since.
+    Caller must stop the read loop first so no insert keeps the file open.
+    Returns `False` if `data.db` itself stayed (still locked), so the caller
+    reports the failure instead of a false success."""
+    self._tables = set()
+    path = str(PATH.resolve("data.db"))
+    ok = True
+    for suffix in ("", "-wal", "-shm"):
+      f = path + suffix
+      try:
+        if os.path.isfile(f): os.remove(f)
+      except OSError as e:
+        p.wrn(f"reset: {f}: {e}")
+        if suffix == "": ok = False
+    if self.db:
+      await self.db.exec("PRAGMA journal_mode=WAL")
+    if ok: p.ok("Store reset")
+    return ok

@@ -58,6 +58,8 @@
 .rb-val::placeholder { color: var(--null); }
 .rb-val.dirty { background: #fffbe6; border-color: #e6c300; }
 .rb-val.oor   { background: #fff0f0; border-color: #dc3545; color: #dc3545; }
+/* Device-reported N/A label - italic muted reads as metadata, not input. */
+.rb-val.na, .rb-ro.na { font-style: italic; color: var(--text-muted); }
 
 [data-theme="dark"] .rb-val.dirty { background: #3a3520; border-color: #8a7a20; }
 [data-theme="dark"] .rb-val.oor   { background: #3a2020; border-color: #dc3545; color: #ff6b6b; }
@@ -80,6 +82,19 @@
 
 .rb-val-reset:hover { opacity: 1; }
 [data-theme="dark"] .rb-val-reset { color: #ff6b6b; }
+
+/* Native checkbox + "null" label for writable nullable regs. */
+.rb-null-cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rb-null-cb input { margin: 0; cursor: pointer; }
 
 /* readonly */
 .rb-ro {

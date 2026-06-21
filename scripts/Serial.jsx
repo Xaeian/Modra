@@ -1,7 +1,7 @@
 // scripts/Serial.jsx
 
 // Expanded serial config panel (toggled by the ☰ button on Toolbar):
-// baudrate/parity/stop/timeout/wait/retries + address scan + config import/export.
+// baudrate/parity/stop/timeout/interval/retries/history + address scan + config import/export.
 
 const BAUD_OPTS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
 
@@ -31,6 +31,7 @@ const Serial = () => {
   // hitting partial-parse states. `fallback` covers an empty/invalid commit.
   const Num = ({ k, fallback }) => (
     <input class="rb-cfg-input rb-cfg-num" type="text" value={S.serial[k]}
+      onKeyDown={(e) => { if(e.key === "Enter") e.target.blur(); }}
       onBlur={(e) => setSerial({ [k]: parseInt(e.target.value) || fallback })} />
   );
 
@@ -49,6 +50,7 @@ const Serial = () => {
       <Field label="Timeout" unit="ms"><Num k="timeout" fallback={1000} /></Field>
       <Field label="Interval" unit="ms"><Num k="interval" fallback={500} /></Field>
       <Field label="Retries"><Num k="retries" fallback={3} /></Field>
+      <Field label="History" unit="days"><Num k="history" fallback={14} /></Field>
 
       <div class="rb-cfg-sep" />
 
@@ -87,6 +89,11 @@ const Serial = () => {
       <button class="rb-tbtn" onClick={importConfig}>📂 Import</button>
       <button class="rb-tbtn" onClick={exportConfigCSV}>💾 CSV</button>
       <button class="rb-tbtn" onClick={exportConfigINI}>💾 INI</button>
+
+      <div class="rb-cfg-sep" />
+
+      <button class="rb-tbtn rb-danger" onClick={deleteDatabase}
+        title="Permanently wipe stored poll history (data.db)">🧹 Clear DB</button>
     </div>
   );
 };

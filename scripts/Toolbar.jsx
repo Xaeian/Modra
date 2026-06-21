@@ -7,6 +7,12 @@
 const Toolbar = () => {
   const dc = Object.keys(S.dirty).length;
   const lineUp = S.serial_open || S.connected;
+  // Send turns red as a warning when any pending edit is OOR; the write
+  // still goes through and the firmware decides what to do.
+  const dirtyOor = Object.entries(S.dirty).some(([name, val]) => {
+    const reg = S.regs.find(r => r.name === name);
+    return reg && Reg.outOfRange(reg, val);
+  });
   return (
     <div class="rb-toolbar">
       <select class="rb-port" value={S.portInput}
@@ -24,8 +30,8 @@ const Toolbar = () => {
         {S.busy ? "⏳" : "⚡"}
       </button>
       {dc
-        ? <button class="rb-tbtn rb-send" onClick={send} disabled={!S.connected}
-            title="Write pending changes">⬆ Send ({dc})</button>
+        ? <button class={cls("rb-tbtn rb-send", dirtyOor && "oor")} onClick={send} disabled={!S.connected}
+            title={dirtyOor ? "Write pending changes (some are out of range)" : "Write pending changes"}>⬆ Send ({dc})</button>
         : <button class={cls("rb-tbtn", !S.connected && "off")} onClick={sync}
             disabled={!S.connected} title="Force full sync">⬇ Read</button>}
       <button class={cls("rb-tbtn", !dc && "off")} onClick={reset}

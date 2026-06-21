@@ -7,7 +7,8 @@ ignore-set changes without dropping the connection.
 
 import asyncio
 import threading
-from xaeian import Print, Time, serial_scan, logger
+from xaeian import Print, Time, logger
+from xaeian.serial.port import serial_scan
 import config
 from store import Store
 
@@ -35,9 +36,13 @@ class ModbusLink:
     # toggle, serial params change, port change). Without this, every
     # rebuild reseeds the random walk and traces visibly jump.
     self._sim_client = None
+    self._last_prune = Time()
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
     self.run_async(self.store.init())
+    # One-shot prune at boot clears the backlog if a pre-retention DB grew
+    # large while the app was on previous versions.
+    self.run_async(self.store.prune(self._history_days()))
     if self.state:
       log.inf(f"State loaded: {self.state}")
     else:
@@ -45,6 +50,13 @@ class ModbusLink:
     self.scan(False)
 
   #---------------------------------------------------------------------------------- Internals
+
+  def _history_days(self) -> int:
+    """Retention window in days from state; 14 on missing/garbage value."""
+    try:
+      return int(self.state.get("history", 14) or 14)
+    except (ValueError, TypeError):
+      return 14
 
   def run_async(self, coro, timeout=30):
     """Run coroutine on internal event loop. Thread-safe."""
@@ -149,6 +161,11 @@ class ModbusLink:
               return
       if cache is not None:
         await self.store.log(cache, self.mb.addr)
+      # Retention runs on the same loop between polls. Each pass only deletes
+      # the ~60s of rows that just aged out, so it stays cheap on the index.
+      if (Time() - self._last_prune).total_seconds() >= 60:
+        self._last_prune = Time()
+        await self.store.prune(self._history_days())
       interval_s = int(self.state.get("interval", 500)) / 1000
       remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:
@@ -280,7 +297,7 @@ class ModbusLink:
 
   def set_serial(self, params:dict):
     changed = False
-    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval"):
+    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval", "history"):
       if k in params:
         self.state[k] = params[k]
         if k in ("baudrate", "parity", "stopbits", "timeout"):
@@ -293,7 +310,30 @@ class ModbusLink:
       self._clear_cache()
       self._init_mb(self.mb.port)
       log.inf("Serial params changed, reconnect needed")
-    self._save_state()
+    # `_save_state` reads wire params off an open `mb`; when set while
+    # disconnected (e.g. `history` tuned before connecting) persist the state
+    # dict directly instead.
+    if self.mb: self._save_state()
+    else: config.save_state(self.state)
+
+  def reset_database(self) -> bool:
+    """Wipe stored history. Stops the read loop and waits for its in-flight
+    insert to release the DB file before deleting, then resumes polling if it
+    was active. Returns `False` when the file could not be removed."""
+    was_connected = self.connected
+    task = self._read_task
+    self._stop_reads()
+    # Wait for the cancelled read loop to unwind so its open aiosqlite
+    # connection is closed before `store.reset` deletes the file. A still-held
+    # handle makes `os.remove` fail on Windows, silently leaving history on disk.
+    if task:
+      try: task.result(timeout=2)
+      except Exception: pass
+    ok = bool(self.run_async(self.store.reset()))
+    if was_connected and self.mb:
+      self._start_reads()
+    if ok: log.ok("Database reset")
+    return ok
 
   #--------------------------------------------------------------------------------------- Data
 

@@ -15,7 +15,7 @@ There is no per-device configuration UI. The grid, controls, validation rules an
 ## Quick start
 
 ```bash
-py -3.12 -m venv .venv 
+py -3.12 -m venv .venv
 ./.venv/Scripts/activate
 py -m pip install -i pip
 py -m pip install -r requirements.txt
@@ -33,7 +33,7 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 **Controls by type:**
 
-- **`uint` / `int` / `float` / `rule`** - numeric input, accepts `0x..` / `0b..`
+- **`uint`** / **`int`** / **`float`** / **`rule`** - numeric input, accepts `0x..` / `0b..`
 - **`bool`** - HIGH / LOW buttons
 - **`enum`** - one button per label, exclusive
 - **`hex`** - input formatted as `0xNNNN`
@@ -41,10 +41,10 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 **Access badges:**
 
-- **🟡 R** - read-only
-- **🔴 W** - write-only
-- **🔵 RW** - volatile read/write
-- **🟢 RWs** - persisted read/write
+- **🟡R** - read-only
+- **🔴W** - write-only
+- **🔵RW** - volatile read/write
+- **🟢RWs** - persisted read/write
 
 **Visual states:**
 
@@ -55,23 +55,23 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 **Row icons:**
 
-- **📊** - add to chart
-- **🚫** - ignore _(stop polling, hide row)_
-- **⚙** - open slider tweaker _(editable numerics only)_
+- **📊** add to chart
+- **🚫** ignore _(stop polling, hide row)_
+- **⚙** open slider tweaker _(editable numerics only)_
 
 ## Toolbar
 
 ![OPT](options-menu.png)
 
-- **⚡** - connect / disconnect
-- **⬇ Read** - force full sync _(when no dirty edits)_
-- **⬆ Send(n)** - flush pending edits to device
-- **✕ Reset** - discard pending edits
-- **📈** - toggle chart panel
-- **🚫** - toggle show-disabled mode
-- **☰** - toggle settings panel
+- **⚡** connect / disconnect
+- **⬇ Read** force full sync _(when no dirty edits)_
+- **⬆ Send(n)** flush pending edits to device
+- **✕ Reset** discard pending edits
+- **📈** toggle chart panel
+- **🚫** toggle show-disabled mode
+- **☰** toggle settings panel
 
-Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads R/RW/RWs at the configured interval. Validation runs on both sides: frontend marks out-of-range, backend rejects writes outside `min/max`.
+Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads **R**/**RW**/**RWs** at the configured interval. Validation runs on both sides: frontend marks out-of-range, backend rejects writes outside `min/max`.
 
 ## Charts
 
@@ -79,14 +79,14 @@ Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads R/
 
 Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
 
-- **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d` / `∞`
-- **`S` / `M` / `L`** - cycle panel size
+- **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d`, up to the `history` window _(no `∞`: the DB only keeps `history` days)_
+- **`S`** / **`M`** / **`L`** - cycle panel size
 - **tag click** - remove trace
 - **💾** - export all series to CSV
 - **drag on plot** - zoom _(freezes window)_
 - **double-click** - release zoom _(back to live)_
 
-History backfills from `data.db` on range change, so newly added traces fill the full window from disk.
+History backfills from `data.db` on range change, so newly added traces fill the full window from disk. Long ranges are downsampled on read, so they stay light no matter how much history is stored.
 
 ## Hiding registers
 
@@ -98,12 +98,14 @@ History column is preserved; new rows after the ignore land as `NULL`. Membershi
 
 ## Settings ☰
 
-- **Baud / Parity / Stop / Timeout** - wire-level, changing forces reconnect
+- **Baud** / **Parity** / **Stop** / **Timeout** - wire-level, changing forces reconnect
 - **Interval** - polling interval _(ms)_, drives both device polling and UI refresh rate
 - **Retries** - per-block retry budget on read errors
+- **History** - retention window _(days)_; older poll rows are pruned and the chart's max range follows it
 - **Address scan** - enter `1-10, 12, 100-110` → **🔍 Scan**, click result to connect
-- **📂 Import** - load `.ini` / `.csv` into pending edits _(no auto-send)_
-- **💾 CSV / 💾 INI** - export current RWs values to file
+- **📂 Import** - load `.ini` / `.csv` into pending edits _(no auto-send; reads locale CSV with `;` + decimal comma)_
+- **💾 CSV** / 💾 **INI** - export current RWs values to file
+- **🧹 Clear DB** - wipe stored poll history _(data.db)_
 
 ## Keyboard shortcuts
 
@@ -123,7 +125,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 | `data.db` | SQLite poll history, one table per addr | app |
 | `write.log` | audit log of every write | app |
 
-**Schema drift:** if `regs.csv` drops a column or changes a type, the existing DB rotates to `data-YYYYMMDD-HHMMSS.db` and a fresh one is created. A toast on boot tells you where.
+**Schema change:** if you edit `regs.csv`, delete `data.db` and it rebuilds fresh on next boot.
 
 ## Simulator
 
@@ -133,24 +135,13 @@ In `serial.ini`:
 simulator = true
 ```
 
-- **numeric R** - mean-reverting random walk, edge-biased to stay in range
-- **bool R** - rare random toggle
-- **enum R** - rare advance to neighbour state
-- **RWs / W** - static, only user writes change them
+Each register is simulated from its own descriptor row alone _(type, rws, min/max)_, no cross-register logic:
 
-## CLI tools
-
-```bash
-py mb_ctrl.py import # device → config.ini  (RWs only)
-py mb_ctrl.py export # config.ini → device
-py mb_ctrl.py import cfg.csv # device → CSV
-py mb_ctrl.py sudo # unlock admin via Auth:SecretKey
-
-py mb_set.py 1500rpm # motor setpoint
-py mb_set.py 75% # duty mode
-py mb_set.py 50hz # frequency
-py mb_set.py off # motor off
-```
+- **numeric R**: mean-reverting random walk, edge-biased to stay in range
+- **bool R**: rare random toggle
+- **enum R**: rare advance to neighbour state
+- **hex / ver**: stable _(firmware-controlled)_
+- **RWs / W**: static, only user writes change them
 
 ## Build
 
@@ -162,12 +153,3 @@ py -m pip install -r requirements.txt
 ```
 
 `Modra.exe` lands in `.dist/`. Place next to `regs.csv` and run.
-
-## Stack
-
-- **Frontend** - [TonkaJSX](https://tonkajsx.com), JSX-to-DOM at runtime, no build
-- **Charts** - [uPlot](https://github.com/leeoniya/uPlot) via `ChartStack` _(synced multi-panel)_
-- **Modbus** - [`pymodbus`](https://github.com/pymodbus-dev/pymodbus)
-- **Storage** - [`aiosqlite`](https://github.com/omnilib/aiosqlite)
-- **Desktop** - [`pywebview`](https://pywebview.flowrl.com/)
-- **Utils** - [`xaeian`](https://github.com/Xaeian/Python)

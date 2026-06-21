@@ -5,15 +5,45 @@
 
 //---------------------------------------------------------- Chart constants
 
-const CHART_RANGES = [
+// Fixed live windows. The top of the list is appended dynamically from the
+// retention setting (see `chartRanges()`) - there is no ∞, because the DB
+// only keeps `history` days and an unbounded fetch would pull millions of
+// rows into the browser.
+const CHART_RANGE_PRESETS = [
   { label: "2m",  s: 120 },
   { label: "10m", s: 600 },
   { label: "1h",  s: 3600 },
   { label: "6h",  s: 21600 },
   { label: "24h", s: 86400 },
   { label: "7d",  s: 604800 },
-  { label: "∞",   s: Infinity },
 ];
+
+// Downsampling. A long range fetched raw is millions of points; instead the
+// backend buckets it to ~`CHART_TARGET_POINTS` (see `store.since` `bucket`).
+// Ranges at or below `CHART_RAW_MAX_SEC` come back raw (full resolution).
+const CHART_TARGET_POINTS = 2000;
+const CHART_RAW_MAX_SEC = 3600;
+// Hard ceiling on in-memory points per trace. A long window watched live
+// would otherwise accumulate raw-rate samples forever; on overflow the
+// buffer is halved by decimation. Headroom above the backend target.
+const CHART_BUF_CAP = 8000;
+
+// Bucket width (seconds) for the active range, or 0 for raw. Drives both the
+// backend query and the gap threshold so the two stay consistent.
+function chartBucket(range) {
+  if(range <= CHART_RAW_MAX_SEC) return 0;
+  return range / CHART_TARGET_POINTS;
+}
+
+// Range buttons: presets shorter than the retention window, capped by a
+// final button equal to the window itself (the honest "show everything we
+// keep"). `history` comes from the backend (serial.ini), default 14 days.
+function chartRanges() {
+  const days = Math.max(1, parseInt(S.serial?.history) || 14);
+  const maxS = days * 86400;
+  const presets = CHART_RANGE_PRESETS.filter(r => r.s < maxS);
+  return [...presets, { label: days + "d", s: maxS }];
+}
 
 // One palette per panel index. Series within a panel rotate through the
 // same palette so multi-trace panels stay visually distinct. 10 hues each;
@@ -57,10 +87,6 @@ const CHART_SIZE_DEFAULT = "M";
 // than routine read jitter, shorter than a real disconnect.
 const GAP_TICKS = 15;
 const GAP_MIN_SEC = 5;
-
-// Fallback x-window for empty buffers so first paint doesn't render a
-// degenerate [0,1] axis.
-const EMPTY_RANGE_SEC = 60;
 
 //---------------------------------------------------------- Time formatting
 
@@ -139,8 +165,8 @@ function chartToNum(reg, value) {
 //---------------------------------------------------------- CSV export
 
 // Export `names` from `buf` as a single CSV. Aligns on the union of
-// timestamps - missing samples are blank cells. Decimals per column derived
-// from `Reg.step` so values match what the Grid shows.
+// timestamps - missing samples are blank cells. Decimals per column come from
+// `Reg.decimals` so values match what the Grid shows.
 function chartExportCSV(names, buf) {
   const allTs = new Set();
   for(const n of names) {
@@ -154,8 +180,7 @@ function chartExportCSV(names, buf) {
     for(const p of (buf[n] || [])) m.set(p.ts, p.v);
     maps[n] = m;
     const reg = S.regs.find(r => r.name === n);
-    const step = reg ? Reg.step(reg) : 1;
-    decs[n] = step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+    decs[n] = reg ? Reg.decimals(reg) : 0;
   }
   const rows = sorted.map(ts => {
     const row = { time: chartFmtCSV(ts) };
@@ -173,7 +198,7 @@ function chartExportCSV(names, buf) {
 // Time-series buffer for monitored registers.
 //   `_buf[name]`    → [{ts, v}, ...] chronological
 //   `_lastTs[name]` → newest ts seen; used as `since` filter when polling
-//   `range`         → window length in seconds; Infinity = show all
+//   `range`         → window length in seconds (always finite)
 // Keys are full register names (`Group:Field`). `_buf` is accessed by
 // Monitor.jsx for CSV export to avoid a redundant copy.
 const MonitData = {
@@ -188,42 +213,27 @@ const MonitData = {
 
   //---------------------------------------------------------- X range
 
-  // Bounded → right edge pinned to "now". Unbounded (∞) → fits to buffer
-  // with 2% pad so extreme points aren't clipped to the axis.
+  // Right edge pinned to "now".
   xRange() {
-    if(isFinite(this.range)) {
-      const now = Date.now() / 1000;
-      return [now - this.range, now];
-    }
-    const [lo, hi] = this._bufExtent();
-    if(lo == null) {
-      const now = Date.now() / 1000;
-      return [now - EMPTY_RANGE_SEC, now];
-    }
-    const pad = Math.max((hi - lo) * 0.02, 1);
-    return [lo - pad, hi + pad];
-  },
-
-  _bufExtent() {
-    let lo = Infinity, hi = -Infinity;
-    for(const pts of Object.values(this._buf)) {
-      if(!pts.length) continue;
-      if(pts[0].ts < lo) lo = pts[0].ts;
-      if(pts[pts.length - 1].ts > hi) hi = pts[pts.length - 1].ts;
-    }
-    return isFinite(lo) ? [lo, hi] : [null, null];
+    const now = Date.now() / 1000;
+    return [now - this.range, now];
   },
 
   //---------------------------------------------------------- Poll params
 
-  // Poll interval (ms) → sample-gap threshold (seconds).
+  // Poll interval (ms) → sample-gap threshold (seconds). On a decimated long
+  // range samples are legitimately ~`bucket` apart, so the gap scales with the
+  // `bucket`; otherwise a downsampled line would be drawn as all breaks.
   gapThreshold() {
-    const ms = parseInt(S.serial?.interval || 200);
-    return Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
+    const ms = parseInt(S.serial?.interval) || 500;
+    const base = Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
+    const bucket = chartBucket(this.range);
+    return bucket > 0 ? Math.max(base, bucket * 3) : base;
   },
 
   // `since = min(lastTs)` so a single fetch covers even the slowest series.
-  // Returns null when nothing is monitored - poll falls back to plain cache.
+  // `bucket` downsamples long ranges server-side. Returns null when nothing
+  // is monitored - poll falls back to plain cache.
   readParams() {
     if(!S.monitor.size) return null;
     const vals = Object.values(this._lastTs);
@@ -231,25 +241,20 @@ const MonitData = {
       since: vals.length ? Math.max(0, Math.min(...vals)) : 0,
       names: [...S.monitor],
       limit: 5000,
+      bucket: chartBucket(this.range),
     };
   },
 
   //---------------------------------------------------------- Ingest / trim
 
-  // Column name for the register's *currently active* slot. Plain regs go
-  // straight to their base column. Rule regs (slot-switching) pick the slot
-  // matching the switch register's confirmed value (`S.values`, not dirty).
-  // Returns null when the switch hasn't been polled or its value doesn't
-  // match any slot label - ingest skips those rows without advancing lastTs.
+  // DB column for the reg's active slot, or null when no slot resolves
+  // (rule reg with switch=off, unpolled, etc). Callers gate on this.
   _activeColumn(reg) {
     if(!reg) return null;
     const base = reg.name.replace(":", "_");
-    if(reg.type !== "rule" || !reg.rule?.switch || !Array.isArray(reg.unit)) return base;
-    const sv = S.values[reg.rule.switch];
-    if(sv == null) return null;
-    const label = String(sv).toLowerCase();
-    const idx = reg.unit.findIndex(u => String(u).toLowerCase() === label);
-    return idx >= 0 ? base + "__" + idx : null;
+    if(reg.type !== "rule") return base;
+    const idx = Reg.ruleIndex(reg, true);
+    return idx !== null ? `${base}_${idx}` : null;
   },
 
   // Backend may return overlapping ranges, so rows older than the per-name
@@ -282,14 +287,26 @@ const MonitData = {
       }
     }
     this.trim();
+    this.cap();
   },
 
-  // Drop samples older than the current window. Unbounded keeps everything.
+  // Drop samples older than the current window.
   trim() {
-    if(!isFinite(this.range)) return;
     const cutoff = Date.now() / 1000 - this.range;
     for(const buf of Object.values(this._buf)) {
       while(buf.length > 1 && buf[0].ts < cutoff) buf.shift();
+    }
+  },
+
+  // Hard memory backstop. A long window watched live keeps appending at the
+  // poll rate even though the backend decimates the historical backfill;
+  // halving by stride keeps the trace bounded while preserving its span.
+  cap() {
+    for(const name of Object.keys(this._buf)) {
+      const buf = this._buf[name];
+      if(buf.length > CHART_BUF_CAP) {
+        this._buf[name] = buf.filter((_, i) => i % 2 === 0);
+      }
     }
   },
 
@@ -299,14 +316,12 @@ const MonitData = {
   // of starting from "now" with no history.
   setRange(s) {
     this.range = s;
-    const cutoff = isFinite(s) ? Date.now() / 1000 - s : 0;
+    const cutoff = Date.now() / 1000 - s;
     for(const n of Object.keys(this._lastTs)) {
       if(this._lastTs[n] > cutoff) this._lastTs[n] = cutoff;
     }
-    if(isFinite(s)) {
-      for(const n of Object.keys(this._buf)) {
-        this._buf[n] = (this._buf[n] || []).filter(p => p.ts >= cutoff);
-      }
+    for(const n of Object.keys(this._buf)) {
+      this._buf[n] = (this._buf[n] || []).filter(p => p.ts >= cutoff);
     }
   },
 
@@ -323,7 +338,7 @@ const MonitData = {
         delete this._activeSlot[n];
       }
     }
-    const backfill = isFinite(this.range) ? Date.now() / 1000 - this.range : 0;
+    const backfill = Date.now() / 1000 - this.range;
     for(const n of S.monitor) {
       const reg = S.regs.find(r => r.name === n);
       const col = this._activeColumn(reg);
@@ -342,13 +357,14 @@ const MonitData = {
   //---------------------------------------------------------- Grouping
 
   // Bucket monitored registers into panels sharing unit + scale (or by name
-  // for bool/enum). Returns `{key: {names, idx, stepped, type, unit, enumLabels?}}`.
+  // for bool/enum). Rule regs without an active slot are gated out - no
+  // sample can land, so a panel would stay perpetually empty.
   groups() {
     const out = {};
     let idx = 0;
     for(const name of S.monitor) {
       const reg = S.regs.find(r => r.name === name);
-      if(!reg) continue;
+      if(!reg || !this._activeColumn(reg)) continue;
       const key = chartGroupKey(reg);
       if(!out[key]) {
         const grp = {
@@ -408,5 +424,5 @@ const MonitData = {
   },
 
   // Wipe the buffer. Called on disconnect so the next session starts fresh.
-  clear() { this._buf = {}; this._lastTs = {}; },
+  clear() { this._buf = {}; this._lastTs = {}; this._activeSlot = {}; },
 };

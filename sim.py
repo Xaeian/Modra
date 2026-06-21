@@ -11,7 +11,10 @@ traces rather than a clean sinusoid or pure noise.
   bool R     → toggles with small per-tick probability
   enum R     → advances one slot with small per-tick probability
   hex/ver    → stable (firmware-controlled)
-  RWs/W      → never drifts (user-controlled)
+  RW/RWs/W   → never drifts (user-controlled)
+
+Each register is simulated from its own descriptor row alone (type, rws,
+min/max) - no cross-register logic, no mode/setpoint dependencies.
 
 Inspired by the PHP `rand.php` in `php-inspiration/`. Per-register tuning
 (sigma/gain/chance) is seeded from `(rid, name)` so adjacent channels
@@ -179,8 +182,8 @@ class SimulatedClient:
     if typ in ("uint", "int", "rule"):
       mn, mx = self._bounds(entry)
       if mn is not None and mx is not None and mx > mn:
-        # Start somewhere in the middle 60% of the range so the walk has
-        # room to drift either way before hitting a wall.
+        # Start in the middle 60% of the range so the walk has room to drift
+        # either way before hitting a wall.
         rng = random.Random((entry["id"] << 16) ^ hash(entry.get("fullname", "")))
         start = mn + (mx - mn) * (0.2 + 0.6 * rng.random())
         try: return self._to_raw(entry, start)
@@ -203,6 +206,10 @@ class SimulatedClient:
     if rws != "R": return
     # Identity types (firmware version, status codes) aren't telemetry.
     if typ in ("hex", "ver"): return
+    # Pair halves stay at their initial value - drifting them independently
+    # would produce meaningless uint32 / float words.
+    rule = entry.get("rule") or {}
+    if "high" in rule or "low" in rule: return
 
     if typ == "bool":
       chance = self._param(rid, "bool_c", BOOL_CHANCE_MIN, BOOL_CHANCE_MAX)

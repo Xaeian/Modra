@@ -12,41 +12,33 @@ const JSX = {
     let _deferValue;
     let _ref;
     Object.entries(props || {}).forEach(([name, value]) => {
-      // Skip internal props
       if(name === "children" || name === "key") return;
-      // Handle ref callback/object
       if(name === "ref") {
         _ref = value;
         return;
       }
-      // Handle class/className
       if(name === "class" || name === "className") {
         const className = JSX.NormalizeClass(value);
         if(className) element.className = className;
         return;
       }
-      // Handle htmlFor -> for
       if(name === "htmlFor") {
         if(value === false || value == null) return;
         element.setAttribute("for", value.toString());
         return;
       }
-      // Handle style object/string
       if(name === "style") {
         JSX.AssignStyle(element, value);
         return;
       }
-      // Handle dataset object
       if(name === "dataset" && value && typeof value === "object") {
         JSX.AssignData(element, value);
         return;
       }
-      // Handle events
       if(name.startsWith("on") && typeof value === "function") {
         element.addEventListener(JSX.GetEventName(name), value);
         return;
       }
-      // Handle prop aliases
       if(name === "readonly") name = "readOnly";
       else if(name === "tabindex") name = "tabIndex";
       // Defer select value until options exist
@@ -145,7 +137,7 @@ const JSX = {
     const attrOnly = name.startsWith("data-") || name.startsWith("aria-");
     const canAssign = !attrOnly && JSX.CanAssignProperty(element, name);
     if(value == null) return;
-    // Keep false for aria/data, set false for boolean DOM props, skip rest
+    // false: write attr for aria/data, unset boolean props, drop otherwise
     if(value === false) {
       if(attrOnly) {
         element.setAttribute(name, "false");
@@ -156,7 +148,7 @@ const JSX = {
       }
       return;
     }
-    // Keep true for boolean DOM props, set attribute for rest
+    // true: set boolean props, else empty attr
     if(value === true) {
       if(canAssign && typeof element[name] === "boolean") {
         element[name] = true;
@@ -170,7 +162,7 @@ const JSX = {
       element[name] = value;
       return;
     }
-    // Keep object/function on unknown expando props
+    // attributes can't hold object/function, stash as expando
     if(
       !attrOnly &&
       !(name in element) &&
@@ -179,7 +171,6 @@ const JSX = {
       element[name] = value;
       return;
     }
-    // Set attribute
     element.setAttribute(name, value.toString());
   },
   CanAssignProperty: (element, name) => {

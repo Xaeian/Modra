@@ -6,12 +6,22 @@ Parses regs.csv → typed map for uint/int/bool/enum/hex/ver/rule, supports
 always complete - `ignore_set` filters at read time only (pair-aware) so
 the DB schema and `regs_info()` cover every register and the frontend
 can show or hide ignored entries on its own.
+
+A `?` prefix on `type` marks the register nullable - a reserved raw
+value decodes to `None`. Defaults follow SunSpec; the `null` CSV column
+overrides per-register. See modbus.md for the full table.
 """
 
-import asyncio, struct
+import asyncio, math, struct
 from pymodbus.client import AsyncModbusSerialClient
 from typing import Literal
 from xaeian import CSV
+
+# SunSpec-aligned sentinels. Float pairs use IEEE-754 NaN at runtime, so
+# they don't appear in NULL_SENTINELS_32.
+NULL_SENTINELS_16 = {"uint": 0xFFFF, "hex": 0xFFFF, "int": 0x8000, "bool": 0xFFFF}
+NULL_SENTINELS_32 = {"uint": 0xFFFFFFFF, "hex": 0xFFFFFFFF, "int": 0x80000000}
+NULLABLE_BASE_TYPES = {"uint", "int", "hex", "float", "bool"}
 
 class ModbusMaster:
 
@@ -69,6 +79,42 @@ class ModbusMaster:
       try: return float(s)
       except ValueError: return s
 
+  @staticmethod
+  def _parse_null_override(val) -> int|None:
+    """Sentinel from the `null` CSV column. Accepts dec / `0x..` / `0b..`,
+    signed for `int`. Empty / `-` → type default."""
+    if val is None: return None
+    s = str(val).strip()
+    if s == "" or s == "-": return None
+    try: return int(s, 0)
+    except ValueError:
+      try: return int(float(s))
+      except (ValueError, TypeError): return None
+
+  @staticmethod
+  def _compute_null_raw_16(type_val:str, nullable:bool, override:int|None) -> int|None:
+    if not nullable: return None
+    if override is not None:
+      # Signed CSV input (e.g. -1) wraps into unsigned raw space so it
+      # matches the on-wire word directly.
+      if type_val == "int" and override < 0:
+        override = override + 0x10000
+      return override & 0xFFFF
+    return NULL_SENTINELS_16.get(type_val)
+
+  @staticmethod
+  def _compute_null_raw_32(h_entry:dict) -> int|None:
+    if not h_entry.get("nullable"): return None
+    typ = h_entry["type"]
+    # Float pairs use NaN at decode time, no integer comparison needed.
+    if typ == "float": return None
+    override = h_entry.get("null_override")
+    if override is not None:
+      if typ == "int" and override < 0:
+        override = override + 0x100000000
+      return override & 0xFFFFFFFF
+    return NULL_SENTINELS_32.get(typ)
+
   def __init__(
     self,
     port:str,
@@ -117,6 +163,12 @@ class ModbusMaster:
             if pair_key not in self.pairs:
               self.pairs[pair_key] = {"group": group, "name": pair_name}
             self.pairs[pair_key][part] = entry
+    # Pair sentinels need the high/low table built first.
+    for pair_info in self.pairs.values():
+      h = pair_info.get("high")
+      if h:
+        h["null_raw32"] = self._compute_null_raw_32(h)
+        pair_info["null_raw32"] = h["null_raw32"]
     self.cache_raw: dict[int, int|None] = {rid: None for rid in self.id_map}
     self.client: AsyncModbusSerialClient|None = None
 
@@ -130,10 +182,17 @@ class ModbusMaster:
     if hex_val != reg_id: hex_str = f"0x{reg_id:02X}"
     rws_map = {"R": "R", "RW": "RW", "RWS": "RWs", "W": "W"}
     rws_val = rws_map.get(str(row.get("rws", "R")).strip().upper(), "R")
-    type_val = str(row.get("type", "uint")).strip().lower()
+    # `?` prefix → nullable. Strip so downstream sees the plain type.
+    type_raw = str(row.get("type", "uint")).strip().lower()
+    nullable = type_raw.startswith("?")
+    type_val = type_raw[1:].strip() if nullable else type_raw
+    null_override = self._parse_null_override(row.get("null"))
     entry = {
       "id": reg_id, "hex": hex_str, "group": group, "name": name, "fullname": name_full,
       "rws": rws_val, "type": type_val,
+      "nullable": nullable,
+      "null_override": null_override,
+      "null_raw": self._compute_null_raw_16(type_val, nullable, null_override),
       "unit": self._parse_unit(row.get("unit", "")),
       "scale": self._parse_scale(row.get("scale", "1")),
       "min": self._parse_minmax(row.get("min", "")),
@@ -166,7 +225,7 @@ class ModbusMaster:
     if self.client:
       self.client.close()
       self.client = None
-      
+
   async def reconnect(self):
     """Close + reopen. Resets pymodbus framer state after a stalled frame."""
     await self.disconnect()
@@ -259,17 +318,25 @@ class ModbusMaster:
   #------------------------------------------------------------------------------------ helpers
 
   @staticmethod
-  def _pair_decode(raw32:int, ptype:str):
-    """uint32 word → engineering value. `float` pairs reinterpret as IEEE
-    754 single-precision (big-endian); other types stay as plain uint32."""
+  def _pair_decode(raw32:int, ptype:str, null_raw32:int|None=None):
+    """32-bit word → value. Float pairs decode as IEEE-754 big-endian
+    (NaN → `None`); integer pairs match `null_raw32` → `None`."""
     if ptype == "float":
-      return struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
+      val = struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
+      return None if math.isnan(val) else val
+    if null_raw32 is not None and raw32 == null_raw32:
+      return None
     return raw32
 
   @staticmethod
-  def _pair_encode(val, ptype:str) -> int:
-    """Inverse of `_pair_decode`. Non-float accepts int or `0x..` string."""
-    if val is None: return 0
+  def _pair_encode(val, ptype:str, null_raw32:int|None=None) -> int|None:
+    """Inverse of `_pair_decode`. `None` returns the sentinel (NaN for
+    float, `null_raw32` for int) or `None` if the pair isn't nullable -
+    the caller drops the write in that case."""
+    if val is None:
+      if ptype == "float":
+        return int.from_bytes(struct.pack(">f", float("nan")), "big")
+      return null_raw32
     if ptype == "float":
       return int.from_bytes(struct.pack(">f", float(val)), "big")
     if isinstance(val, str): return int(val, 0) & 0xFFFFFFFF
@@ -367,6 +434,14 @@ class ModbusMaster:
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry) if typ == "rule" else None
     unit = self._get_unit(entry, rule_idx)
+    # Nullable check runs before any type-specific decode: a `?int` with
+    # raw 0x8000 reads as `None`, not -32768. min/max validation in the
+    # frontend skips null values, so an N/A row isn't flagged out-of-range.
+    # Nullable sentinel takes precedence over type decode so an N/A read
+    # never gets shown as -32768 / 65535.
+    null_raw = entry.get("null_raw")
+    if null_raw is not None and raw == null_raw:
+      return (None, unit)
     scale = self._get_scale(entry, rule_idx)
     if typ == "enum":
       val = entry.get("enum", {}).get(int(raw), str(int(raw)))
@@ -381,20 +456,20 @@ class ModbusMaster:
 
   def _encode_value(
     self, reg_id:int, value:any,
-    pending_raw:dict[int, int]=None, validate:bool=True,
-  ) -> int:
+    pending_raw:dict[int, int]=None,
+  ) -> int|None:
+    """Engineering value → 16-bit raw. `None` returns the sentinel on
+    nullable regs, or `None` on non-nullable ones (caller drops the
+    write). min/max are advisory - OOR writes go through; the frontend
+    marks them red but the firmware decides what to do."""
     entry = self.id_map.get(reg_id)
-    if not entry: return int(value) & 0xFFFF
+    if not entry:
+      return None if value is None else int(value) & 0xFFFF
+    if value is None:
+      return entry.get("null_raw")
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry, pending_raw) if typ == "rule" else None
     scale = self._get_scale(entry, rule_idx)
-    if validate and typ not in ("bool", "enum", "ver"):
-      mn, mx = self._get_minmax(entry, rule_idx)
-      fval = float(value)
-      if mn is not None and fval < mn:
-        raise ValueError(f"{entry['fullname']}: {value} < min ({mn})")
-      if mx is not None and fval > mx:
-        raise ValueError(f"{entry['fullname']}: {value} > max ({mx})")
     if typ == "bool": return 1 if value else 0
     elif typ == "enum":
       enum_map = entry.get("enum", {})
@@ -437,7 +512,9 @@ class ModbusMaster:
           if rws_filter and h["rws"] not in rws_filter: continue
           hr, lr = raw_data.get(h["id"]), raw_data.get(l["id"])
           if hr is not None and lr is not None:
-            val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"))
+            val = self._pair_decode(
+              (hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"),
+            )
             emitted_pairs.add(pair_key)
             group, name = info.get("group"), info.get("name")
             if grouped:
@@ -468,23 +545,26 @@ class ModbusMaster:
     if grouped is None: grouped = self._detect_grouped(data)
     raw = {}
     pair_ids = self._get_pair_ids()
-    # Handle pairs
+    # Key-presence (not val-truthiness) gates pair emission so `None`
+    # reaches `_pair_encode` and emits the sentinel for nullable pairs.
     for pair_key, pair_info in self.pairs.items():
       group, name = pair_info.get("group"), pair_info.get("name")
-      val = None
-      if grouped and group in data and isinstance(data[group], dict):
-        val = data[group].get(name)
-      elif not grouped:
-        val = data.get(pair_key)
-      if val is not None:
-        if isinstance(val, tuple): val = val[0]
-        h, l = pair_info.get("high"), pair_info.get("low")
-        ptype = h.get("type", "uint") if h else "uint"
-        val32 = self._pair_encode(val, ptype)
-        if h and (rws_filter is None or h["rws"] in rws_filter):
-          raw[h["id"]] = (val32 >> 16) & 0xFFFF
-        if l and (rws_filter is None or l["rws"] in rws_filter):
-          raw[l["id"]] = val32 & 0xFFFF
+      if grouped:
+        block = data.get(group)
+        if not isinstance(block, dict) or name not in block: continue
+        val = block[name]
+      else:
+        if pair_key not in data: continue
+        val = data[pair_key]
+      if isinstance(val, tuple): val = val[0]
+      h, l = pair_info.get("high"), pair_info.get("low")
+      ptype = h.get("type", "uint") if h else "uint"
+      val32 = self._pair_encode(val, ptype, h.get("null_raw32") if h else None)
+      if val32 is None: continue
+      if h and (rws_filter is None or h["rws"] in rws_filter):
+        raw[h["id"]] = (val32 >> 16) & 0xFFFF
+      if l and (rws_filter is None or l["rws"] in rws_filter):
+        raw[l["id"]] = val32 & 0xFFFF
     # Flatten data
     flat = {}
     if grouped:
@@ -506,11 +586,13 @@ class ModbusMaster:
       if entry["type"] == "rule":
         rule_entries.append((entry, val))
       else:
-        raw[entry["id"]] = self._encode_value(entry["id"], val)
+        rv = self._encode_value(entry["id"], val)
+        if rv is not None: raw[entry["id"]] = rv
     # Pass 2: rule with pending
     for entry, val in rule_entries:
       if self._resolve_rule_index(entry, raw) is None: continue
-      raw[entry["id"]] = self._encode_value(entry["id"], val, raw)
+      rv = self._encode_value(entry["id"], val, raw)
+      if rv is not None: raw[entry["id"]] = rv
     return raw
 
   #--------------------------------------------------------------------------------- public API
@@ -593,7 +675,9 @@ class ModbusMaster:
           if h and l:
             hr, lr = self.cache_raw.get(h["id"]), self.cache_raw.get(l["id"])
             if hr is not None and lr is not None:
-              val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"))
+              val = self._pair_decode(
+                (hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"),
+              )
           group, name = info.get("group"), info.get("name")
           if grouped:
             if group not in data: data[group] = {}
@@ -641,6 +725,7 @@ class ModbusMaster:
     info = {
       "id": reg_id, "hex": entry["hex"], "name": entry["fullname"],
       "group": entry["group"], "type": entry["type"], "rws": entry["rws"],
+      "nullable": entry.get("nullable", False),
       "unit": entry.get("unit"), "scale": entry.get("scale", 1.0),
       "min": entry.get("min"), "max": entry.get("max"), "desc": entry.get("desc"),
       "default": entry.get("default"),
@@ -662,14 +747,16 @@ class ModbusMaster:
     h, l = pair.get("high"), pair.get("low")
     if not h or not l: return None
     ptype = h.get("type", "uint")
-    # Float pairs carry engineering values - unit/scale/min/max come from
-    # the high half. uint32 pairs (no scaling) default to the full 32-bit
-    # range with no unit.
+    # Float pairs carry engineering metadata (unit/scale/min/max) from
+    # the high half and are implicitly nullable via NaN. uint32 pairs
+    # default to the full 32-bit range and need `?` for nullability.
     is_float = ptype == "float"
+    nullable = is_float or bool(h.get("nullable"))
     return {
       "id": [h["id"], l["id"]], "hex": [h["hex"], l["hex"]],
       "name": pair_key, "group": pair.get("group"), "type": ptype,
       "rws": h["rws"],
+      "nullable": nullable,
       "unit":  h.get("unit")        if is_float else None,
       "scale": h.get("scale", 1.0)  if is_float else 1.0,
       "min":   h.get("min")         if is_float else 0,

@@ -60,6 +60,12 @@ function resetOne(reg) { delete S.dirty[reg.name]; render(); }
 
 function reset() { S.dirty = {}; render(); }
 
+// Null checkbox: when `cur` is `null`, revert the pending edit; else set pending `null`.
+function toggleNull(reg) {
+  const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
+  cur == null ? resetOne(reg) : edit(reg, null);
+}
+
 //---------------------------------------------------------- UI toggles
 
 function monitor(reg) {
@@ -207,6 +213,27 @@ async function setSerial(params) {
     alert.wrn("Serial params changed, reconnect needed");
   }
   else if(S.serial.interval !== prev.interval) restartPoll();
+  // `history` drives the chart's max range. If it shrank below the active
+  // window, snap the chart down so the active button matches and we stop
+  // querying a span wider than retention keeps.
+  const maxS = Math.max(1, parseInt(S.serial.history) || 14) * 86400;
+  if(S.monitor.size && MonitData.range > maxS) Monitor.changeRange(maxS);
+  render();
+}
+
+//---------------------------------------------------------- Database
+
+// Wipe stored poll history. Confirms first (irreversible), then clears the
+// live chart buffer so the panels don't show pre-delete samples that no
+// longer exist on disk.
+async function deleteDatabase() {
+  if(typeof confirm === "function"
+    && !confirm("Delete all stored history? This wipes data.db and cannot be undone.")) return;
+  const res = await API.delete_database();
+  if(res?.error) { alert.err(res.error); return; }
+  MonitData.clear();
+  if(S.monitor.size) { Monitor.refresh(); Monitor.mount(); }
+  alert.ok("Database cleared");
   render();
 }
 
@@ -235,6 +262,7 @@ async function importConfig() {
   );
   const ext = file.name.split(".").pop().toLowerCase();
   let count = 0;
+  let srcNote = "";
   if(ext === "ini") {
     const ini = await INI.load(file);
     if(!ini) return;
@@ -255,16 +283,29 @@ async function importConfig() {
     }
   }
   else if(ext === "csv") {
-    const rows = await CSV.load(file);
+    let text = await file.text();
+    // A PL/DE regional locale sets the list separator to ';' and the decimal
+    // to ',', so a cfg CSV saved under it (commonly via Excel) comes back ';'
+    // separated with "1,5" not "1.5", often with a UTF-8 BOM. Detect and
+    // normalize here, at the app layer - the CSV lib stays a plain comma
+    // parser. More ';' than ',' in the header is the tell.
+    if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const head = text.split(/\r?\n/).find(l => l.trim()) || "";
+    const localeCsv = (head.split(";").length - 1) > (head.split(",").length - 1);
+    const rows = CSV.parse_text(text, localeCsv ? ";" : ",");
     for(const row of rows) {
-      const name = row.name, val = row.value;
+      const name = row.name;
+      let val = row.value;
+      // With ';' as the separator the comma is free to be a decimal point.
+      if(localeCsv && typeof val === "string") val = val.replace(/^(-?\d+),(\d+)$/, "$1.$2");
       if(name && val !== null && val !== "" && rwSet.has(name)) {
         editSilent({ name }, val);
         count++;
       }
     }
+    if(localeCsv) srcNote = " (locale CSV: ';' separator, decimal comma)";
   }
-  if(count) alert.inf(`Loaded ${count} registers from ${file.name}`);
+  if(count) alert.inf(`Loaded ${count} registers from ${file.name}${srcNote}`);
   else alert.wrn("No matching registers found");
   render();
 }

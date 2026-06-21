@@ -28,6 +28,11 @@ const Reg = (() => {
     return val[0] ?? fallback;
   }
 
+  // Decimal places implied by a sub-unit step (0.001 → 3). >=1 → integer.
+  function _decimals(s) {
+    return s < 1 ? Math.ceil(-Math.log10(s)) : 0;
+  }
+
   //---------------------------------------------------------- Identity
 
   // Pair registers store `id` as `[hi, lo]`; collapse to the two extremes.
@@ -123,13 +128,13 @@ const Reg = (() => {
       return "0x" + (value >>> 0).toString(16).toUpperCase().padStart(8, "0");
     }
     if(reg.type === "hex") return "0x" + (value >>> 0).toString(16).toUpperCase().padStart(4, "0");
-    if(typeof value === "number") {
-      const s = step(reg);
-      const dec = s < 1 ? Math.ceil(-Math.log10(s)) : 0;
-      return value.toFixed(dec);
-    }
+    if(typeof value === "number") return value.toFixed(_decimals(step(reg)));
     return String(value);
   }
+
+  // Decimal places the register's scale implies. Shared by `display` and the
+  // chart CSV export so both round numbers the same way.
+  const decimals = (reg) => _decimals(step(reg));
 
   // Numerics accept `0x..` / `0b..` prefixes. Enum/bool/ver keep the raw
   // string so the caller can map labels.
@@ -155,8 +160,7 @@ const Reg = (() => {
   // Snap to the smallest representable value at the register's scale.
   function snap(value, step) {
     if(step >= 1) return Math.round(value);
-    const dec = Math.ceil(-Math.log10(step));
-    return parseFloat(value.toFixed(dec));
+    return parseFloat(value.toFixed(_decimals(step)));
   }
 
   //---------------------------------------------------------- Predicates
@@ -167,6 +171,10 @@ const Reg = (() => {
   const isEnum = (reg) => reg.type === "enum" && reg.enum;
   const isBool = (reg) => reg.type === "bool";
   const isVer  = (reg) => reg.type === "ver";
+
+  // Device-reported null - tells a real N/A apart from never-polled.
+  const isNA = (reg, value) =>
+    !!reg.nullable && value == null && S.connected && !isInactive(reg);
 
   function outOfRange(reg, value) {
     if(value == null || typeof value !== "number") return false;
@@ -180,8 +188,9 @@ const Reg = (() => {
   function tooltip(reg) {
     const hexStr = Array.isArray(reg.hex) ? reg.hex.join(", ") : reg.hex;
     const unitStr = Array.isArray(reg.unit) ? reg.unit.join("/") : reg.unit;
+    const typeStr = reg.nullable ? `?${reg.type}` : reg.type;
     return [
-      hexStr, `${reg.type} [${reg.rws}]`,
+      hexStr, `${typeStr} [${reg.rws}]`,
       unitStr ? `unit: ${unitStr}` : null,
       reg.scale != null && reg.scale !== 1 ? `scale: ${JSON.stringify(reg.scale)}` : null,
       reg.min != null ? `min: ${JSON.stringify(reg.min)}` : null,
@@ -237,8 +246,8 @@ const Reg = (() => {
     ruleIndex, isInactive,
     unit, min, max, step, scale,
     rws, ro, rwsClass,
-    display, parse, same, snap,
-    isNumeric, isEnum, isBool, isVer,
+    display, decimals, parse, same, snap,
+    isNumeric, isEnum, isBool, isVer, isNA,
     outOfRange,
     tooltip, filter, visibility, blocks,
   };

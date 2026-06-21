@@ -1,9 +1,9 @@
 {
   "version": 1,
   "monitor": [
-    {"traces": ["MeasSlow:Freq", "Feedback:SetpointFreq"], "size": "M"},
+    {"traces": ["MeasSlow:Freq", "Feedback:RenderFreq", "Feedback:SetpointFreq"], "size": "M"},
     {"traces": ["MeasSlow:Temp"], "size": "S"},
-    {"traces": ["MeasSlow:CurrAvg", "MeasSlow:PeakMax"], "size": "M"}
+    {"traces": ["MeasSlow:CurrAvg", "MeasSlow:PeakMax"], "size": "S"}
   ],
   "ignore": [
     "Journal:0Event",
@@ -73,6 +73,6 @@
     "Journal:Count",
     "Journal:Skip",
     "Journal:Read",
-    "Ctrl:Setpoint"
+    "Thresh:Temp"
   ]
 }

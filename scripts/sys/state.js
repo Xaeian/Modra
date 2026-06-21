@@ -14,7 +14,7 @@ const S = {
   addr: null,
   connected: false,
   serial_open: false,
-  serial: { baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000, interval: 200 },
+  serial: { baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000, retries: 3, interval: 500, history: 14 },
 
   //---------------------------------------------------------- Connection (UI inputs)
 

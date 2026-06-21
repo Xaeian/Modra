@@ -2,6 +2,7 @@ if exist .\.dist\Modra.exe ^
   del .\.dist\Modra.exe
 
 pyinstaller --onefile ^
+  --noconsole ^
   --workpath ./.build ^
   --distpath ./.dist ^
   --name Modra ^

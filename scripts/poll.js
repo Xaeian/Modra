@@ -8,7 +8,7 @@ const POLL_MS_FLOOR = 50;
 const PORT_SCAN_MS = 1000;
 
 function _pollInterval() {
-  const ms = parseInt(S.serial?.interval) || 200;
+  const ms = parseInt(S.serial?.interval) || 500;
   return Math.max(POLL_MS_FLOOR, ms);
 }
 

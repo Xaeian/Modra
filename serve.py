@@ -26,6 +26,7 @@ POST_ROUTES = {
   "/write": api.write,
   "/scan_addrs": api.scan_addrs,
   "/view_set": api.view_set,
+  "/delete_database": api.delete_database,
 }
 
 MUTE = {"/read", "/scan"}

@@ -108,4 +108,8 @@ const API = {
 
   view_get:     ()       => API.call("view_get"),
   view_set:     (patch)  => API.call("view_set",     patch),
+
+  //---------------------------------------------------------- Database
+
+  delete_database: ()    => API.call("delete_database", {}),
 };

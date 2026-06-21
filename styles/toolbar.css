@@ -52,9 +52,15 @@
 .rb-tbtn:hover:not(:disabled) { background: var(--border); }
 .rb-tbtn:disabled, .rb-tbtn.off { opacity: 0.4; cursor: not-allowed; }
 .rb-tbtn.active { background: var(--border); border-color: var(--accent); }
+/* Destructive action (wipe history). Red border at rest, fills on hover. */
+.rb-tbtn.rb-danger { border-color: #b02a37; color: #dc3545; }
+.rb-tbtn.rb-danger:hover:not(:disabled) { background: #dc3545; border-color: #b02a37; color: #fff; }
 
 .rb-send:not(.off) { background: #e8a308; border-color: #c78c00; color: #fff; font-weight: 600; }
 .rb-send:not(.off):hover { background: #d49600; }
+/* OOR warning - write still goes through; firmware decides. */
+.rb-send.oor:not(.off) { background: #dc3545; border-color: #b02a37; }
+.rb-send.oor:not(.off):hover { background: #c82333; }
 
 .rb-conn { font-weight: 600; }
 .rb-conn.on { background: #28a745; border-color: #1e7e34; color: #fff; }

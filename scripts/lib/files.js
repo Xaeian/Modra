@@ -127,7 +127,7 @@ const CSV = {
     _download(filename, lines.join("\n") + "\n", "text/csv");
   },
 
-  // Open file picker and return parsed as vectors
+  /** File picker, parsed as vectors. */
   async open_vectors(delimiter=",", types=null, groupBy=null, accept=".csv") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -145,19 +145,19 @@ const CSV = {
     });
   },
 
-  // Load from File object
+  /** Parse a File object. */
   async load(file, delimiter=",", types=null) {
     const text = await file.text();
     return CSV.parse_text(text, delimiter, types);
   },
 
-  // Trigger download of CSV file
+  /** Download as CSV. */
   save(filename, data, fieldNames=null, delimiter=",") {
     const content = CSV.stringify(data, fieldNames, delimiter);
     _download(filename, content, "text/csv");
   },
 
-  // Open file picker and return parsed CSV
+  /** File picker, parsed as CSV. */
   async open(delimiter=",", types=null, accept=".csv") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -287,7 +287,6 @@ const INI = {
     const lines = [];
     let wroteAnything = false;
     const topFieldComments = commentField[null] || {};
-    // top-level scalars first
     for(const [key, value] of Object.entries(data)) {
       if(typeof value === "object" && value !== null && !Array.isArray(value)) continue;
       let val = value, inlineComment = null;
@@ -300,7 +299,6 @@ const INI = {
       lines.push(line);
       wroteAnything = true;
     }
-    // sections
     for(const [section, content] of Object.entries(data)) {
       if(typeof content !== "object" || content === null || Array.isArray(content)) continue;
       if(wroteAnything) lines.push("");
@@ -328,19 +326,19 @@ const INI = {
     return lines.join("\n") + "\n";
   },
 
-  // Load from File object (user file picker)
+  /** Parse a File object. */
   async load(file) {
     const text = await file.text();
     return INI.parse_text(text);
   },
 
-  // Trigger download of INI file
+  /** Download as INI. */
   save(filename, data, commentSection, commentField) {
     const content = INI.stringify(data, commentSection, commentField);
     _download(filename, content);
   },
 
-  // Open file picker and return parsed INI
+  /** File picker, parsed as INI. */
   async open(accept=".ini") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -514,13 +512,11 @@ const YAML = {
 };
 //----------------------------------------------------------------------------------------- ZIP
 
-// Wymaga fflate (CDN UMD) - window.fflate. Input w `pack` moze byc string
-// (UTF-8), Uint8Array, ArrayBuffer lub Blob. Output `unpack` to Uint8Array
-// per entry - caller decyduje jak czyta (TextDecoder albo jako bajty).
+// Wymaga fflate (window.fflate). unpack zwraca Uint8Array per entry.
 
 const ZIP = {
 
-  // Konwersja dowolnego contentu do Uint8Array (fflate input format).
+  /** Dowolny content do Uint8Array (format wejscia fflate). */
   async _toBytes(content) {
     if(typeof content === "string") return new TextEncoder().encode(content);
     if(content instanceof Uint8Array) return content;
@@ -529,7 +525,7 @@ const ZIP = {
     throw new TypeError("ZIP: content must be string, Uint8Array, ArrayBuffer or Blob");
   },
 
-  // entries: [{name, content}]. Zwraca Blob (application/zip).
+  /** entries: [{name, content}] do Blob (application/zip). */
   async pack(entries) {
     const input = {};
     for(const { name, content } of entries) {
@@ -543,7 +539,7 @@ const ZIP = {
     });
   },
 
-  // data: Blob | ArrayBuffer | Uint8Array. Zwraca [{name, content: Uint8Array}].
+  /** Blob/ArrayBuffer/Uint8Array do [{name, content: Uint8Array}]. */
   async unpack(data) {
     const bytes = await ZIP._toBytes(data);
     return new Promise((resolve, reject) => {

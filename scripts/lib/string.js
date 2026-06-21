@@ -49,9 +49,7 @@ function splitStr(str, sep = " ", quote = '"', esc = null) {
 
 /**
  * Recursively replace mapping keys with values in strings, arrays, and plain objects.
- * Longest pattern wins on overlap (`ab` beats `a`), so result is independent of key order.
- * Non-plain objects (`Date`, `Map`, class instances) are returned as-is.
- * Cyclic structures are detected and returned as-is to avoid infinite recursion.
+ * Longest pattern wins on overlap, so result is order-independent. Non-plain objects and cycles are returned as-is.
  * @param {string|Array|object} subject Input to process
  * @param {object} mapping `{ key: value }` replacements
  * @param {string} [prefix=""] Prefix before each key
@@ -146,9 +144,7 @@ function stripCommentsC(str) {
 
 /**
  * Strip JavaScript comments. Handles `"`, `'`, and template literals.
- * Limitations: does NOT recognize regex literals (`/foo\/bar/` may confuse it),
- * and treats template literal interpolation `${...}` as opaque string content,
- * so comments inside `${...}` are preserved instead of stripped.
+ * Does not recognize regex literals; treats `${...}` interpolation as opaque, so comments inside it survive.
  */
 function stripCommentsJs(str) {
   let result = "";
@@ -191,8 +187,7 @@ function stripCommentsSql(str) {
 
 /**
  * Strip Python comments (`#`). Handles triple-quoted strings.
- * Limitation: f-string interpolation (`f"{expr}"`) is treated as opaque string
- * content, so `#` inside `{...}` expressions is preserved, not stripped.
+ * Treats f-string `{...}` interpolation as opaque, so `#` inside it survives.
  */
 function stripCommentsPy(str) {
   let result = "";

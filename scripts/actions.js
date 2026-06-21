@@ -213,11 +213,6 @@ async function setSerial(params) {
     alert.wrn("Serial params changed, reconnect needed");
   }
   else if(S.serial.interval !== prev.interval) restartPoll();
-  // `history` drives the chart's max range. If it shrank below the active
-  // window, snap the chart down so the active button matches and we stop
-  // querying a span wider than retention keeps.
-  const maxS = Math.max(1, parseInt(S.serial.history) || 14) * 86400;
-  if(S.monitor.size && MonitData.range > maxS) Monitor.changeRange(maxS);
   render();
 }
 

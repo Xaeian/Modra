@@ -10,7 +10,8 @@ const Monitor = {
   _el: null,           // <div class="rb-charts"> hosting the stack
   _keys: [],           // group keys aligned with _stack._entries
   _sig: null,          // built layout signature (keys + names per group)
-  _rangeBusy: false,   // guards changeRange() against double-clicks
+  _rangeBusy: false,   // guards a window fetch against overlapping round-trips
+  _zoomTimer: null,    // debounces drag-zoom into a single refetch
 
   //---------------------------------------------------------- JSX bar
 
@@ -35,10 +36,11 @@ const Monitor = {
           <span class="rb-monitor-sep" />
           {chartRanges().map(r => (
             <button class={"rb-range-btn"
-              + (MonitData.range === r.s ? " active" : "")
+              + (MonitData.live && MonitData.range === r.s ? " active tier-" + MonitData.tier : "")
               + (Monitor._rangeBusy ? " busy" : "")}
               onClick={() => Monitor.changeRange(r.s)}
               disabled={Monitor._rangeBusy}
+              title={MonitData.live && MonitData.range === r.s ? "tier: " + MonitData.tier : ""}
             >{r.label}</button>
           ))}
           <span class="rb-monitor-sep" />
@@ -64,9 +66,9 @@ const Monitor = {
     slot.appendChild(this._el);
   },
 
-  // Auto-scroll pins the right edge to "now". When zoomed in, only slide
-  // if the right edge was already close to live (<2s) so the user keeps
-  // their context unless they wanted to follow the stream.
+  // Live poll: replace the buffer with the freshly fetched window and redraw.
+  // A frozen (zoomed) window sends no rows from poll, so ingest no-ops and the
+  // view stays put.
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
     // Rebuild on a layout change BEFORE ingest. A rule slot flip can leave a
@@ -78,18 +80,8 @@ const Monitor = {
       this.mount();
       return;
     }
-    if(rows?.length) MonitData.ingest(rows);
-    const [xMin, xMax] = MonitData.xRange();
-    if(this._stack.autoScroll) {
-      this._stack._xMin = xMin;
-      this._stack._xMax = xMax;
-    }
-    else if(this._stack._zoomMax != null && xMax - this._stack._zoomMax < 2) {
-      // User had zoomed to "approximately now" - keep them at the live edge.
-      const w = this._stack._zoomMax - this._stack._zoomMin;
-      this._stack._zoomMin = xMax - w;
-      this._stack._zoomMax = xMax;
-    }
+    MonitData.ingest(rows);
+    this._applyWindow();
     this._feedAll();
   },
 
@@ -98,13 +90,7 @@ const Monitor = {
   refresh() {
     MonitData.sync();
     this._sig = this._groupSig();
-    let savedRange = null;
-    let savedZoom = null;
     if(this._stack) {
-      savedRange = this._stack.getXRange();
-      if(!this._stack.autoScroll && this._stack._zoomMin != null) {
-        savedZoom = [this._stack._zoomMin, this._stack._zoomMax, this._stack._autoScroll];
-      }
       this._stack.destroy();
       this._stack = null;
     }
@@ -119,10 +105,10 @@ const Monitor = {
     }
     this._el.innerHTML = "";
     const groups = MonitData.groups();
-    const [xMin, xMax] = MonitData.xRange();
     this._stack = new ChartStack(this._el, {
       formatX: chartFmtAxisX(),
       formatXValue: chartFmtFull,
+      onZoom: (a, b) => Monitor.onZoom(a, b),
     });
     for(const [key, grp] of Object.entries(groups)) {
       this._keys.push(key);
@@ -174,51 +160,59 @@ const Monitor = {
       };
       wrap.appendChild(btn);
     });
-    // Restore user zoom and feed initial data + axis seed so empty panels
-    // still render with a visible range.
-    if(savedZoom) {
-      this._stack._autoScroll = savedZoom[2];
-      this._stack._zoomMin = savedZoom[0];
-      this._stack._zoomMax = savedZoom[1];
-    }
-    if(savedRange && savedRange[0] != null) {
-      this._stack._xMin = savedRange[0];
-      this._stack._xMax = savedRange[1];
-    }
-    else {
-      this._stack._xMin = xMin;
-      this._stack._xMax = xMax;
-    }
+    // Pin to the current window (live edge or frozen zoom) and feed; seed the
+    // axis so empty panels still render with a visible range.
+    this._applyWindow();
     this._feedAll();
     this._stack.seedRange(this._stack._xMin, this._stack._xMax);
   },
 
-  // Pulls fresh history from the backend before rebuilding so the new
-  // window is populated from `now - range`, not just from what was buffered.
-  // `_rangeBusy` shields against double-clicks during the round-trip.
+  // Range button: a live window of length `s`, refetched at whatever tier fits.
   async changeRange(s) {
+    MonitData.setRange(s);
+    render();
+    this.mount();
+    await this._refetch();
+    render();
+    this.mount();
+  },
+
+  // Drag-zoom (a,b set) freezes the window and refetches it at a finer tier;
+  // double-click (a == null) returns to the live edge. Debounced so one drag
+  // gesture fires one fetch.
+  onZoom(a, b) {
+    if(a == null) MonitData.setRange(MonitData.range);
+    else MonitData.setWindow(a, b);
+    clearTimeout(this._zoomTimer);
+    this._zoomTimer = setTimeout(() => { this._refetch(); render(); this.mount(); }, 150);
+  },
+
+  // Fetch the current window and redraw. Shared by range buttons and zoom;
+  // `_rangeBusy` shields against overlapping round-trips.
+  async _refetch() {
     if(this._rangeBusy) return;
     this._rangeBusy = true;
-    if(MonitData.range !== s) MonitData.setRange(s);
-    render();
-    this.mount();
-    const params = MonitData.readParams();
+    const params = MonitData.fetchParams();
     if(params) {
       const res = await API.read(params);
-      if(res?.rows?.length) MonitData.ingest(res.rows);
+      MonitData.ingest(res?.rows);
+      if(res && "tier" in res) MonitData.tier = res.tier;
     }
-    if(this._stack) {
-      this._stack._autoScroll = true;
-      this._stack._zoomMin = null;
-      this._stack._zoomMax = null;
-      const [xMin, xMax] = MonitData.xRange();
-      this._stack._xMin = xMin;
-      this._stack._xMax = xMax;
-      this._feedAll();
-    }
+    this._applyWindow();
+    this._feedAll();
     this._rangeBusy = false;
-    render();
-    this.mount();
+  },
+
+  // Pin the stack x-scale to the current data window (live edge or frozen
+  // zoom). Monitor owns the window; the chart just renders it.
+  _applyWindow() {
+    if(!this._stack) return;
+    const [xMin, xMax] = MonitData.window();
+    this._stack._autoScroll = true;
+    this._stack._zoomMin = null;
+    this._stack._zoomMax = null;
+    this._stack._xMin = xMin;
+    this._stack._xMax = xMax;
   },
 
   destroy() {
@@ -254,7 +248,7 @@ const Monitor = {
       // changes; this just refuses to crash if one ever slips through.
       const panel = this._stack._panels[i];
       if(panel && grp.names.length !== panel.series.length) return;
-      const data = MonitData.prepare(grp.names, grp.stepped);
+      const data = MonitData.prepare(grp.names);
       if(data) this._stack.setData(i, data);
     });
   },

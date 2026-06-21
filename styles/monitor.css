@@ -45,6 +45,12 @@
   background: var(--accent); border-color: var(--accent);
   color: #fff; font-weight: 600;
 }
+/* Active button tinted by the tier serving the data: green raw (full detail)
+   -> blue minute -> amber hour -> red day (coarsest). */
+.rb-range-btn.active.tier-raw  { background: #16a34a; border-color: #16a34a; }
+.rb-range-btn.active.tier-min  { background: #2563eb; border-color: #2563eb; }
+.rb-range-btn.active.tier-hour { background: #d97706; border-color: #d97706; }
+.rb-range-btn.active.tier-day  { background: #dc2626; border-color: #dc2626; }
 
 .rb-monitor-slot { min-height: 0; }
 

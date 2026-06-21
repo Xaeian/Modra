@@ -124,25 +124,24 @@ class Api:
       "addr": link.mb.addr if link.mb and link.connected else None,
     }
     if isinstance(params, dict):
-      since = params.get("since")
+      frm = params.get("from")
+      to = params.get("to")
       names = params.get("names")
-      limit = params.get("limit")
-      bucket = params.get("bucket")
+      max_points = params.get("max_points")
     else:
-      since = names = limit = bucket = None
+      frm = to = names = max_points = None
     addr = result.get("addr")
     if not addr and link.state.get("addr"):
       addr = int(link.state["addr"])
-    if since is not None and names and addr:
-      try: limit = min(int(limit or 5000), 50000)
-      except (ValueError, TypeError): limit = 5000
-      try: since = float(since)
-      except (ValueError, TypeError): since = 0.0
+    if frm is not None and to is not None and names and addr:
+      try: max_points = int(max_points or 2000)
+      except (ValueError, TypeError): max_points = 2000
       rows = link.run_async(
-        link.store.since(addr, names, since, limit, bucket),
+        link.store.query(addr, names, frm, to, max_points, link._history_days()),
         timeout=10,
       )
       result["rows"] = rows or []
+      result["tier"] = link.store.tier_label(frm, to, max_points, link._history_days())
     return result
 
   def sync(self) -> dict:

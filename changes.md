@@ -1,29 +1,36 @@
 # Changes `modra`
 
+## `1.2.1` Zoom
+
+- Resolution tiers: minute/hour/day archives off raw, so a year is a 365-row read
+- Ranges to `1y` / `∞`; `1h` and under stay raw, wider spans step down the tiers
+- Active range button tinted by its serving tier _(fine to coarse)_
+- Drag-zoom drills into a finer tier; double-click returns to live
+
 ## `1.2.0` NULL
 
-- Nullable registers _(`?`)_: N/A reads render as gaps, not out-of-scale spikes
-- Bounded history: keep last N days _(`history`)_, old rows pruned automatically
-- Long chart ranges downsampled; `∞` replaced by the retention window
+- Nullable registers `?`: `null` reads draw as gaps, not out-of-scale spikes
+- Bounded history `history=N`: keep last N days, older rows pruned
+- Long ranges downsampled; `∞` swapped for the retention window
 - 🧹 Clear DB button
-- Config import reads locale CSV _(`;`, decimal comma)_
-- First click works while editing a field; Enter confirms
-- Simulator driven only by each register's own CSV row _(type, rws, min/max)_, no random N/A
-- Fixed chart crash on rule-unit panel regroup
+- Config import accepts `;`-separated CSV with decimal commas
+- First click registers mid-edit; `Enter` confirms
+- Simulator follows each register's CSV row _(type, rws, min/max)_: no stray N/A
+- Chart no longer crashes when rule-unit panels regroup
 
 ## `1.1.0` Paper
 
-- Register ignore via 🚫, persisted to `view.json`; `i` reveals them in show-disabled mode
-- 32-bit float pair _(IEEE 754)_ via `type=float` on `rule=high=Name` / `rule=low=Name`
-- Schema drift detection on boot: legacy `data.db` rotated to `data-YYYYMMDD-HHMMSS.db`, fresh DB created
-- Keyboard shortcuts _(neighbours on QWERTY)_: `i` ignore mode, `o` options, `p` plots
-- Fuzzy search across register name + description, diacritic-insensitive
-- Simulator mode via `simulator = true` in `serial.ini`: mean-reverting random walk, no hardware
+- Register ignore via 🚫, saved to `view.json`; `i` reveals them in show-disabled mode
+- 32-bit float pair `type=float` on `rule=high=Name` / `rule=low=Name` _(IEEE 754)_
+- Schema-drift check on boot: legacy `data.db` rotated to `data-YYYYMMDD-HHMMSS.db`, fresh DB created
+- Keyboard shortcuts: `i` ignore, `o` options, `p` plots _(QWERTY neighbours)_
+- Fuzzy search over register name + description, diacritic-insensitive
+- Simulator mode `simulator=true` in `serial.ini`: mean-reverting random walk, no hardware
 
 ## `1.0.1` Fixes
 
-- Fixed **config export** returning empty values by reading from device registers instead of serial config
-- Fixed buttons ignoring **clicks** during polling by deferring render while pointer is active
+- Config export no longer empty: reads device registers, not serial config
+- Buttons respond during polling: render deferred while pointer is active
 
 ## `1.0.0` Init
 
@@ -31,20 +38,20 @@ Modbus RTU register viewer/editor. Desktop app _(PyWebview)_ or browser _(HTTP s
 
 **Features**
 
-- Register map driven by single `regs.csv`: change CSV, get a different device tool
+- Register map from a single `regs.csv`: edit CSV → different device tool
 - All register types: numeric, enum, bool, hex, version, rule-based
-- Live monitoring with synchronized multi-panel charts _(uPlot)_
-- Per-panel chart sizing _(`S`/`M`/`L`)_, time ranges _(`2m`, `7d`, `∞`)_, CSV export
-- Monitor configuration persisted across sessions _(`view.json`)_
-- Inline editing with dirty tracking, slider/stepper controls, out-of-range warnings
-- Address scanning, serial parameter tuning, auto port detection
-- Write audit logging
+- Live monitoring, synchronized multi-panel charts _(uPlot)_
+- Per-panel sizing _(`S`/`M`/`L`)_, time ranges _(`2m`, `7d`, `∞`)_, CSV export
+- Monitor layout persisted across sessions _(`view.json`)_
+- Inline editing: dirty tracking, slider/stepper controls, out-of-range warnings
+- Address scan, serial-parameter tuning, auto port detection
+- Write audit log
 - SQLite storage: every poll cycle logged, full history queryable
-- Config import and export to INI or CSV
+- Config import/export to INI or CSV
 - CLI tools: `mb_ctrl.py` _(import/export/sudo)_, `mb_set.py` _(quick setpoint)_
 
 **Stack**
 
 - Backend: Python, pymodbus, aiosqlite, pywebview
 - Frontend: [TonkaJSX](https://tonkajsx.com), [uPlot](https://github.com/leeoniya/uplot)
-- Built into a single `.exe` via PyInstaller
+- Single `.exe` via PyInstaller

@@ -130,6 +130,7 @@ async function poll() {
     if(!res.data) return;
     S.errors = 0;
     const changed = applyCache(res.data);
+    if("tier" in res) MonitData.tier = res.tier;
     if(S.monitor.size) Monitor.update(res.rows);
     if(!changed || isUserEditing()) return;
     render();

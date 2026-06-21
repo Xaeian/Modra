@@ -167,6 +167,9 @@ class ChartStack {
     this._cfg.syncKey = opts.syncKey || ("cs_" + Math.random().toString(36).slice(2, 6));
     this._formatX = opts.formatX || null;
     this._formatXValue = opts.formatXValue || null;
+    // Called on a user drag-zoom (min, max) and on dblclick reset (null, null)
+    // so the owner can refetch the new window at a finer resolution tier.
+    this._onZoom = opts.onZoom || null;
     // Auto-scroll tracks the latest data on the right edge. A user drag
     // freezes the window at `_zoomMin/_zoomMax` until dblclick resets.
     this._xMin = null;
@@ -247,6 +250,7 @@ class ChartStack {
     if(this._xMin != null) this.setXRange(this._xMin, this._xMax);
     // Clear on next frame so the setScale hook ignores our synthetic call.
     requestAnimationFrame(() => { this._resetting = false; });
+    this._onZoom?.(null, null);   // back to the live edge
   }
 
   get length() { return this._panels.length; }
@@ -415,6 +419,7 @@ class ChartStack {
             if(e?.plot && e.plot !== u) e.plot.setScale("x", { min, max });
           }
           self._syncing = false;
+          self._onZoom?.(min, max);   // refetch this window at a finer tier
         }],
       },
       legend: { show: true, live: true },

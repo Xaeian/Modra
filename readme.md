@@ -79,14 +79,14 @@ Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads **
 
 Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
 
-- **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d`, up to the `history` window _(no `∞`: the DB only keeps `history` days)_
+- **range buttons** - `2m` / `10m` / `1h` / `6h` / `24h` / `7d` / `30d` / `1y` / `∞` _(all history)_
 - **`S`** / **`M`** / **`L`** - cycle panel size
 - **tag click** - remove trace
 - **💾** - export all series to CSV
-- **drag on plot** - zoom _(freezes window)_
-- **double-click** - release zoom _(back to live)_
+- **drag on plot** - zoom in; the window refetches at a finer resolution, so detail appears as you go deeper
+- **double-click** - back to the live edge
 
-History backfills from `data.db` on range change, so newly added traces fill the full window from disk. Long ranges are downsampled on read, so they stay light no matter how much history is stored.
+Each chart request is a time window, served from a resolution tier: raw for recent/narrow windows, minute/hour/day archives _(downsampled off raw)_ for wider ones. A year-wide overview is a few hundred points, not millions, and zooming refetches the new window at a finer tier.
 
 ## Hiding registers
 

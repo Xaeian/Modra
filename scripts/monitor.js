@@ -5,10 +5,8 @@
 
 //---------------------------------------------------------- Chart constants
 
-// Fixed live windows. The top of the list is appended dynamically from the
-// retention setting (see `chartRanges()`) - there is no ∞, because the DB
-// only keeps `history` days and an unbounded fetch would pull millions of
-// rows into the browser.
+// Live-window presets. Long ranges and `∞` (all history) are cheap: the backend
+// serves them from the hour/day tiers, so a year is a few hundred points.
 const CHART_RANGE_PRESETS = [
   { label: "2m",  s: 120 },
   { label: "10m", s: 600 },
@@ -16,33 +14,26 @@ const CHART_RANGE_PRESETS = [
   { label: "6h",  s: 21600 },
   { label: "24h", s: 86400 },
   { label: "7d",  s: 604800 },
+  { label: "30d", s: 2592000 },
+  { label: "1y",  s: 31536000 },
+  { label: "∞",   s: Infinity },
 ];
 
-// Downsampling. A long range fetched raw is millions of points; instead the
-// backend buckets it to ~`CHART_TARGET_POINTS` (see `store.since` `bucket`).
-// Ranges at or below `CHART_RAW_MAX_SEC` come back raw (full resolution).
-const CHART_TARGET_POINTS = 2000;
-const CHART_RAW_MAX_SEC = 3600;
-// Hard ceiling on in-memory points per trace. A long window watched live
-// would otherwise accumulate raw-rate samples forever; on overflow the
-// buffer is halved by decimation. Headroom above the backend target.
-const CHART_BUF_CAP = 8000;
+// Point budget that picks the resolution tier (see `store.query`). 5000 keeps
+// short ranges on raw - 1h stays full detail (~7200 pts at a 0.5s poll) - while
+// 6h/24h fall to minute, 7d/30d to hour, 1y/∞ to day. Higher = finer tiers but
+// heavier fetches.
+const CHART_TARGET_POINTS = 5000;
 
-// Bucket width (seconds) for the active range, or 0 for raw. Drives both the
-// backend query and the gap threshold so the two stay consistent.
-function chartBucket(range) {
-  if(range <= CHART_RAW_MAX_SEC) return 0;
-  return range / CHART_TARGET_POINTS;
-}
+// Min gap between live refetches (ms). The window slides every poll, but
+// re-pulling a full raw window that often is wasteful, so the fetch is
+// throttled while the chart keeps sliding on the buffer it already has.
+const CHART_LIVE_MS = 1000;
 
-// Range buttons: presets shorter than the retention window, capped by a
-// final button equal to the window itself (the honest "show everything we
-// keep"). `history` comes from the backend (serial.ini), default 14 days.
+// Range buttons. The full fixed set; the tiers cover any span, so no filtering
+// by `history` any more.
 function chartRanges() {
-  const days = Math.max(1, parseInt(S.serial?.history) || 14);
-  const maxS = days * 86400;
-  const presets = CHART_RANGE_PRESETS.filter(r => r.s < maxS);
-  return [...presets, { label: days + "d", s: maxS }];
+  return CHART_RANGE_PRESETS;
 }
 
 // One palette per panel index. Series within a panel rotate through the
@@ -82,9 +73,10 @@ const CHART_SIZES = { S: 100, M: 250, L: 450 };
 const CHART_SIZE_CYCLE = ["S", "M", "L"];
 const CHART_SIZE_DEFAULT = "M";
 
-// Gap-rendering threshold. A poll gap longer than `GAP_TICKS * interval`
-// is drawn as a break, not interpolated. 15 ticks at 200ms ≈ 3s - longer
-// than routine read jitter, shorter than a real disconnect.
+// Gap-rendering floor. A hole longer than `GAP_TICKS * interval` (or
+// GAP_MIN_SEC, whichever is larger) breaks the line instead of interpolating.
+// 15 ticks at the 500ms default ≈ 7.5s - longer than read jitter, shorter than
+// a real disconnect.
 const GAP_TICKS = 15;
 const GAP_MIN_SEC = 5;
 
@@ -195,57 +187,61 @@ function chartExportCSV(names, buf) {
 
 //---------------------------------------------------------- MonitData (time-series buffer)
 
-// Time-series buffer for monitored registers.
-//   `_buf[name]`    → [{ts, v}, ...] chronological
-//   `_lastTs[name]` → newest ts seen; used as `since` filter when polling
-//   `range`         → window length in seconds (always finite)
-// Keys are full register names (`Group:Field`). `_buf` is accessed by
-// Monitor.jsx for CSV export to avoid a redundant copy.
+// Time-series buffer for monitored registers. Holds the currently visible
+// window only: each fetch returns the whole [from, to] at the right tier and
+// REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}], read
+// by Monitor.jsx for CSV export to avoid a redundant copy.
 const MonitData = {
 
-  range: 600,
+  range: 600,      // live window length (seconds)
+  live: true,      // following "now" vs a frozen [from, to] from zoom/picker
+  from: 0,         // frozen window start (used when !live)
+  to: 0,           // frozen window stop
   _buf: {},
-  _lastTs: {},
-  // Last active slot column ingested per monitored name. Used by `sync()`
-  // to detect rule slot flips (e.g. Ctrl:mode rpm→Hz) and reset the buffer
-  // so the next poll backfills the new slot from `backfill` onward.
-  _activeSlot: {},
+  tier: "raw",     // resolution tier serving the current window (for the UI)
+  _nextFetch: 0,   // earliest ms epoch the live refetch may run again
 
-  //---------------------------------------------------------- X range
+  //---------------------------------------------------------- Window
 
-  // Right edge pinned to "now".
-  xRange() {
-    const now = Date.now() / 1000;
-    return [now - this.range, now];
+  // [from, to] of the visible window. Live -> sliding [now - range, now];
+  // frozen (after a zoom or date pick) -> the fixed window the user chose.
+  window() {
+    if(this.live) {
+      const now = Date.now() / 1000;
+      // `∞` -> from epoch start: all history, served from the day tier.
+      return [this.range === Infinity ? 0 : now - this.range, now];
+    }
+    return [this.from, this.to];
   },
 
   //---------------------------------------------------------- Poll params
 
-  // Poll interval (ms) → sample-gap threshold (seconds). On a decimated long
-  // range samples are legitimately ~`bucket` apart, so the gap scales with the
-  // `bucket`; otherwise a downsampled line would be drawn as all breaks.
-  gapThreshold() {
+  // Minimum gap (seconds) before a hole breaks the line. The real threshold is
+  // derived per-fetch from the data's own spacing (see `prepare`), since the
+  // tier - and so the bucket width - varies with zoom; this is just the floor.
+  gapMin() {
     const ms = parseInt(S.serial?.interval) || 500;
-    const base = Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
-    const bucket = chartBucket(this.range);
-    return bucket > 0 ? Math.max(base, bucket * 3) : base;
+    return Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
   },
 
-  // `since = min(lastTs)` so a single fetch covers even the slowest series.
-  // `bucket` downsamples long ranges server-side. Returns null when nothing
-  // is monitored - poll falls back to plain cache.
-  readParams() {
+  // Backend query for the current window: a time range + a point budget, no
+  // tier logic here. `fetchParams` is the explicit fetch (range button, zoom,
+  // date pick); `readParams` is the poll fetch - null while frozen so a zoomed
+  // window stays static instead of being refetched every tick.
+  fetchParams() {
     if(!S.monitor.size) return null;
-    const vals = Object.values(this._lastTs);
-    return {
-      since: vals.length ? Math.max(0, Math.min(...vals)) : 0,
-      names: [...S.monitor],
-      limit: 5000,
-      bucket: chartBucket(this.range),
-    };
+    const [from, to] = this.window();
+    return { from, to, names: [...S.monitor], max_points: CHART_TARGET_POINTS };
+  },
+  readParams() {
+    if(!this.live) return null;   // frozen window: poll leaves it static
+    const now = Date.now();
+    if(now < this._nextFetch) return null;
+    this._nextFetch = now + CHART_LIVE_MS;
+    return this.fetchParams();
   },
 
-  //---------------------------------------------------------- Ingest / trim
+  //---------------------------------------------------------- Ingest
 
   // DB column for the reg's active slot, or null when no slot resolves
   // (rule reg with switch=off, unpolled, etc). Callers gate on this.
@@ -257,101 +253,40 @@ const MonitData = {
     return idx !== null ? `${base}_${idx}` : null;
   },
 
-  // Backend may return overlapping ranges, so rows older than the per-name
-  // `lastTs` are skipped. Trim afterwards drops samples past the window.
+  // Replace the buffer from a freshly fetched window. The backend already
+  // downsampled to the right tier, so we just project each row's active-slot
+  // column. A non-array payload (cache-only poll) is ignored so a frozen chart
+  // is never blanked.
   ingest(rows) {
-    if(!rows?.length) return;
+    if(!Array.isArray(rows)) return;
+    const next = {};
+    for(const name of S.monitor) next[name] = [];
     for(const row of rows) {
       for(const name of S.monitor) {
-        if(row.ts <= (this._lastTs[name] || 0)) continue;
         const reg = S.regs.find(r => r.name === name);
         const col = this._activeColumn(reg);
-        // Switch unpolled / no matching slot - skip without advancing lastTs
-        // so a later poll backfills once the slot is resolvable.
-        if(!col) continue;
-        // Trace added mid-poll, this column wasn't projected - same logic.
-        if(!(col in row)) continue;
+        if(!col || !(col in row)) continue;
         const raw = row[col];
-        // NULL = sample taken while a different slot was active. Advance
-        // lastTs so we don't refetch this row, but don't push - the chart
-        // shows a natural gap until the active slot has data again.
-        if(raw == null) {
-          this._lastTs[name] = row.ts;
-          continue;
-        }
-        if(!this._buf[name]) this._buf[name] = [];
+        if(raw == null) continue;   // gap: inactive slot / no data this bucket
         let v = raw;
         if(typeof v !== "number" && reg) v = chartToNum(reg, v);
-        this._buf[name].push({ ts: row.ts, v });
-        this._lastTs[name] = row.ts;
+        next[name].push({ ts: row.ts, v });
       }
     }
-    this.trim();
-    this.cap();
-  },
-
-  // Drop samples older than the current window.
-  trim() {
-    const cutoff = Date.now() / 1000 - this.range;
-    for(const buf of Object.values(this._buf)) {
-      while(buf.length > 1 && buf[0].ts < cutoff) buf.shift();
-    }
-  },
-
-  // Hard memory backstop. A long window watched live keeps appending at the
-  // poll rate even though the backend decimates the historical backfill;
-  // halving by stride keeps the trace bounded while preserving its span.
-  cap() {
-    for(const name of Object.keys(this._buf)) {
-      const buf = this._buf[name];
-      if(buf.length > CHART_BUF_CAP) {
-        this._buf[name] = buf.filter((_, i) => i % 2 === 0);
-      }
-    }
+    this._buf = next;
   },
 
   //---------------------------------------------------------- Range / membership sync
 
-  // Clamps `lastTs` down so the next poll backfills the new edge instead
-  // of starting from "now" with no history.
-  setRange(s) {
-    this.range = s;
-    const cutoff = Date.now() / 1000 - s;
-    for(const n of Object.keys(this._lastTs)) {
-      if(this._lastTs[n] > cutoff) this._lastTs[n] = cutoff;
-    }
-    for(const n of Object.keys(this._buf)) {
-      this._buf[n] = (this._buf[n] || []).filter(p => p.ts >= cutoff);
-    }
-  },
+  // Live window of length `s` (seconds), following "now".
+  setRange(s) { this.range = s; this.live = true; },
 
-  // Reconcile with `S.monitor`: drop unsubscribed, seed new ones with
-  // `lastTs` at the window edge so first poll fetches full history. Also
-  // detects rule slot flips (Ctrl:mode rpm→Hz): the active DB column
-  // changes, so the buffer is cleared and lastTs is reset to backfill -
-  // next poll fetches the new slot's history from the window edge.
+  // Frozen window from a drag-zoom or date picker (stops following "now").
+  setWindow(from, to) { this.from = from; this.to = to; this.live = false; },
+
+  // Drop unsubscribed names; the next fetch repopulates the rest.
   sync() {
-    for(const n of Object.keys(this._buf)) {
-      if(!S.monitor.has(n)) {
-        delete this._buf[n];
-        delete this._lastTs[n];
-        delete this._activeSlot[n];
-      }
-    }
-    const backfill = Date.now() / 1000 - this.range;
-    for(const n of S.monitor) {
-      const reg = S.regs.find(r => r.name === n);
-      const col = this._activeColumn(reg);
-      if(!(n in this._lastTs)) {
-        this._lastTs[n] = backfill;
-        this._buf[n] = [];
-      }
-      else if(this._activeSlot[n] !== col) {
-        this._buf[n] = [];
-        this._lastTs[n] = backfill;
-      }
-      this._activeSlot[n] = col;
-    }
+    for(const n of Object.keys(this._buf)) if(!S.monitor.has(n)) delete this._buf[n];
   },
 
   //---------------------------------------------------------- Grouping
@@ -386,12 +321,12 @@ const MonitData = {
 
   //---------------------------------------------------------- Prepare data for chart
 
-  // Turn the buffer into uPlot-shaped `[xs, ...series]`. Gaps > gapThreshold
-  // are bracketed with null markers so the renderer breaks the line instead
-  // of interpolating. Edges padded with empties so a fresh chart still spans
-  // the full requested range.
-  prepare(names, stepped) {
-    const [xMin, xMax] = this.xRange();
+  // Turn the buffer into uPlot-shaped `[xs, ...series]`. Holes wider than the
+  // sample spacing are bracketed with null markers so the renderer breaks the
+  // line instead of interpolating. Edges padded with empties so a fresh chart
+  // still spans the full requested window.
+  prepare(names) {
+    const [xMin, xMax] = this.window();
     const maps = {};
     const tsSet = new Set();
     for(const n of names) {
@@ -403,7 +338,16 @@ const MonitData = {
     }
     const times = [...tsSet].sort((a, b) => a - b);
     const ts = [], vals = names.map(() => []);
-    const gap = stepped ? 0 : this.gapThreshold();
+    // Break holes wider than ~3x the sample spacing, floored by gapMin (tolerates
+    // jitter, breaks even a lone pair across a real hole). Stepped enum/bool too:
+    // a held value is sampled every poll, so a true hole has no samples to bridge.
+    let gap = this.gapMin();
+    if(times.length > 2) {
+      const diffs = [];
+      for(let i = 1; i < times.length; i++) diffs.push(times[i] - times[i - 1]);
+      diffs.sort((a, b) => a - b);
+      gap = Math.max(gap, diffs[diffs.length >> 1] * 3);
+    }
     const emit = (t, nil) => {
       ts.push(t);
       for(let s = 0; s < names.length; s++) {
@@ -424,5 +368,5 @@ const MonitData = {
   },
 
   // Wipe the buffer. Called on disconnect so the next session starts fresh.
-  clear() { this._buf = {}; this._lastTs = {}; this._activeSlot = {}; },
+  clear() { this._buf = {}; },
 };

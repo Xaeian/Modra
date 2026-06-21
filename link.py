@@ -161,11 +161,13 @@ class ModbusLink:
               return
       if cache is not None:
         await self.store.log(cache, self.mb.addr)
-      # Retention runs on the same loop between polls. Each pass only deletes
-      # the ~60s of rows that just aged out, so it stays cheap on the index.
+      # Retention + downsampling run on the same loop between polls, once a
+      # minute. Prune only deletes the ~60s that just aged out; roll only
+      # aggregates the minute bucket that just completed - both stay cheap.
       if (Time() - self._last_prune).total_seconds() >= 60:
         self._last_prune = Time()
         await self.store.prune(self._history_days())
+        await self.store.roll(self.mb.addr)
       interval_s = int(self.state.get("interval", 500)) / 1000
       remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:

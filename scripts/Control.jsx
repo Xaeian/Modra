@@ -19,13 +19,26 @@ const NullCheckbox = ({ reg }) => {
   );
 };
 
+// Hover reason a value is flagged; wrap outranks an advisory min/max miss.
+// Undefined when clean so the row's metadata tooltip shows through.
+function _valHint(reg, value) {
+  const u = Reg.unit(reg);
+  const suffix = u ? " " + u : "";
+  if(Reg.willWrap(reg, value))
+    return `Too large for the register: the device will store ${Reg.display(reg, Reg.wrapPreview(reg, value))}${suffix}, not ${Reg.display(reg, value)}${suffix}. Lower the value.`;
+  if(Reg.outOfRange(reg, value))
+    return `Outside the allowed range ${Reg.min(reg)}..${Reg.max(reg)}${suffix}. It will still be written; the device decides what to do.`;
+  return undefined;
+}
+
 const Control = {
 
-  // Enum picker: one button per label, exclusive selection.
+  // Enum picker: one button per label, exclusive. The 0/off/none button
+  // shows cyan when active, apart from the meaningful states.
   Enum: ({ reg, value, isDirty, ro }) => (
     <div class="rb-btns">
-      {Object.entries(reg.enum).map(([, v]) => (
-        <button class={_btnClass(value === v, isDirty)}
+      {Object.entries(reg.enum).map(([k, v]) => (
+        <button class={cls(_btnClass(value === v, isDirty), k === "0" && "zero")}
           disabled={ro}
           onClick={() => !ro && editSend(reg, v)}
         >{v}</button>
@@ -40,7 +53,7 @@ const Control = {
     const lowOn = value === false || (value == null && !reg.nullable);
     return (
       <div class="rb-btns">
-        <button class={_btnClass(lowOn, isDirty && value === false)} disabled={ro}
+        <button class={cls(_btnClass(lowOn, isDirty && value === false), "zero")} disabled={ro}
           onClick={() => !ro && editSend(reg, false)}>LOW</button>
         <button class={_btnClass(value === true, isDirty)} disabled={ro}
           onClick={() => !ro && editSend(reg, true)}>HIGH</button>
@@ -69,9 +82,11 @@ const Control = {
       <div class="rb-val-wrap">
         <input class={cls("rb-val", isDirty && "dirty",
             Reg.outOfRange(reg, value) && "oor",
+            Reg.willWrap(reg, value) && "wrap",
             na && !isDirty && "na")}
           type="text"
           data-reg={reg.name}
+          title={_valHint(reg, value)}
           value={na ? "null" : Reg.display(reg, value)}
           placeholder="-"
           disabled={ro}

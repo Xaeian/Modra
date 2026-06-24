@@ -75,7 +75,7 @@ const CHART_COLORS = [
    "#3B82F6", "#DC2626", "#7C3AED", "#0891B2", "#78716C"],
 ];
 
-const CHART_SIZES = { S: 100, M: 250, L: 450 };
+const CHART_SIZES = { S: 100, M: 200, L: 300 };
 const CHART_SIZE_CYCLE = ["S", "M", "L"];
 const CHART_SIZE_DEFAULT = "M";
 

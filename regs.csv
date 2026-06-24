@@ -26,7 +26,7 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default
 24,0x18,Resonance:2Low,RWs,uint,rpm,1,0,10000,Resonance zone 2 lower limit,,0
 25,0x19,Resonance:2High,RWs,uint,rpm,1,0,10000,Resonance zone 2 upper limit,,0
 28,0x1C,Journal:Skip,W,uint,-,1,0,65535,Skip first N records in journal query (0 = skip nothing),,
-29,0x1D,Journal:Read,W,enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr 30:err 31:inf 32:all,-,,,Trigger journal read with code filter,,
+29,0x1D,Journal:Read,W,enum,0:none 1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr 30:err 31:inf 32:all,-,,,Trigger journal read with code filter,,
 30,0x1E,Fault:Reset,W,enum,0:none 1:soft 2:hard 3:fcty,-,,,soft: reinit interfaces; hard: reboot both MCUs; fcty: hard reset and wipe stored config,,
 31,0x1F,Fault:Clear,W,bool,-,-,,,Write 1 to clear Fault:Code,,
 32,0x20,Fault:Code,R,enum,0:ok 1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link,-,,,Active fault code,,
@@ -147,15 +147,15 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default
 152,0x98,MeasCfg:HampelScale,RWs,uint,%,100,10,500,Global Hampel k multiplier [100%:default],,100.0
 153,0x99,MeasCfg:SchmittConst,RWs,uint,-,1,0,65535,BEMF hysteresis: threshold = const + amplitude × SchmittScale/100,,50
 154,0x9A,MeasCfg:SchmittScale,RWs,uint,%,100,0,100,BEMF hysteresis: proportional term (see SchmittConst),,9.0
-155,0x9B,MeasCfg:FreqRangeConst,RWs,uint,Hz,100,0,50,BEMF valid frequency band: constant tolerance,,35.0
-156,0x9C,MeasCfg:FreqRangeScale,RWs,uint,%,100,0,100,BEMF valid frequency band: proportional to rendered frequency,,65.0
+155,0x9B,MeasCfg:FreqRConst,RWs,uint,Hz,100,0,50,BEMF valid frequency band (range): constant tolerance,,35.0
+156,0x9C,MeasCfg:FreqRScale,RWs,uint,%,100,0,100,BEMF valid frequency band (range): proportional to rendered frequency,,65.0
 157,0x9D,Const:ShuntRes,RWs,uint,mΩ,1,1,100,Current sense shunt resistance,,10/5/2
-158,0x9E,Const:ShuntGain,RWs,uint,-,1000,1000,65000,Current sense amplifier gain (e.g. 20000 = ×20),,22.0/12.195/21.277
-159,0x9F,Const:TempA,RWs,int,°C/V,100,-500,500,Linear temp sensor slope: T = A × V_adc + B (linear sensor variant only),,50.0
-160,0xA0,Const:TempB,RWs,int,°C,100,-500,500,Linear temp sensor offset: T = A × V_adc + B (linear sensor variant only),,-5.0
-161,0xA1,Const:NtcPullUp,RWs,uint,Ω,0,100,50000,NTC pull-up resistor value,,0/1000/1000
-162,0xA2,Const:NtcBeta,RWs,uint,-,0,2000,6000,NTC beta coefficient,,0/3375/4000
-163,0xA3,Const:NtcR0,RWs,uint,Ω,0,100,50000,NTC resistance at 25°C,,0/5000/22000
+158,0x9E,Const:ShuntGain,RWs,uint,-,1000,1,65,Current sense amplifier gain (e.g. 20.0 = ×20),,22.0/12.195/21.277
+159,0x9F,Const:TempA,RWs,int,°C/V,100,-327,327,Linear temp sensor slope: T = A × V_adc + B (linear sensor variant only),,50.0
+160,0xA0,Const:TempB,RWs,int,°C,100,-327,327,Linear temp sensor offset: T = A × V_adc + B (linear sensor variant only),,-5.0
+161,0xA1,Const:NtcPullUp,RWs,uint,Ω,1,0,50000,NTC pull-up resistor value,,0/1000/1000
+162,0xA2,Const:NtcBeta,RWs,uint,-,1,0,6000,NTC beta coefficient,,0/3375/4000
+163,0xA3,Const:NtcR0,RWs,uint,Ω,1,0,50000,NTC resistance at 25°C,,0/5000/22000
 164,0xA4,Trim:CurrOffset,RWs,int,A,1000,-5,5,Current zero offset,,0.0
 165,0xA5,Trim:CurrScale,RWs,int,%,100,50,200,Current gain correction,,100.0
 166,0xA6,Trim:TempOffset,RWs,int,°C,100,-20,20,Power stage temperature offset,,0.0
@@ -183,69 +183,69 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default
 188,0xBC,Stall:FreqEnd,RWs,uint,Hz,100,0,200,Stall protection disabled above this frequency (also bend x_max),,15.0
 189,0xBD,Stall:Bend,RWs,int,-,1,-1000,1000,Bend for stall current threshold curve [>0: drops to Stop quickly at low freq],,0
 191,0xBF,Journal:Count,R,uint,-,1,0,32,Number of records returned by last Journal:Read (0..32),,
-192,0xC0,Journal:0Event,R,?uint,-,-,,,Journal entry 0 event code,,
+192,0xC0,Journal:0Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 0 event code,,
 193,0xC1,Journal:0Hours,R,?uint,h,1,,,Journal entry 0 operating hours,,
-194,0xC2,Journal:1Event,R,?uint,-,-,,,Journal entry 1 event code,,
+194,0xC2,Journal:1Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 1 event code,,
 195,0xC3,Journal:1Hours,R,?uint,h,1,,,Journal entry 1 operating hours,,
-196,0xC4,Journal:2Event,R,?uint,-,-,,,Journal entry 2 event code,,
+196,0xC4,Journal:2Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 2 event code,,
 197,0xC5,Journal:2Hours,R,?uint,h,1,,,Journal entry 2 operating hours,,
-198,0xC6,Journal:3Event,R,?uint,-,-,,,Journal entry 3 event code,,
+198,0xC6,Journal:3Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 3 event code,,
 199,0xC7,Journal:3Hours,R,?uint,h,1,,,Journal entry 3 operating hours,,
-200,0xC8,Journal:4Event,R,?uint,-,-,,,Journal entry 4 event code,,
+200,0xC8,Journal:4Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 4 event code,,
 201,0xC9,Journal:4Hours,R,?uint,h,1,,,Journal entry 4 operating hours,,
-202,0xCA,Journal:5Event,R,?uint,-,-,,,Journal entry 5 event code,,
+202,0xCA,Journal:5Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 5 event code,,
 203,0xCB,Journal:5Hours,R,?uint,h,1,,,Journal entry 5 operating hours,,
-204,0xCC,Journal:6Event,R,?uint,-,-,,,Journal entry 6 event code,,
+204,0xCC,Journal:6Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 6 event code,,
 205,0xCD,Journal:6Hours,R,?uint,h,1,,,Journal entry 6 operating hours,,
-206,0xCE,Journal:7Event,R,?uint,-,-,,,Journal entry 7 event code,,
+206,0xCE,Journal:7Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 7 event code,,
 207,0xCF,Journal:7Hours,R,?uint,h,1,,,Journal entry 7 operating hours,,
-208,0xD0,Journal:8Event,R,?uint,-,-,,,Journal entry 8 event code,,
+208,0xD0,Journal:8Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 8 event code,,
 209,0xD1,Journal:8Hours,R,?uint,h,1,,,Journal entry 8 operating hours,,
-210,0xD2,Journal:9Event,R,?uint,-,-,,,Journal entry 9 event code,,
+210,0xD2,Journal:9Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 9 event code,,
 211,0xD3,Journal:9Hours,R,?uint,h,1,,,Journal entry 9 operating hours,,
-212,0xD4,Journal:10Event,R,?uint,-,-,,,Journal entry 10 event code,,
+212,0xD4,Journal:10Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 10 event code,,
 213,0xD5,Journal:10Hours,R,?uint,h,1,,,Journal entry 10 operating hours,,
-214,0xD6,Journal:11Event,R,?uint,-,-,,,Journal entry 11 event code,,
+214,0xD6,Journal:11Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 11 event code,,
 215,0xD7,Journal:11Hours,R,?uint,h,1,,,Journal entry 11 operating hours,,
-216,0xD8,Journal:12Event,R,?uint,-,-,,,Journal entry 12 event code,,
+216,0xD8,Journal:12Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 12 event code,,
 217,0xD9,Journal:12Hours,R,?uint,h,1,,,Journal entry 12 operating hours,,
-218,0xDA,Journal:13Event,R,?uint,-,-,,,Journal entry 13 event code,,
+218,0xDA,Journal:13Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 13 event code,,
 219,0xDB,Journal:13Hours,R,?uint,h,1,,,Journal entry 13 operating hours,,
-220,0xDC,Journal:14Event,R,?uint,-,-,,,Journal entry 14 event code,,
+220,0xDC,Journal:14Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 14 event code,,
 221,0xDD,Journal:14Hours,R,?uint,h,1,,,Journal entry 14 operating hours,,
-222,0xDE,Journal:15Event,R,?uint,-,-,,,Journal entry 15 event code,,
+222,0xDE,Journal:15Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 15 event code,,
 223,0xDF,Journal:15Hours,R,?uint,h,1,,,Journal entry 15 operating hours,,
-224,0xE0,Journal:16Event,R,?uint,-,-,,,Journal entry 16 event code,,
+224,0xE0,Journal:16Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 16 event code,,
 225,0xE1,Journal:16Hours,R,?uint,h,1,,,Journal entry 16 operating hours,,
-226,0xE2,Journal:17Event,R,?uint,-,-,,,Journal entry 17 event code,,
+226,0xE2,Journal:17Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 17 event code,,
 227,0xE3,Journal:17Hours,R,?uint,h,1,,,Journal entry 17 operating hours,,
-228,0xE4,Journal:18Event,R,?uint,-,-,,,Journal entry 18 event code,,
+228,0xE4,Journal:18Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 18 event code,,
 229,0xE5,Journal:18Hours,R,?uint,h,1,,,Journal entry 18 operating hours,,
-230,0xE6,Journal:19Event,R,?uint,-,-,,,Journal entry 19 event code,,
+230,0xE6,Journal:19Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 19 event code,,
 231,0xE7,Journal:19Hours,R,?uint,h,1,,,Journal entry 19 operating hours,,
-232,0xE8,Journal:20Event,R,?uint,-,-,,,Journal entry 20 event code,,
+232,0xE8,Journal:20Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 20 event code,,
 233,0xE9,Journal:20Hours,R,?uint,h,1,,,Journal entry 20 operating hours,,
-234,0xEA,Journal:21Event,R,?uint,-,-,,,Journal entry 21 event code,,
+234,0xEA,Journal:21Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 21 event code,,
 235,0xEB,Journal:21Hours,R,?uint,h,1,,,Journal entry 21 operating hours,,
-236,0xEC,Journal:22Event,R,?uint,-,-,,,Journal entry 22 event code,,
+236,0xEC,Journal:22Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 22 event code,,
 237,0xED,Journal:22Hours,R,?uint,h,1,,,Journal entry 22 operating hours,,
-238,0xEE,Journal:23Event,R,?uint,-,-,,,Journal entry 23 event code,,
+238,0xEE,Journal:23Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 23 event code,,
 239,0xEF,Journal:23Hours,R,?uint,h,1,,,Journal entry 23 operating hours,,
-240,0xF0,Journal:24Event,R,?uint,-,-,,,Journal entry 24 event code,,
+240,0xF0,Journal:24Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 24 event code,,
 241,0xF1,Journal:24Hours,R,?uint,h,1,,,Journal entry 24 operating hours,,
-242,0xF2,Journal:25Event,R,?uint,-,-,,,Journal entry 25 event code,,
+242,0xF2,Journal:25Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 25 event code,,
 243,0xF3,Journal:25Hours,R,?uint,h,1,,,Journal entry 25 operating hours,,
-244,0xF4,Journal:26Event,R,?uint,-,-,,,Journal entry 26 event code,,
+244,0xF4,Journal:26Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 26 event code,,
 245,0xF5,Journal:26Hours,R,?uint,h,1,,,Journal entry 26 operating hours,,
-246,0xF6,Journal:27Event,R,?uint,-,-,,,Journal entry 27 event code,,
+246,0xF6,Journal:27Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 27 event code,,
 247,0xF7,Journal:27Hours,R,?uint,h,1,,,Journal entry 27 operating hours,,
-248,0xF8,Journal:28Event,R,?uint,-,-,,,Journal entry 28 event code,,
+248,0xF8,Journal:28Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 28 event code,,
 249,0xF9,Journal:28Hours,R,?uint,h,1,,,Journal entry 28 operating hours,,
-250,0xFA,Journal:29Event,R,?uint,-,-,,,Journal entry 29 event code,,
+250,0xFA,Journal:29Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 29 event code,,
 251,0xFB,Journal:29Hours,R,?uint,h,1,,,Journal entry 29 operating hours,,
-252,0xFC,Journal:30Event,R,?uint,-,-,,,Journal entry 30 event code,,
+252,0xFC,Journal:30Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 30 event code,,
 253,0xFD,Journal:30Hours,R,?uint,h,1,,,Journal entry 30 operating hours,,
-254,0xFE,Journal:31Event,R,?uint,-,-,,,Journal entry 31 event code,,
+254,0xFE,Journal:31Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 31 event code,,
 255,0xFF,Journal:31Hours,R,?uint,h,1,,,Journal entry 31 operating hours,,
 320,0x140,Table:2Hz,RWs,uint,m%,100,0,100,Modulation index at 2.05Hz,,7.0/5.0/5.5
 321,0x141,Table:4Hz,RWs,uint,m%,100,0,100,Modulation index at 4.10Hz,,7.5/6.5/7.5

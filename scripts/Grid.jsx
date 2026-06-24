@@ -30,7 +30,7 @@ const Grid = {
     // R/O when the register is read-only OR not editable right now
     // (no device, rule slot inactive).
     const ro = Reg.ro(reg) || ghosted;
-    const oor = Reg.outOfRange(reg, val);
+    const oor = Reg.outOfRange(reg, val) || Reg.willWrap(reg, val);
     const showUnit = !Reg.isEnum(reg) && !Reg.isBool(reg);
     // Slider only fits live editable scalar numerics. Pairs (uint32 has 4G
     // steps, float has arbitrary precision) don't map to a range input, and

@@ -5,7 +5,7 @@ to current on-disk state.
 """
 
 from modbus import ModbusMaster
-from xaeian import INI, JSON
+from xaeian import INI, JSON, Color
 
 STATE_FILE = "serial.ini"
 REGS_FILE = "regs.csv"
@@ -102,8 +102,74 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     sim=(port == "SIM"),
   )
 
+#-------------------------------------------------------------------------- Map lint
+
+# 16-bit register span per type; the encoder masks round(value*scale) with
+# & 0xFFFF, so a bound/default that overflows wraps instead of being rejected.
+_RAW_RANGE = {
+  "uint": (0, 0xFFFF), "hex": (0, 0xFFFF), "rule": (0, 0xFFFF),
+  "int": (-0x8000, 0x7FFF),
+}
+
+def _slots(val) -> list:
+  return val if isinstance(val, list) else [val]
+
+def _slot(val, i):
+  """Per-slot pick for rule lists; scalars repeat, OOB falls back to slot 0
+  (matching runtime _get_scale / _get_minmax)."""
+  if not isinstance(val, list): return val
+  if i < len(val): return val[i]
+  return val[0] if val else None
+
+def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
+  """Flag regs.csv mistakes the encoder would otherwise hide (uint16 wrap,
+  scale-zero coercion). Advisory: logs and returns issues, never raises."""
+  issues = []
+  for r in regs:
+    name = r.get("name", "?")
+    # 32-bit pairs (list id) encode outside the single-word scale path.
+    if isinstance(r.get("id"), list): continue
+    rng = _RAW_RANGE.get(r.get("type"))
+    if not rng: continue
+    raw_lo, raw_hi = rng
+    scale, mn, mx = r.get("scale", 1.0), r.get("min"), r.get("max")
+    n = max(len(_slots(scale)), len(_slots(mn)), len(_slots(mx)))
+    for i in range(n):
+      s, lo, hi = _slot(scale, i), _slot(mn, i), _slot(mx, i)
+      tag = name + (f"[{i}]" if n > 1 else "")
+      if s is None or s <= 0:
+        issues.append(("err", f"{tag}: scale={s} (must be > 0)"))
+        continue
+      if lo is not None and hi is not None and lo > hi:
+        issues.append(("wrn", f"{tag}: min {lo:g} > max {hi:g}"))
+      for label, bound in (("min", lo), ("max", hi)):
+        if bound is None: continue
+        raw = bound * s
+        if raw < raw_lo or raw > raw_hi:
+          issues.append(("wrn",
+            f"{tag}: {label} {bound:g} x scale {s:g} = {raw:g} "
+            f"out of register range [{raw_lo}, {raw_hi}] - writes near it wrap"))
+    # default-in-range only when bounds are plain scalars: rule slots and
+    # per-variant defaults live on different list axes, so don't cross them.
+    if not isinstance(mn, list) and not isinstance(mx, list):
+      for d in _slots(r.get("default")):
+        if not isinstance(d, (int, float)) or isinstance(d, bool): continue
+        if mn is not None and d < mn:
+          issues.append(("wrn", f"{name}: default {d:g} below min {mn:g}"))
+        if mx is not None and d > mx:
+          issues.append(("wrn", f"{name}: default {d:g} above max {mx:g}"))
+  if issues:
+    errs = sum(1 for k, _ in issues if k == "err")
+    print(f"{Color.ORANGE}regs.csv: {len(issues)} issue(s), {errs} error(s){Color.END}")
+    for kind, msg in issues:
+      col = Color.RED if kind == "err" else Color.YELLOW
+      print(f"  {col}{kind.upper()}{Color.END} {msg}")
+  return issues
+
 def load_regs(state:dict=None, view:dict=None) -> list[dict]:
   """Full register catalog (ignored entries included; frontend hides them)."""
   if state is None: state = load_state()
   if view is None: view = load_view()
-  return create_mb(state, view).regs_info()
+  regs = create_mb(state, view).regs_info()
+  lint_regs(regs)
+  return regs

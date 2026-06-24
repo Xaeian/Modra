@@ -1,5 +1,11 @@
 # Changes `modra`
 
+## `1.2.3` Lint, Input guards
+
+- `regs.csv` lint on boot
+- Overflow values flagged, not silently wrapped; decimal comma accepted
+- Toast alerts on more actions, with type icons
+
 ## `1.2.2` Trickle, Autosend
 
 - Auto-send writes on commit; per-row 🎯 stages a value for Send _(even if unchanged)_

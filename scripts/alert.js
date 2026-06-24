@@ -10,6 +10,7 @@ const alert = (() => {
   const OFFSET = 12;   // px from bottom of viewport
   const GAP = 6;       // px between stacked toasts
   const MAX = 5;       // hard cap on visible toasts
+  const ICONS = { err: "🚨", wrn: "⚠️", inf: "ℹ️", ok: "✅" };
 
   // Map preserves insertion order so _evict() drops the oldest naturally.
   const _map = new Map();
@@ -57,6 +58,9 @@ const alert = (() => {
   function _build(type, msg) {
     const el = document.createElement("div");
     el.className = "rb-alert rb-alert-" + type;
+    const iconEl = document.createElement("span");
+    iconEl.className = "rb-alert-icon";
+    iconEl.textContent = ICONS[type] || ICONS.inf;
     const msgEl = document.createElement("span");
     msgEl.className = "rb-alert-msg";
     msgEl.textContent = msg;
@@ -64,6 +68,7 @@ const alert = (() => {
     closeBtn.className = "rb-alert-close";
     closeBtn.textContent = "×";
     closeBtn.onclick = () => _close(msg);
+    el.appendChild(iconEl);
     el.appendChild(msgEl);
     el.appendChild(closeBtn);
     return el;
@@ -91,9 +96,9 @@ const alert = (() => {
 
   return {
     show,
-    err: (msg, ms = 4000) => show("err", msg, ms),
-    wrn: (msg, ms = 3000) => show("wrn", msg, ms),
-    inf: (msg, ms = 2500) => show("inf", msg, ms),
-    ok:  (msg, ms = 2500) => show("ok",  msg, ms),
+    err: (msg, ms = 6000) => show("err", msg, ms),
+    wrn: (msg, ms = 5000) => show("wrn", msg, ms),
+    inf: (msg, ms = 4000) => show("inf", msg, ms),
+    ok:  (msg, ms = 4000) => show("ok",  msg, ms),
   };
 })();

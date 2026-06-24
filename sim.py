@@ -31,12 +31,11 @@ SIGMA_FRAC = 0.7
 GAIN_FRAC_MIN = 0.004
 GAIN_FRAC_MAX = 0.012
 
-# Discrete-type tick probabilities. Tuned for ~200-500ms polls so a flip
-# happens every minute or two on average.
-BOOL_CHANCE_MIN = 0.002
-BOOL_CHANCE_MAX = 0.010
-ENUM_CHANCE_MIN = 0.001
-ENUM_CHANCE_MAX = 0.005
+# Per-tick flip chance for bool and enum (bool kept no higher than enum).
+BOOL_CHANCE_MIN = 0.01
+BOOL_CHANCE_MAX = 0.03
+ENUM_CHANCE_MIN = 0.01
+ENUM_CHANCE_MAX = 0.03
 
 VER_FALLBACK = "0.1.0"
 

@@ -25,6 +25,14 @@
 .rb-alert-inf { background: #0d6efd; }
 .rb-alert-ok  { background: #28a745; }
 
+.rb-alert-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  font-size: 15px;
+}
+
 .rb-alert-msg {
   flex: 1;
   display: flex;

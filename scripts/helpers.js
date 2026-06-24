@@ -141,10 +141,19 @@ const Reg = (() => {
   function parse(reg, str) {
     str = String(str ?? "").trim();
     if(!str) return null;
-    if(str.startsWith("0x") || str.startsWith("0X")) return parseInt(str.slice(2), 16);
-    if(str.startsWith("0b") || str.startsWith("0B")) return parseInt(str.slice(2), 2);
+    if(str.startsWith("0x") || str.startsWith("0X")) {
+      const v = parseInt(str.slice(2), 16);
+      return isNaN(v) ? null : v;
+    }
+    if(str.startsWith("0b") || str.startsWith("0B")) {
+      const v = parseInt(str.slice(2), 2);
+      return isNaN(v) ? null : v;
+    }
     if(isNumeric(reg)) {
-      const v = parseFloat(str);
+      // A decimal comma (PL/DE locale) is a lone separator between digits;
+      // normalize to a dot so parseFloat keeps the fraction. Mirrors the
+      // import-path rule in actions.js; grouped thousands are left alone.
+      const v = parseFloat(str.replace(/^(-?\d+),(\d+)$/, "$1.$2"));
       return isNaN(v) ? null : v;
     }
     return str;
@@ -179,7 +188,34 @@ const Reg = (() => {
   function outOfRange(reg, value) {
     if(value == null || typeof value !== "number") return false;
     if(isInactive(reg)) return false;
-    return value < min(reg) || value > max(reg);
+    // Only against declared bounds; an undeclared side has no advisory limit.
+    const ri = ruleIndex(reg);
+    const lo = _pickSlot(reg.min, ri, null);
+    const hi = _pickSlot(reg.max, ri, null);
+    return (lo != null && value < lo) || (hi != null && value > hi);
+  }
+
+  // 16-bit register span per type; types absent here don't scale-encode.
+  const _RAW_RANGE = { uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], int: [-0x8000, 0x7FFF] };
+
+  // round(value*scale) overflows the register and wraps to a different number.
+  function willWrap(reg, value) {
+    if(value == null || typeof value !== "number") return false;
+    if(reg.rule?.pair || isInactive(reg)) return false;
+    const range = _RAW_RANGE[reg.type];
+    if(!range) return false;
+    const s = scale(reg);
+    if(!(s > 0)) return false;
+    const raw = Math.round(value * s);
+    return raw < range[0] || raw > range[1];
+  }
+
+  // The number the device keeps after a wrap (encode & 0xFFFF, then decode).
+  function wrapPreview(reg, value) {
+    const s = scale(reg) || 1;
+    let raw = Math.round(value * s) & 0xFFFF;
+    if(reg.type === "int" && raw >= 0x8000) raw -= 0x10000;
+    return raw / s;
   }
 
   //---------------------------------------------------------- Tooltip / list ops
@@ -270,7 +306,7 @@ const Reg = (() => {
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
     isNumeric, isEnum, isBool, isVer, isNA,
-    outOfRange,
+    outOfRange, willWrap, wrapPreview,
     tooltip, filter, visibility, blocks, columns,
   };
 })();

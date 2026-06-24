@@ -62,6 +62,9 @@
 /* OOR warning - write still goes through; firmware decides. */
 .rb-send.oor:not(.off) { background: #dc3545; border-color: #b02a37; }
 .rb-send.oor:not(.off):hover { background: #c82333; }
+/* Wrap - value overflows its register; Send confirms before corrupting. */
+.rb-send.wrap:not(.off) { background: #a01828; border-color: #7a1220; }
+.rb-send.wrap:not(.off):hover { background: #8a1422; }
 
 .rb-conn { font-weight: 600; }
 .rb-conn.on { background: #28a745; border-color: #1e7e34; color: #fff; }

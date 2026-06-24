@@ -53,7 +53,12 @@ function editSilent(reg, val) {
 
 function resetOne(reg) { delete S.dirty[reg.name]; render(); }
 
-function reset() { S.dirty = {}; render(); }
+function reset() {
+  const n = Object.keys(S.dirty).length;
+  S.dirty = {};
+  if(n) alert.inf(`Discarded ${n} pending edit${n === 1 ? "" : "s"}`);
+  render();
+}
 
 // Toggle a pending device-null between set and reverted.
 function toggleNull(reg) {
@@ -86,13 +91,24 @@ function sendOne(reg) {
 // Autosend a single reg: flush its pending value, then adopt the device cache.
 // Focus that a Tab moved to the next field is restored across the rebuild.
 async function autosendOne(reg) {
-  await _writeOne(reg, S.dirty[reg.name]);
+  const val = S.dirty[reg.name];
+  // Capture focus before any render so a Tab to the next field survives.
   const keep = document.activeElement?.dataset?.reg;
-  render();
-  if(keep) {
+  const refocus = () => {
+    if(!keep) return;
     const el = root?.querySelector(`[data-reg="${CSS.escape(keep)}"]`);
     if(el) el.focus();
+  };
+  // Don't autosend a wrapping value; leave it staged for the explicit Send.
+  if(Reg.willWrap(reg, val)) {
+    alert.wrn(`${reg.name} would be stored as ${Reg.display(reg, Reg.wrapPreview(reg, val))} on the device - not sent`);
+    render();
+    refocus();
+    return;
   }
+  await _writeOne(reg, val);
+  render();
+  refocus();
 }
 
 // Enum/bool pick: set the value, and in autosend mode write it on the spot.
@@ -162,6 +178,7 @@ async function toggleConnection() {
       stopPoll();
       applyStatus(await API.disconnect());
       applyCache(null);
+      alert.inf("Disconnected");
       return;
     }
     const port = S.portInput;
@@ -183,7 +200,10 @@ async function toggleConnection() {
     if(a >= MIN_ADDR && a <= MAX_ADDR) {
       const s = await API.set_addr(a);
       applyStatus(s);
-      if(S.connected) startPoll();
+      if(S.connected) {
+        startPoll();
+        alert.ok(S.portInput === "SIM" ? "Simulator connected" : `Connected to addr ${a}`);
+      }
       else alert.wrn(s?.error || `No response addr:${a}`);
     }
   }
@@ -195,16 +215,29 @@ async function toggleConnection() {
 
 //---------------------------------------------------------- Write / Sync
 
+// Confirm before sending values that overflow their register (they wrap to a
+// different number). False only when the user cancels.
+function _confirmWraps(batch) {
+  const bad = Object.entries(batch)
+    .map(([name, val]) => [S.regs.find(r => r.name === name), val])
+    .filter(([reg, val]) => reg && Reg.willWrap(reg, val));
+  if(!bad.length || typeof confirm !== "function") return true;
+  const lines = bad.map(([reg, val]) =>
+    `  ${reg.name}: ${Reg.display(reg, val)} → ${Reg.display(reg, Reg.wrapPreview(reg, val))}`).join("\n");
+  return confirm(`${bad.length} value(s) are too large for their register and will be stored as a different number on the device:\n\n${lines}\n\nSend anyway?`);
+}
+
 // Replaces `S.values` with the returned cache rather than merging our
 // pending edits - the backend may have clamped or rejected values.
 async function send() {
   if(!S.connected || !Object.keys(S.dirty).length) return;
+  if(!_confirmWraps(S.dirty)) return;
   const cache = await API.write(S.dirty);
   if(cache && !cache.error) {
     applyCache(cache);
     const n = Object.keys(S.dirty).length;
     S.dirty = {};
-    alert.ok(`Write done (${n})`);
+    alert.ok(`Saved ${n} register${n === 1 ? "" : "s"} to device`);
   }
   else alert.err(cache?.error || "Write failed");
   render();
@@ -213,7 +246,7 @@ async function send() {
 async function sync() {
   if(!S.connected) return;
   await API.sync();
-  alert.inf("Sync requested");
+  alert.inf("Reading all registers from device");
 }
 
 //---------------------------------------------------------- Address scan
@@ -262,7 +295,7 @@ async function deleteDatabase() {
   if(res?.error) { alert.err(res.error); return; }
   MonitData.clear();
   if(S.monitor.size) { Monitor.refresh(); Monitor.mount(); }
-  alert.ok("Database cleared");
+  alert.ok("History database cleared");
   render();
 }
 
@@ -289,6 +322,13 @@ async function importConfig() {
   const rwSet = new Set(
     S.regs.filter(r => r.rws === "RW" || r.rws === "RWs").map(r => r.name)
   );
+  // Parse to the register's type like keyboard input, so numerics stage as
+  // numbers (range/wrap checks need that); enum/bool/ver stay strings.
+  const regByName = new Map(S.regs.map(r => [r.name, r]));
+  const stage = (name, val) => {
+    const reg = regByName.get(name);
+    editSilent(reg || { name }, reg ? Reg.parse(reg, val) : val);
+  };
   const ext = file.name.split(".").pop().toLowerCase();
   let count = 0;
   let srcNote = "";
@@ -300,13 +340,13 @@ async function importConfig() {
         for(const [n, val] of Object.entries(v)) {
           const name = `${k}:${n}`;
           if(val !== null && val !== "" && rwSet.has(name)) {
-            editSilent({ name }, val);
+            stage(name, val);
             count++;
           }
         }
       }
       else if(v !== null && v !== "" && rwSet.has(k)) {
-        editSilent({ name: k }, v);
+        stage(k, v);
         count++;
       }
     }
@@ -328,7 +368,7 @@ async function importConfig() {
       // With ';' as the separator the comma is free to be a decimal point.
       if(localeCsv && typeof val === "string") val = val.replace(/^(-?\d+),(\d+)$/, "$1.$2");
       if(name && val !== null && val !== "" && rwSet.has(name)) {
-        editSilent({ name }, val);
+        stage(name, val);
         count++;
       }
     }
@@ -352,7 +392,9 @@ function exportConfigCSV() {
       desc: reg.desc || "",
     });
   }
-  CSV.save(`cfg@${fileStamp()}.csv`, rows, ["id", "hex", "name", "value", "unit", "desc"]);
+  const name = `cfg@${fileStamp()}.csv`;
+  CSV.save(name, rows, ["id", "hex", "name", "value", "unit", "desc"]);
+  alert.ok(`Exported ${rows.length} register${rows.length === 1 ? "" : "s"} to ${name}`);
 }
 
 // Groups → [sections], leaf RWs → section keys. Unit (e.g. "rpm") is attached
@@ -379,5 +421,7 @@ function exportConfigINI() {
       }
     }
   }
-  INI.save(`cfg@${fileStamp()}.ini`, data, {}, commentField);
+  const name = `cfg@${fileStamp()}.ini`;
+  INI.save(name, data, {}, commentField);
+  alert.ok(`Exported config to ${name}`);
 }

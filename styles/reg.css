@@ -58,11 +58,14 @@
 .rb-val::placeholder { color: var(--null); }
 .rb-val.dirty { background: #fffbe6; border-color: #e6c300; }
 .rb-val.oor   { background: #fff0f0; border-color: #dc3545; color: #dc3545; }
+/* Encode overflow (wraps to a different number) - harsher than advisory .oor. */
+.rb-val.wrap  { border-style: dashed; border-width: 2px; font-weight: 600; color: #a01828; }
 /* Device-reported N/A label - italic muted reads as metadata, not input. */
 .rb-val.na, .rb-ro.na { font-style: italic; color: var(--text-muted); }
 
 [data-theme="dark"] .rb-val.dirty { background: #3a3520; border-color: #8a7a20; }
 [data-theme="dark"] .rb-val.oor   { background: #3a2020; border-color: #dc3545; color: #ff6b6b; }
+[data-theme="dark"] .rb-val.wrap  { color: #ff8080; }
 
 .rb-val-reset {
   position: absolute;
@@ -124,6 +127,8 @@
 .rb-btn.on    { background: var(--accent); border-color: var(--accent); color: #fff; }
 .rb-btn.dirty { background: #e8a308; border-color: #c78c00; color: #fff; }
 .rb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The 0/off/none/LOW choice is cyan instead of the blue active accent. */
+.rb-btn.zero.on { background: #17a2b8; border-color: #17a2b8; }
 
 /* unit / rws badge / icons */
 .rb-unit { font-size: 11px; color: var(--text-muted); min-width: 24px; }

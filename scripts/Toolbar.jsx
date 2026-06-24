@@ -7,11 +7,15 @@
 const Toolbar = () => {
   const dc = Object.keys(S.dirty).length;
   const lineUp = S.serial_open || S.connected;
-  // Send turns red as a warning when any pending edit is OOR; the write
-  // still goes through and the firmware decides what to do.
+  // Send reddens on a pending OOR (write still goes through); a wrap is the
+  // harsher case and Send confirms first.
   const dirtyOor = Object.entries(S.dirty).some(([name, val]) => {
     const reg = S.regs.find(r => r.name === name);
     return reg && Reg.outOfRange(reg, val);
+  });
+  const dirtyWrap = Object.entries(S.dirty).some(([name, val]) => {
+    const reg = S.regs.find(r => r.name === name);
+    return reg && Reg.willWrap(reg, val);
   });
   return (
     <div class="rb-toolbar">
@@ -31,8 +35,10 @@ const Toolbar = () => {
         {S.busy ? "⏳" : "⚡"}
       </button>
       {dc
-        ? <button class={cls("rb-tbtn rb-send", dirtyOor && "oor")} onClick={send} disabled={!S.connected}
-            title={dirtyOor ? "Send pending changes (some out of range)" : "Send pending changes"}>⬆ Send ({dc})</button>
+        ? <button class={cls("rb-tbtn rb-send", (dirtyOor || dirtyWrap) && "oor", dirtyWrap && "wrap")} onClick={send} disabled={!S.connected}
+            title={dirtyWrap ? "Send pending changes (some are too large for their register and will be stored differently)"
+                 : dirtyOor ? "Send pending changes (some out of range)"
+                 : "Send pending changes"}>⬆ Send ({dc})</button>
         : <button class={cls("rb-tbtn", !S.connected && "off")} onClick={sync}
             disabled={!S.connected} title="Read all registers">⬇ Read</button>}
       <button class={cls("rb-tbtn", !dc && "off")} onClick={reset}

@@ -16,20 +16,17 @@ traces rather than a clean sinusoid or pure noise.
 Each register is simulated from its own descriptor row alone (type, rws,
 min/max) - no cross-register logic, no mode/setpoint dependencies.
 
-Inspired by the PHP `rand.php` in `php-inspiration/`. Per-register tuning
-(sigma/gain/chance) is seeded from `(rid, name)` so adjacent channels
-look uncorrelated. `ver` falls back to "0.1.0" when regs.csv has no
-`default`, so fresh sims don't show a blank badge.
+Per-register tuning (sigma/gain/chance) is seeded from `(rid, name)` so
+adjacent channels stay uncorrelated but deterministic per tick.
 """
 
 import asyncio, math, random, time
 
 #---------------------------------------------------------- Tuning constants
 
-# `sigma` is the width of the edge-bias Gaussians (as a fraction of span).
-# `gain` is the maximum single-tick step (as a fraction of span). The PHP
-# original uses 1.0 / 0.01 - we pick 0.7 for sharper edge restoration and
-# vary gain per-register so traces don't all march at the same pace.
+# `sigma`: width of the edge-bias Gaussians (fraction of span).
+# `gain`: max single-tick step (fraction of span), varied per register so
+# traces do not all advance at the same pace.
 SIGMA_FRAC = 0.7
 GAIN_FRAC_MIN = 0.004
 GAIN_FRAC_MAX = 0.012
@@ -70,10 +67,8 @@ class SimulatedClient:
       self.values[rid] = self._initial(entry)
 
   def reattach(self, id_map:dict):
-    """Bind to a fresh `id_map` after a ModbusMaster rebuild while keeping
-    the random-walk state. Seeds entries new to this id_map; drops entries
-    that disappeared. Without this, every ignore/serial toggle would reset
-    all telemetry traces to their initial midpoint."""
+    """Bind to a fresh `id_map` after a ModbusMaster rebuild while keeping the
+    random-walk state: seeds entries new to this id_map, drops vanished ones."""
     self.id_map = id_map
     for rid in list(self.values):
       if rid not in id_map: del self.values[rid]
@@ -155,7 +150,7 @@ class SimulatedClient:
 
   @staticmethod
   def _raw_to_eng(entry:dict, raw:int) -> float:
-    """Inverse of `_to_raw` for the numeric (uint/int/rule) types."""
+    """Inverse of `_to_raw` for numeric types (sign-extend int, then unscale)."""
     typ = entry.get("type", "uint")
     scale = SimulatedClient._first(entry.get("scale", 1)) or 1
     try: scale = float(scale)
@@ -184,7 +179,7 @@ class SimulatedClient:
       if mn is not None and mx is not None and mx > mn:
         # Start in the middle 60% of the range so the walk has room to drift
         # either way before hitting a wall.
-        rng = random.Random((entry["id"] << 16) ^ hash(entry.get("fullname", "")))
+        rng = random.Random((entry.get("id", 0) << 16) ^ hash(entry.get("fullname", "")))
         start = mn + (mx - mn) * (0.2 + 0.6 * rng.random())
         try: return self._to_raw(entry, start)
         except (TypeError, ValueError): pass

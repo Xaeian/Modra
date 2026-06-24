@@ -52,6 +52,12 @@ const Serial = () => {
       <Field label="Retries"><Num k="retries" fallback={3} /></Field>
       <Field label="History" unit="days"><Num k="history" fallback={14} /></Field>
 
+      <button class={cls("rb-tbtn", S.serial.autosend && "active")}
+        onClick={() => setSerial({ autosend: !S.serial.autosend })}
+        title="Send each value on Enter/Tab or click">
+        auto-send
+      </button>
+
       <div class="rb-cfg-sep" />
 
       {/* Address scan: range input → button → datalist of found devices
@@ -65,7 +71,7 @@ const Serial = () => {
           {S.addrScanning ? "⏳" : "🔍"} Scan
         </button>
         {S.addrScanResults !== null && (S.addrScanResults.length
-          ? <div class="rb-addr-scan-result">
+          ? <div class="rb-addr-scan">
               <input class="rb-cfg-input rb-addr-scan-input" type="text"
                 list="rb-addr-list" placeholder="select or type"
                 onInput={(e) => {
@@ -93,7 +99,7 @@ const Serial = () => {
       <div class="rb-cfg-sep" />
 
       <button class="rb-tbtn rb-danger" onClick={deleteDatabase}
-        title="Permanently wipe stored poll history (data.db)">🧹 Clear DB</button>
+        title="Wipe stored history (data.db)">🧹 Clear DB</button>
     </div>
   );
 };

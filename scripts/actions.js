@@ -36,21 +36,16 @@ const _viewSaver = (() => {
   };
 })();
 
-// Keeps `Monitor.jsx` / `monitor()` call sites stable when we batched the saver.
+// Stable alias for the debounced monitor saver.
 const saveMonitor = () => _viewSaver.monitor();
 
 //---------------------------------------------------------- Edit / dirty
 
 // Equal-to-cache means "user clicked back to the original" - drop the dirty
 // entry instead of recording a no-op write.
-function edit(reg, val) {
-  if(Reg.same(S.values[reg.name], val)) delete S.dirty[reg.name];
-  else S.dirty[reg.name] = val;
-  render();
-}
+function edit(reg, val) { editSilent(reg, val); render(); }
 
-// Same merge as `edit` but no render. Used by `importConfig` (bulk load)
-// and the numeric Input during typing (renders on blur, not per key).
+// Merge a pending edit without rendering (bulk import, per-keystroke typing).
 function editSilent(reg, val) {
   if(Reg.same(S.values[reg.name], val)) delete S.dirty[reg.name];
   else S.dirty[reg.name] = val;
@@ -60,10 +55,50 @@ function resetOne(reg) { delete S.dirty[reg.name]; render(); }
 
 function reset() { S.dirty = {}; render(); }
 
-// Null checkbox: when `cur` is `null`, revert the pending edit; else set pending `null`.
+// Toggle a pending device-null between set and reverted.
 function toggleNull(reg) {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
   cur == null ? resetOne(reg) : edit(reg, null);
+}
+
+//---------------------------------------------------------- Send single register
+
+// Autosend fires for an editable reg with a pending value while connected.
+const shouldAutosend = (reg) => S.serial?.autosend && S.connected && reg.name in S.dirty;
+
+// Write one register and adopt the device-confirmed cache; drops its pending edit.
+async function _writeOne(reg, val) {
+  const cache = await API.write({ [reg.name]: val });
+  if(cache && !cache.error) { applyCache(cache); delete S.dirty[reg.name]; }
+  else alert.err(cache?.error || "Write failed");
+}
+
+// Per-row 🎯: stage the current value (pending edit, else live) into the Send
+// batch even if it equals the cache, so an unchanged value can be re-sent.
+// Autosend flushes it at once; otherwise it waits for Send.
+function sendOne(reg) {
+  if(!S.connected) return;
+  S.dirty[reg.name] = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
+  if(shouldAutosend(reg)) autosendOne(reg);
+  else render();
+}
+
+// Autosend a single reg: flush its pending value, then adopt the device cache.
+// Focus that a Tab moved to the next field is restored across the rebuild.
+async function autosendOne(reg) {
+  await _writeOne(reg, S.dirty[reg.name]);
+  const keep = document.activeElement?.dataset?.reg;
+  render();
+  if(keep) {
+    const el = root?.querySelector(`[data-reg="${CSS.escape(keep)}"]`);
+    if(el) el.focus();
+  }
+}
+
+// Enum/bool pick: set the value, and in autosend mode write it on the spot.
+function editSend(reg, val) {
+  edit(reg, val);
+  if(shouldAutosend(reg)) autosendOne(reg);
 }
 
 //---------------------------------------------------------- UI toggles
@@ -104,7 +139,7 @@ function toggleIgnore(reg) {
     delete S.dirty[reg.name];
     if(S.monitor.has(reg.name)) {
       S.monitor.delete(reg.name);
-      _viewSaver.monitor();
+      saveMonitor();
       Monitor.refresh();
       Monitor.mount();
     }
@@ -127,7 +162,6 @@ async function toggleConnection() {
       stopPoll();
       applyStatus(await API.disconnect());
       applyCache(null);
-      S.errors = 0;
       return;
     }
     const port = S.portInput;
@@ -145,7 +179,7 @@ async function toggleConnection() {
         return;
       }
     }
-    const a = parseInt(S.addrInput);
+    const a = S.portInput === "SIM" ? 1 : parseInt(S.addrInput);
     if(a >= MIN_ADDR && a <= MAX_ADDR) {
       const s = await API.set_addr(a);
       applyStatus(s);

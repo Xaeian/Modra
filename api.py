@@ -4,6 +4,7 @@ Frontend-facing API surface. Each method is callable from pywebview
 JSON-safe dicts; errors become `{"error": str}`.
 """
 
+import config
 from link import ModbusLink
 
 link = ModbusLink()
@@ -33,6 +34,7 @@ class Api:
       "retries": link.state.get("retries", 3),
       "interval": link.state.get("interval", 500),
       "history": link.state.get("history", 14),
+      "autosend": config._bool(link.state.get("autosend"), False),
     }
 
   #--------------------------------------------------------------------------------- Connection
@@ -130,9 +132,7 @@ class Api:
       max_points = params.get("max_points")
     else:
       frm = to = names = max_points = None
-    addr = result.get("addr")
-    if not addr and link.state.get("addr"):
-      addr = int(link.state["addr"])
+    addr = link.store_key()
     if frm is not None and to is not None and names and addr:
       try: max_points = int(max_points or 2000)
       except (ValueError, TypeError): max_points = 2000

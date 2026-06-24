@@ -8,7 +8,7 @@
   font: 10px Roboto, sans-serif;
   pointer-events: none; line-height: 1;
   background: rgba(255,255,255,.85); border: 1px solid #ddd;
-  border-radius: 3px; padding: 4px 4px;
+  border-radius: 3px; padding: 4px;
 }
 
 /* Tooltip content (injected into .u-legend by plugin) */

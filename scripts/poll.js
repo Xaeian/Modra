@@ -90,13 +90,15 @@ function applyCache(cache) {
 
 // Resolves at focus time (not on every poll), so the poll loop can skip
 // re-renders that would steal focus or blow away half-typed values.
-const _EDITING_SELECTOR = ".rb-reg, .rb-toolbar, .rb-serial, .rb-util";
+const _EDITING_SELECTOR = ".rb-reg, .rb-toolbar, .rb-config, .rb-util";
 let _userEditing = false;
 
 document.addEventListener("focusin", (e) => {
   const el = e.target;
   if(!el || el === document.body) { _userEditing = false; return; }
   if(el.tagName === "SELECT") { _userEditing = true; return; }
+  // A focused button carries no half-typed value, so it must not gate render.
+  if(el.tagName === "BUTTON") { _userEditing = false; return; }
   _userEditing = !!el.closest?.(_EDITING_SELECTOR);
 });
 document.addEventListener("focusout", () => { _userEditing = false; });
@@ -122,13 +124,11 @@ async function poll() {
     if(!S.connected) {
       stopPoll();
       applyCache(null);
-      S.errors = 0;
       alert.err("Device disconnected");
       render();
       return;
     }
     if(!res.data) return;
-    S.errors = 0;
     const changed = applyCache(res.data);
     if("tier" in res) MonitData.tier = res.tier;
     if(S.monitor.size) Monitor.update(res.rows);
@@ -136,7 +136,6 @@ async function poll() {
     render();
   }
   catch(e) {
-    S.errors++;
     console.error("poll error:", e);
     render();
   }

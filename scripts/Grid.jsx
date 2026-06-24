@@ -36,6 +36,8 @@ const Grid = {
     // steps, float has arbitrary precision) don't map to a range input, and
     // ignored rows are showing historical context.
     const showMiscBtn = Reg.isNumeric(reg) && !ro && !isIgnored && !reg.rule?.pair;
+    // Writable + live: explicit send so the current value can be (re)written.
+    const showSendBtn = !ro && !isIgnored;
     return (
       <div class="rb-row-wrap">
         <div class={_rowClass(isDirty, ghosted, oor, isIgnored)} title={Reg.tooltip(reg)}>
@@ -43,14 +45,17 @@ const Grid = {
           <span class="rb-name">{reg.name}</span>
           <Control.For reg={reg} value={val} isDirty={isDirty} ro={ro} />
           {showUnit && <span class="rb-unit">{inactive ? "" : Reg.unit(reg)}</span>}
+          {showSendBtn &&
+            <button class="rb-icon-btn" onClick={() => sendOne(reg)}
+              title="Stage for Send (even if unchanged)">🎯</button>}
           <button class={cls("rb-icon-btn", isMonitored && "active")}
             onClick={() => monitor(reg)} title="Monitor">📊</button>
           <button class={cls("rb-icon-btn", isIgnored && "active")}
             onClick={() => toggleIgnore(reg)}
-            title={isIgnored ? "Unhide register" : "Ignore (skip polling, hide from grid)"}>🚫</button>
+            title={isIgnored ? "Unhide" : "Ignore (skip polling, hide)"}>🚫</button>
           {showMiscBtn &&
             <button class={cls("rb-icon-btn", isUtilOpen && "active")}
-              onClick={() => utilOpen(reg)} title="Misc">⚙</button>}
+              onClick={() => utilOpen(reg)} title="Slider">⚙</button>}
           <span class={Reg.rwsClass(reg)}>{Reg.rws(reg)}</span>
         </div>
         {isUtilOpen && <Misc.Panel reg={reg} value={val} />}

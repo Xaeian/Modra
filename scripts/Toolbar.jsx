@@ -16,13 +16,14 @@ const Toolbar = () => {
   return (
     <div class="rb-toolbar">
       <select class="rb-port" value={S.portInput}
-        onChange={(e) => { S.portInput = e.target.value; render(); }}
+        onChange={(e) => { S.portInput = e.target.value; if(e.target.value === "SIM") S.addrInput = "1"; render(); }}
         disabled={!S.ports.length}
         onBlur={() => _renderPending && render()}>
         {S.ports.map(p => <option value={p}>{p}</option>)}
       </select>
       <input class="rb-addr" type="text" value={S.addrInput}
         placeholder="addr" title="Modbus device address (1-247)"
+        disabled={S.portInput === "SIM"}
         onInput={(e) => { S.addrInput = e.target.value; }} />
       <button class={cls("rb-tbtn rb-conn", S.connected && "on", S.serial_open && !S.connected && "open")}
         onClick={toggleConnection}
@@ -31,9 +32,9 @@ const Toolbar = () => {
       </button>
       {dc
         ? <button class={cls("rb-tbtn rb-send", dirtyOor && "oor")} onClick={send} disabled={!S.connected}
-            title={dirtyOor ? "Write pending changes (some are out of range)" : "Write pending changes"}>⬆ Send ({dc})</button>
+            title={dirtyOor ? "Send pending changes (some out of range)" : "Send pending changes"}>⬆ Send ({dc})</button>
         : <button class={cls("rb-tbtn", !S.connected && "off")} onClick={sync}
-            disabled={!S.connected} title="Force full sync">⬇ Read</button>}
+            disabled={!S.connected} title="Read all registers">⬇ Read</button>}
       <button class={cls("rb-tbtn", !dc && "off")} onClick={reset}
         disabled={!dc} title="Discard pending changes">✕ Reset</button>
       <div class="rb-search-wrap">
@@ -45,12 +46,14 @@ const Toolbar = () => {
             onClick={() => search("")}>✕</button>
         )}
       </div>
+      {ZOOM.enabled && <button class="rb-tbtn" onClick={ZOOM.out} title="Zoom out (Ctrl -)">A-</button>}
+      {ZOOM.enabled && <button class="rb-tbtn" onClick={ZOOM.in} title="Zoom in (Ctrl +)">A+</button>}
       <button class={cls("rb-tbtn", S.showChart && "active")}
         onClick={() => { S.showChart = !S.showChart; render(); }}
-        title="Toggle chart panel (p)">📈</button>
+        title="Toggle charts (p)">📈</button>
       <button class={cls("rb-tbtn", S.showDisabled && "active")}
         onClick={toggleShowDisabled}
-        title="Show ignored registers inline (i)">🚫</button>
+        title="Show ignored (i)">🚫</button>
       <button class={cls("rb-tbtn", S.serialOpen && "active")} onClick={toggleSerial}
         title="Settings (o)">☰</button>
     </div>

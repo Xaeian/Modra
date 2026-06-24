@@ -4,7 +4,7 @@
 
 .rb-monitor-bar {
   display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  padding: 6px 6px;
+  padding: 6px;
   background: var(--bg-alt); border: 1px solid var(--border);
   border-radius: 4px 4px 0 0; font-size: 12px;
 }

@@ -241,6 +241,28 @@ const Reg = (() => {
     return out;
   }
 
+  // Lay id-ordered regs into `k` balanced columns: a contiguous block stays
+  // whole unless it alone exceeds a column's share, then it spills across
+  // columns. Each column is re-grouped by `blocks` for rendering.
+  function columns(regs, k) {
+    if(k <= 1 || !regs.length) return [regs];
+    const colSize = regs.length / k;
+    const cols = Array.from({ length: k }, () => []);
+    let cum = 0;
+    for(const b of blocks(regs)) {
+      if(b.length <= colSize) {
+        // Small block stays whole, in the column its midpoint lands in.
+        cols[Math.min(k - 1, Math.floor((cum + b.length / 2) / colSize))].push(...b);
+        cum += b.length;
+      }
+      else for(const r of b) {                // oversized block spills by row
+        cols[Math.min(k - 1, Math.floor(cum / colSize))].push(r);
+        cum++;
+      }
+    }
+    return cols.filter(c => c.length);
+  }
+
   return {
     lo, hi, label,
     ruleIndex, isInactive,
@@ -249,6 +271,15 @@ const Reg = (() => {
     display, decimals, parse, same, snap,
     isNumeric, isEnum, isBool, isVer, isNA,
     outOfRange,
-    tooltip, filter, visibility, blocks,
+    tooltip, filter, visibility, blocks, columns,
   };
 })();
+
+// Grid column count from width and reg count (capped): narrow stays single-column.
+const GRID_COL_W = 460, GRID_COL_MAX = 6, GRID_COL_ROWS = 8;
+function gridColumnCount(regCount) {
+  const w = document.querySelector(".rb-grid")?.clientWidth || (window.innerWidth - 32) || 1200;
+  const byWidth = Math.max(1, Math.floor(w / GRID_COL_W));
+  const byRows = Math.max(1, Math.round(regCount / GRID_COL_ROWS));
+  return Math.max(1, Math.min(byWidth, byRows, GRID_COL_MAX));
+}

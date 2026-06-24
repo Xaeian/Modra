@@ -71,6 +71,7 @@ class Handler(SimpleHTTPRequestHandler):
     start = Time()
     mute = self.path in MUTE
     if not mute: print(f"→ GET {self.path}")
+    # /read and /scan bypass the route table and return early - muted hot paths.
     if self.path == "/read":
       self._json(api.read()); return
     elif self.path == "/scan":

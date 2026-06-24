@@ -2,7 +2,7 @@
 SQLite store for poll-cycle history with resolution tiers.
 
 Raw data (one row per poll cycle) goes to one table per address (`addr_1`,
-`addr_5`, ...), columns typed from regs.csv (INTEGER/REAL/TEXT). Three coarser
+`addr_5`, ...; `addr_sim` for the simulator), columns typed from regs.csv (INTEGER/REAL/TEXT). Three coarser
 archive tiers downsample it incrementally - minute (`addr_1_m`), hour
 (`addr_1_h`), day (`addr_1_d`) - each averaging the tier below. A chart query
 reads from whichever tier matches the requested time span, so an overview of a
@@ -10,8 +10,8 @@ year is a 365-row read and a zoom into one minute is full resolution. Numeric
 columns average; TEXT (enum/ver) take the last value in the bucket.
 
 Schema is created lazily per table on first use and kept in sync with regs.csv
-by adding any missing columns (`ALTER TABLE ADD COLUMN`). New registers migrate
-in place; only a column removal or type change needs `data.db` deleted.
+by adding any missing columns (`ALTER TABLE ADD COLUMN`); column removal or a
+type change is not migrated.
 
 Rule registers (type=rule with switch + unit list) get one column per slot:
 `Ctrl_Setpoint_0`, `Ctrl_Setpoint_1`, ... Each sample writes only the
@@ -90,7 +90,7 @@ class Store:
       if str(u).lower() == sv: return i
     return None
 
-  def _table(self, addr:int, suffix:str="") -> str:
+  def _table(self, addr:int|str, suffix:str="") -> str:
     return f"addr_{addr}{suffix}"
 
   def _vcols(self, names:list[str]) -> list[str]:
@@ -128,7 +128,7 @@ class Store:
         await self.db.exec(f"ALTER TABLE {ident(table)} ADD COLUMN {c['col']} {c['type']}")
     self._tables.add(table)
 
-  async def _ensure_table(self, addr:int):
+  async def _ensure_table(self, addr:int|str):
     await self._ensure(self._table(addr))
 
   #------------------------------------------------------------------------------------ Resolve
@@ -144,7 +144,7 @@ class Store:
 
   #------------------------------------------------------------------------------------ Logging
 
-  async def log(self, cache:dict, addr:int):
+  async def log(self, cache:dict, addr:int|str):
     if not self._cols or not self.db: return
     try:
       await self._ensure_table(addr)
@@ -168,7 +168,7 @@ class Store:
 
   #---------------------------------------------------------------------------------- Downsample
 
-  async def roll(self, addr:int) -> int:
+  async def roll(self, addr:int|str) -> int:
     """Bring every archive tier up to date for `addr`. Cascading: minute reads
     raw, hour reads minute, day reads hour - so each tier only ever aggregates
     the small tier above it, never rescans raw. Forward-only (no backfill): a
@@ -246,7 +246,7 @@ class Store:
     return {"": "raw", "_m": "min", "_h": "hour", "_d": "day"}.get(suffix, "raw")
 
   async def query(
-    self, addr:int, names:list[str], from_ts:float, to_ts:float,
+    self, addr:int|str, names:list[str], from_ts:float, to_ts:float,
     max_points:int=2000, raw_days:int=14,
   ) -> list[dict]:
     """Rows for `names` in [from_ts, to_ts], ascending, downsampled to the tier

@@ -25,7 +25,6 @@ async def main():
   match action:
 
     case "import" | "imp":
-      # device → file (RWs only)
       file = sys.argv[2] if len(sys.argv) > 2 else "config.ini"
       await mb.connect()
       await mb.sync()
@@ -43,7 +42,6 @@ async def main():
       p.inf(f"{file} {c.TURQUS}<<{c.END} Motor")
 
     case "export" | "exp":
-      # file → device (RW + RWs, filtered by library)
       file = sys.argv[2] if len(sys.argv) > 2 else "config.ini"
       if not os.path.exists(file):
         p.err(f"File not found: {file}"); return

@@ -39,6 +39,12 @@ document.addEventListener("click", _flush);
 // gesture, user Alt+Tabs mid-drag) would otherwise leave the flag stuck.
 document.addEventListener("pointercancel", _flush);
 window.addEventListener("blur", _flush);
+// Column count tracks viewport width; re-render (debounced) on resize.
+let _resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => { if(!isUserEditing()) render(); }, 150);
+});
 
 //---------------------------------------------------------- render()
 

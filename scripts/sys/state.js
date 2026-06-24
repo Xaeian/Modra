@@ -2,8 +2,6 @@
 
 // Global mutable app state. Every mutation outside `applyStatus`/`applyCache`
 // must be followed by `render()` - there is no reactive layer here.
-// `serial_open` mirrors the backend flag; `serialOpen` toggles the Serial
-// config panel in the UI. Unrelated despite the name.
 
 const S = {
 
@@ -14,7 +12,7 @@ const S = {
   addr: null,
   connected: false,
   serial_open: false,
-  serial: { baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000, retries: 3, interval: 500, history: 14 },
+  serial: { baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000, retries: 3, interval: 500, history: 14, autosend: false },
 
   //---------------------------------------------------------- Connection (UI inputs)
 
@@ -54,8 +52,4 @@ const S = {
   addrScanInput: "",
   addrScanResults: null,
   addrScanning: false,
-
-  //---------------------------------------------------------- Errors
-
-  errors: 0,
 };

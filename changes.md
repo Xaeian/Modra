@@ -1,5 +1,16 @@
 # Changes `modra`
 
+## `1.2.2` Trickle, Autosend
+
+- Auto-send writes on commit; per-row 🎯 stages a value for Send _(even if unchanged)_
+- Trickle refresh: RW/RWs re-read in the background between syncs
+- Forced Read also pulls write-only `W` _(config `READBACK_W`)_
+- Chart tops up at the live edge on the raw tier
+- Simulator is now the **SIM** port _(no flag)_, history in `addr_sim*`
+- Register grid balances into width-fit columns, groups kept in order
+- Desktop page zoom _(`Ctrl` +/- / scroll)_
+- Fix: text-boxes repaint right after Read
+
 ## `1.2.1` Zoom
 
 - Resolution tiers: minute/hour/day archives off raw, so a year is a 365-row read

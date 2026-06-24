@@ -1,9 +1,11 @@
 // scripts/App.jsx
 
 // Root component. Toolbar (+ optional Serial row), optional chart bar, grid,
-// footer. Fully re-rendered on every state change - see `app.jsx`/`render()`.
+// footer. The whole tree is rebuilt on every render() - no reactive layer.
 
-const App = () => (
+const App = () => {
+  const regs = Reg.filter(Reg.visibility(S.regs), S.query);
+  return (
   <div class="rb-panel">
     <div class="rb-header">
       <Toolbar />
@@ -11,7 +13,9 @@ const App = () => (
     </div>
     {S.showChart && <Monitor.Bar />}
     <div class="rb-grid">
-      {Reg.blocks(Reg.filter(Reg.visibility(S.regs), S.query)).map(b => <Grid.Block regs={b} />)}
+      {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
+        <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>
+      )}
     </div>
     <footer class="rb-footer">
       <span>Modra © {{ver}}</span>
@@ -19,4 +23,5 @@ const App = () => (
       <span>{{foot}} with <a href="https://tonkajsx.com" target="_blank">TonkaJSX</a></span>
     </footer>
   </div>
-);
+  );
+};

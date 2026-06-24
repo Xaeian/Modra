@@ -239,8 +239,6 @@ class ChartStack {
     this._syncing = false;
   }
 
-  getXRange() { return [this._xMin, this._xMax]; }
-
   // Drop user zoom, return to auto-scroll. Triggered by dblclick on a plot.
   resetZoom() {
     this._autoScroll = true;
@@ -252,9 +250,6 @@ class ChartStack {
     requestAnimationFrame(() => { this._resetting = false; });
     this._onZoom?.(null, null);   // back to the live edge
   }
-
-  get length() { return this._panels.length; }
-  get autoScroll() { return this._autoScroll; }
 
   destroy() {
     this._destroyAll();

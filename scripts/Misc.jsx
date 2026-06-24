@@ -15,6 +15,7 @@ const Misc = {
     const stepLabel = step < 1 ? step : "";
     // Non-passive wheel listener so preventDefault can stop page scroll.
     const wheelHandler = (e) => {
+      if(e.ctrlKey) return;   // let Ctrl+wheel fall through to page zoom
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       const nv = Reg.snap(cur + dir * step, step);

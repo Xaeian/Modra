@@ -12,7 +12,7 @@ const _btnClass = (isActive, isDirty) =>
 const NullCheckbox = ({ reg }) => {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
   return (
-    <label class="rb-null-cb" title="Write null sentinel">
+    <label class="rb-null-cb" title="Send null">
       <input type="checkbox" checked={cur == null} onChange={() => toggleNull(reg)} />
       null
     </label>
@@ -27,7 +27,7 @@ const Control = {
       {Object.entries(reg.enum).map(([, v]) => (
         <button class={_btnClass(value === v, isDirty)}
           disabled={ro}
-          onClick={() => !ro && edit(reg, v)}
+          onClick={() => !ro && editSend(reg, v)}
         >{v}</button>
       ))}
     </div>
@@ -40,10 +40,10 @@ const Control = {
     const lowOn = value === false || (value == null && !reg.nullable);
     return (
       <div class="rb-btns">
-        <button class={_btnClass(value === true, isDirty)} disabled={ro}
-          onClick={() => !ro && edit(reg, true)}>HIGH</button>
         <button class={_btnClass(lowOn, isDirty && value === false)} disabled={ro}
-          onClick={() => !ro && edit(reg, false)}>LOW</button>
+          onClick={() => !ro && editSend(reg, false)}>LOW</button>
+        <button class={_btnClass(value === true, isDirty)} disabled={ro}
+          onClick={() => !ro && editSend(reg, true)}>HIGH</button>
         {reg.nullable && !ro && <NullCheckbox reg={reg} />}
       </div>
     );
@@ -59,8 +59,10 @@ const Control = {
     const na = Reg.isNA(reg, value);
     // Non-nullable blank = discard the edit; nullable blank = commit null.
     const onBlur = () => {
-      if(!ro && isDirty && S.dirty[reg.name] === null && !reg.nullable)
+      if(!ro && reg.name in S.dirty && S.dirty[reg.name] === null && !reg.nullable)
         resetOne(reg);
+      else if(shouldAutosend(reg))
+        autosendOne(reg);
       else render();
     };
     return (
@@ -69,6 +71,7 @@ const Control = {
             Reg.outOfRange(reg, value) && "oor",
             na && !isDirty && "na")}
           type="text"
+          data-reg={reg.name}
           value={na ? "null" : Reg.display(reg, value)}
           placeholder="-"
           disabled={ro}

@@ -14,6 +14,8 @@ import config
 
 p = Print()
 
+USAGE = "Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"
+
 def parse_arg(value:str) -> tuple:
   value = value.strip().lower()
   if value in ("off", "0"): return "off", 0
@@ -25,10 +27,10 @@ def parse_arg(value:str) -> tuple:
 
 async def main():
   if len(sys.argv) < 2:
-    p.wrn("Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"); return
+    p.wrn(USAGE); return
   mode, setpoint = parse_arg(sys.argv[1])
   if mode is None:
-    p.wrn("Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"); return
+    p.wrn(USAGE); return
   state = config.load_state()
   mb = config.create_mb(state)
   await mb.write({"Ctrl": {"Mode": mode, "Setpoint": setpoint}})

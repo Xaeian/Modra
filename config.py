@@ -1,5 +1,5 @@
 """
-Backend config: serial.ini (connection + `simulator` flag), regs.csv path,
+Backend config: serial.ini (connection), regs.csv path,
 view.json (monitor panels + ignore list). Factory for ModbusMaster bound
 to current on-disk state.
 """
@@ -11,8 +11,15 @@ STATE_FILE = "serial.ini"
 REGS_FILE = "regs.csv"
 VIEW_FILE = "view.json"
 
-# `simulator=true` swaps the real serial client for sim.py so the stack
-# runs unchanged without hardware. Switchable via serial.ini, no rebuild.
+# Read write-only (W) registers back on a sync (device is source of truth), or
+# never read them and show a written W as 0 (self-clearing command registers).
+READBACK_W = True
+
+# Background trickle-refresh of RW/RWs between syncs (smart contiguous packets,
+# auto-sized to the poll interval). Off leaves them refreshed only on a sync.
+TRICKLE = True
+
+# Seeds serial.ini on first launch.
 STATE_DEFAULT = {
   "port": "COM3",
   "addr": 1,
@@ -23,7 +30,7 @@ STATE_DEFAULT = {
   "retries": 3,
   "interval": 500,
   "history": 14,
-  "simulator": False,
+  "autosend": False,
 }
 
 VIEW_DEFAULT = {"version": 1, "monitor": [], "ignore": []}
@@ -50,7 +57,7 @@ def _bool(val, default:bool=False) -> bool:
   if s in ("false", "no", "0", "off", ""): return False
   return default
 
-#--------------------------------------------------------------------------------- View (UI state)
+#------------------------------------------------------------------------------ View (UI state)
 
 def load_view() -> dict:
   """Lenient: missing keys default to empty so a partial file still boots."""
@@ -74,15 +81,16 @@ def save_view(view:dict):
   }
   JSON.save_smart(VIEW_FILE, payload)
 
-#--------------------------------------------------------------------------- ModbusMaster wire
+#---------------------------------------------------------------------------- ModbusMaster wire
 
 def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   """ModbusMaster bound to current state + `view.ignore`. Ignore is applied
   inside `mb.read()`; the map itself stays complete so the DB schema covers
   every register. `view=None` lets CLI tools skip view.json lookup."""
   if view is None: view = load_view()
+  port = port or str(state.get("port", ""))
   return ModbusMaster(
-    port=port or str(state.get("port", "")),
+    port=port,
     regmap_file=REGS_FILE,
     addr=_int(state.get("addr"), 1),
     baudrate=_int(state.get("baudrate"), 9600),
@@ -91,7 +99,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     timeout=_int(state.get("timeout"), 1000) / 1000,
     retries=_int(state.get("retries"), 3),
     ignore_set=set(view.get("ignore", [])),
-    sim=_bool(state.get("simulator"), False),
+    sim=(port == "SIM"),
   )
 
 def load_regs(state:dict=None, view:dict=None) -> list[dict]:

@@ -15,6 +15,19 @@ from store import Store
 log = Print()
 write_log = logger("write", file="write.log", stream=False)
 
+# Modes pulled by a full sync (initial connect + forced Read). W joins only when
+# config.READBACK_W is set; the regular poll reads "R".
+SYNC_RWS = ["R", "RW", "RWs"] + (["W"] if config.READBACK_W else [])
+
+# Trickle-refresh tuning: each plain poll re-reads a contiguous RWs packet sized
+# to a share of the interval at the current baud (clamped), with error backoff.
+TRICKLE_FRACTION = 0.25
+TRICKLE_OVERHEAD = 20
+TRICKLE_MIN_REGS = 8
+TRICKLE_MAX_REGS = 48
+TRICKLE_ERR_LIMIT = 3
+TRICKLE_BACKOFF_TICKS = 5
+
 class ModbusLink:
 
   def __init__(self):
@@ -36,12 +49,21 @@ class ModbusLink:
     # toggle, serial params change, port change). Without this, every
     # rebuild reseeds the random walk and traces visibly jump.
     self._sim_client = None
+    # Simulator mode, mirrored from the active port (refreshed in _init_mb).
+    self._sim = (str(self.state.get("port", "")) == "SIM")
+    # Background trickle-refresh state (see _trickle).
+    self._trickle_built = False
+    self._trickle_hot = []
+    self._trickle_runs = []
+    self._trickle_run = 0
+    self._trickle_pos = 0
+    self._trickle_errors = 0
+    self._trickle_backoff = 0
     self._last_prune = Time()
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
     self.run_async(self.store.init())
-    # One-shot prune at boot clears the backlog if a pre-retention DB grew
-    # large while the app was on previous versions.
+    # Prune once at boot so an oversized DB is trimmed to the retention window.
     self.run_async(self.store.prune(self._history_days()))
     if self.state:
       log.inf(f"State loaded: {self.state}")
@@ -77,6 +99,10 @@ class ModbusLink:
 
   def _init_mb(self, port:str):
     self.mb = config.create_mb(self.state, self.view, port)
+    self._sim = (port == "SIM")
+    # Rebuild the trickle plan for the new register set, clear its backoff.
+    self._trickle_built = False
+    self._trickle_errors = self._trickle_backoff = 0
     timeout = self.state.get("timeout", 1000)
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
             f" baud:{self.mb.baudrate} timeout:{timeout}ms")
@@ -96,9 +122,6 @@ class ModbusLink:
       "baudrate": self.mb.baudrate,
       "parity": self.mb.parity,
       "stopbits": self.mb.stopbits,
-      "timeout": self.state.get("timeout", 1000),
-      "retries": self.state.get("retries", 3),
-      "interval": self.state.get("interval", 500),
     })
     config.save_state(self.state)
     log.inf("State saved")
@@ -128,7 +151,7 @@ class ModbusLink:
     async with self._mb_lock:
       try:
         await self.mb.reconnect()
-        await self.mb.read(rws_filter=["R", "RW", "RWs"])
+        await self.mb.read(rws_filter=SYNC_RWS)
         log.ok("Initial sync done")
       except Exception as e:
         log.wrn(f"Initial sync failed: {e}")
@@ -137,18 +160,19 @@ class ModbusLink:
     while self.connected:
       t0 = Time()
       cache = None
+      did_sync = False
       if not self._write_pending:
         async with self._mb_lock:
           try:
             t_read = Time()
             if self._sync_next:
-              await self.mb.read(rws_filter=["R", "RW", "RWs"])
+              await self.mb.read(rws_filter=SYNC_RWS)
               self._sync_next = False
+              did_sync = True
               log.inf(f"Sync done {(Time()-t_read).total_seconds()*1000:.0f}ms")
             else:
               await self.mb.read()
             errors = 0
-            cache = self.mb.cache
           except Exception as e:
             errors += 1
             log.wrn(f"Read error ({errors}): {e}")
@@ -159,15 +183,20 @@ class ModbusLink:
               self._clear_cache()
               self.connected = False
               return
+        if errors == 0:
+          # A full sync already refreshed everything; trickle only on plain polls.
+          if not did_sync:
+            await self._trickle()
+          cache = self.mb.cache
       if cache is not None:
-        await self.store.log(cache, self.mb.addr)
+        await self.store.log(cache, self.store_key())
       # Retention + downsampling run on the same loop between polls, once a
       # minute. Prune only deletes the ~60s that just aged out; roll only
       # aggregates the minute bucket that just completed - both stay cheap.
       if (Time() - self._last_prune).total_seconds() >= 60:
         self._last_prune = Time()
         await self.store.prune(self._history_days())
-        await self.store.roll(self.mb.addr)
+        await self.store.roll(self.store_key())
       interval_s = int(self.state.get("interval", 500)) / 1000
       remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:
@@ -176,15 +205,78 @@ class ModbusLink:
         except asyncio.CancelledError:
           return
 
+  #------------------------------------------------------------------------------------ Trickle
+
+  def _build_trickle(self):
+    """Split non-ignored writable registers into the volatile hot set (RW, read
+    every tick) and contiguous RWs runs, so each cold packet is one Modbus block."""
+    self._trickle_hot = []
+    cold = []
+    if self.mb:
+      ignored = self.mb.resolved_ignored_ids()
+      for rid, e in self.mb.id_map.items():
+        if rid in ignored: continue
+        if e["rws"] == "RW": self._trickle_hot.append(rid)
+        elif e["rws"] == "RWs": cold.append(rid)
+    self._trickle_hot.sort()
+    self._trickle_runs = []
+    for rid in sorted(cold):
+      if self._trickle_runs and rid == self._trickle_runs[-1][-1] + 1:
+        self._trickle_runs[-1].append(rid)
+      else:
+        self._trickle_runs.append([rid])
+    self._trickle_run = self._trickle_pos = 0
+    self._trickle_built = True
+
+  def _trickle_budget(self) -> int:
+    """Registers per cold packet: a share of the poll interval at the current
+    baud, clamped. Scales with interval so the bus overhead stays bounded."""
+    interval_s = int(self.state.get("interval", 500)) / 1000
+    baud = self.mb.baudrate if self.mb else 9600
+    fit = int((TRICKLE_FRACTION * interval_s * baud / 10 - TRICKLE_OVERHEAD) / 2)
+    return max(TRICKLE_MIN_REGS, min(TRICKLE_MAX_REGS, fit))
+
+  async def _trickle(self):
+    """One trickle step: re-read the volatile RW plus the next contiguous RWs
+    packet. Best-effort - own error budget that never trips the disconnect
+    counter, and yields to writes and forced syncs."""
+    if not config.TRICKLE or not self.connected: return
+    if self._sync_next or self._write_pending: return
+    if self._trickle_backoff > 0:
+      self._trickle_backoff -= 1
+      return
+    if not self._trickle_built:
+      self._build_trickle()
+    ids = list(self._trickle_hot)
+    if self._trickle_runs:
+      b = self._trickle_budget()
+      run = self._trickle_runs[self._trickle_run]
+      ids += run[self._trickle_pos:self._trickle_pos + b]
+      self._trickle_pos += b
+      if self._trickle_pos >= len(run):
+        self._trickle_run = (self._trickle_run + 1) % len(self._trickle_runs)
+        self._trickle_pos = 0
+    if not ids: return
+    try:
+      async with self._mb_lock:
+        await self.mb.read_registers(ids)
+      self._trickle_errors = 0
+    except Exception:
+      self._trickle_errors += 1
+      if self._trickle_errors >= TRICKLE_ERR_LIMIT:
+        self._trickle_backoff = TRICKLE_BACKOFF_TICKS
+        self._trickle_errors = 0
+        log.wrn("Trickle: backing off after read errors")
+
   #--------------------------------------------------------------------------------- Connection
 
   def scan(self, mute:bool=True) -> list[str]:
     if not mute: log.run("Scanning ports")
     self.ports = serial_scan()
-    # Sim mode advertises a "SIM" pseudo-port so the toolbar select has
-    # something to pick. SimulatedClient ignores the port name anyway.
-    if config._bool(self.state.get("simulator")) and "SIM" not in self.ports:
-      self.ports = ["SIM"] + self.ports
+    # "SIM" is always offered; picking it runs the simulator. SimulatedClient
+    # ignores the port name anyway.
+    if "SIM" not in self.ports:
+      self.ports = self.ports + ["SIM"]
     if self.serial_open and self.mb and self.mb.port not in self.ports:
       self._port_miss += 1
       if self._port_miss >= 3:
@@ -299,7 +391,7 @@ class ModbusLink:
 
   def set_serial(self, params:dict):
     changed = False
-    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval", "history"):
+    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval", "history", "autosend"):
       if k in params:
         self.state[k] = params[k]
         if k in ("baudrate", "parity", "stopbits", "timeout"):
@@ -312,9 +404,7 @@ class ModbusLink:
       self._clear_cache()
       self._init_mb(self.mb.port)
       log.inf("Serial params changed, reconnect needed")
-    # `_save_state` reads wire params off an open `mb`; when set while
-    # disconnected (e.g. `history` tuned before connecting) persist the state
-    # dict directly instead.
+    # `_save_state` needs an open `mb`; when disconnected, persist state directly.
     if self.mb: self._save_state()
     else: config.save_state(self.state)
 
@@ -338,6 +428,12 @@ class ModbusLink:
     return ok
 
   #--------------------------------------------------------------------------------------- Data
+
+  def store_key(self):
+    """DB table key: 'sim' isolates simulator history in addr_sim* tables; a
+    real device keys by its Modbus address."""
+    if self._sim: return "sim"
+    return self.mb.addr if (self.mb and self.connected) else self.state.get("addr")
 
   def read(self) -> dict|None:
     if not self.mb or not self.connected: return None
@@ -396,6 +492,10 @@ class ModbusLink:
         t = Time()
         await self.mb.write(data)
         log.ok(f"Write done {(Time()-t).total_seconds()*1000:.0f}ms")
+        # READBACK_W off: a written W isn't read back, so show it as 0.
+        if not config.READBACK_W:
+          for rid in self.mb.encode(data, ["W"]):
+            self.mb.cache_raw[rid] = 0
         for k, v in data.items():
           write_log.info(f"addr:{self.mb.addr} {k} = {v}")
         self._sync_next = True

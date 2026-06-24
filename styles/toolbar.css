@@ -18,7 +18,7 @@
   padding: 8px 0;
 }
 
-/* shared base — same height for all controls */
+/* shared base - same height for all controls */
 .rb-port, .rb-addr, .rb-search, .rb-tbtn, .rb-cfg-input {
   height: 28px;
   padding: 0 8px;
@@ -50,6 +50,7 @@
 .rb-search::placeholder { color: var(--text-muted); }
 
 .rb-tbtn:hover:not(:disabled) { background: var(--border); }
+.rb-port:disabled, .rb-addr:disabled, .rb-search:disabled, .rb-cfg-input:disabled,
 .rb-tbtn:disabled, .rb-tbtn.off { opacity: 0.4; cursor: not-allowed; }
 .rb-tbtn.active { background: var(--border); border-color: var(--accent); }
 /* Destructive action (wipe history). Red border at rest, fills on hover. */

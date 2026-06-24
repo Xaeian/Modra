@@ -204,7 +204,7 @@ class ModbusMaster:
     if type_val == "enum": entry["enum"] = self._parse_enum(row.get("unit", ""))
     return entry
 
-  #--------------------------------------------------------------------------------- connection
+  #--------------------------------------------------------------------------------- Connection
 
   async def connect(self) -> AsyncModbusSerialClient:
     if self.client and self.client.connected: return self.client
@@ -232,20 +232,7 @@ class ModbusMaster:
     await asyncio.sleep(0.1)
     await self.connect()
 
-  def reinit(self, addr:int=None, baudrate:int=None,
-    parity:Literal["N","O","E"]=None, stopbits:Literal[1,2]=None,
-    timeout:float=None, retries:int=None):
-    if addr is not None: self.addr = addr
-    if baudrate is not None: self.baudrate = baudrate
-    if parity is not None: self.parity = parity
-    if stopbits is not None: self.stopbits = stopbits
-    if timeout is not None: self.timeout = timeout
-    if retries is not None: self.retries = max(1, retries)
-    if self.client:
-      self.client.close()
-      self.client = None
-
-  #---------------------------------------------------------------------------------- low-level
+  #---------------------------------------------------------------------------------- Low-level
 
   def _get_blocks(self, ids:list[int]) -> list[tuple[int, int]]:
     ids = sorted(set(ids))
@@ -315,7 +302,7 @@ class ModbusMaster:
       if last_err: raise last_err
     return written
 
-  #------------------------------------------------------------------------------------ helpers
+  #------------------------------------------------------------------------------------ Helpers
 
   @staticmethod
   def _pair_decode(raw32:int, ptype:str, null_raw32:int|None=None):
@@ -396,7 +383,7 @@ class ModbusMaster:
     switch_raw = pending_raw.get(switch_id) if pending_raw else None
     if switch_raw is None: switch_raw = self.cache_raw.get(switch_id)
     if switch_raw is None:
-      raise RuntimeError(f"Switch '{rule['switch']}' not synced - call sync() first")
+      raise RuntimeError(f"Switch '{rule['switch']}' not yet read")
     unit = entry.get("unit")
     if not isinstance(unit, list): return None
     switch_label = switch_entry.get("enum", {}).get(switch_raw, "").lower()
@@ -426,7 +413,7 @@ class ModbusMaster:
       mx = mx[index] if index is not None and 0 <= index < len(mx) else mx[0] if mx else None
     return (mn, mx)
 
-  #------------------------------------------------------------------------------ encode/decode
+  #------------------------------------------------------------------------------ Encode/decode
 
   def _decode_raw(self, reg_id:int, raw:int) -> tuple[any, str|None]:
     entry = self.id_map.get(reg_id)
@@ -434,11 +421,8 @@ class ModbusMaster:
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry) if typ == "rule" else None
     unit = self._get_unit(entry, rule_idx)
-    # Nullable check runs before any type-specific decode: a `?int` with
-    # raw 0x8000 reads as `None`, not -32768. min/max validation in the
-    # frontend skips null values, so an N/A row isn't flagged out-of-range.
-    # Nullable sentinel takes precedence over type decode so an N/A read
-    # never gets shown as -32768 / 65535.
+    # Nullable sentinel is checked before type decode, so an N/A read returns
+    # None rather than -32768 / 65535.
     null_raw = entry.get("null_raw")
     if null_raw is not None and raw == null_raw:
       return (None, unit)
@@ -595,11 +579,22 @@ class ModbusMaster:
       if rv is not None: raw[entry["id"]] = rv
     return raw
 
-  #--------------------------------------------------------------------------------- public API
+  #--------------------------------------------------------------------------------- Public API
 
   async def sync(self, grouped:bool=None) -> dict:
     await self.read_registers(list(self.id_map.keys()))
     return self.get_cache(grouped)
+
+  def resolved_ignored_ids(self) -> set[int]:
+    # Resolve `ignore_set` to ids. pair_keys (e.g. "Auth:SecretKey") expand to
+    # both halves so ignoring a 32-bit composite drops the whole pair.
+    ids = {rid for rid, e in self.id_map.items() if e["fullname"] in self.ignore_set}
+    for pair_key in self.ignore_set:
+      p = self.pairs.get(pair_key)
+      if p:
+        if p.get("high"): ids.add(p["high"]["id"])
+        if p.get("low"):  ids.add(p["low"]["id"])
+    return ids
 
   async def read(self, keys:list[str]|dict=None,
     rws_filter:list[str]=None, grouped:bool=None) -> dict:
@@ -607,16 +602,7 @@ class ModbusMaster:
       reg_ids = self._keys_to_ids(keys)
     else:
       if rws_filter is None: rws_filter = ["R"]
-      # Resolve `ignore_set` to ids. pair_keys (e.g. "Auth:SecretKey")
-      # expand to both halves so ignoring a 32-bit composite drops the
-      # whole pair, not just one register.
-      ignored_ids = {rid for rid, e in self.id_map.items()
-                     if e["fullname"] in self.ignore_set}
-      for pair_key in self.ignore_set:
-        if pair_key in self.pairs:
-          p = self.pairs[pair_key]
-          if p.get("high"): ignored_ids.add(p["high"]["id"])
-          if p.get("low"):  ignored_ids.add(p["low"]["id"])
+      ignored_ids = self.resolved_ignored_ids()
       reg_ids = [rid for rid, e in self.id_map.items()
                  if e["rws"] in rws_filter and rid not in ignored_ids]
     if not reg_ids: return {}
@@ -660,7 +646,7 @@ class ModbusMaster:
     diff = [self.id_map[rid]["fullname"] for rid in diff_ids if rid in self.id_map]
     return self.get_cache(grouped), diff
 
-  #-------------------------------------------------------------------------------------- cache
+  #-------------------------------------------------------------------------------------- Cache
 
   def get_cache(self, grouped:bool=None) -> dict:
     if grouped is None: grouped = self.group
@@ -717,7 +703,7 @@ class ModbusMaster:
   def cache(self, data:dict):
     self.set_cache(data)
 
-  #--------------------------------------------------------------------------------------- info
+  #--------------------------------------------------------------------------------------- Info
 
   def reg_info(self, reg_id:int) -> dict|None:
     entry = self.id_map.get(reg_id)

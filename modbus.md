@@ -228,7 +228,7 @@ mb.set_cache({"Dev": {"Version": "99.99.99"}})
 
 # No sync before write with rule registers
 await mb.write({"Ctrl": {"Speed": 100}})
-# RuntimeError: Switch 'Ctrl:Mode' not synced - call sync() first
+# RuntimeError: Switch 'Ctrl:Mode' not yet read
 
 # Connection error
 await mb.sync()

@@ -30,8 +30,14 @@ const CHART_TARGET_POINTS = 5000;
 // throttled while the chart keeps sliding on the buffer it already has.
 const CHART_LIVE_MS = 1000;
 
-// Range buttons. The full fixed set; the tiers cover any span, so no filtering
-// by `history` any more.
+// A drag-zoom whose right edge lands within this fraction of its width, or
+// CHART_EDGE_SEC (whichever is larger, to absorb drag + refresh lag), of "now"
+// counts as live-edge: on the raw tier it keeps topping up.
+const CHART_EDGE_FRAC = 0.1;
+const CHART_EDGE_SEC = 15;
+
+// Range buttons: full fixed set. Tiers cover any span, so the list is not
+// filtered by available history.
 function chartRanges() {
   return CHART_RANGE_PRESETS;
 }
@@ -189,8 +195,7 @@ function chartExportCSV(names, buf) {
 
 // Time-series buffer for monitored registers. Holds the currently visible
 // window only: each fetch returns the whole [from, to] at the right tier and
-// REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}], read
-// by Monitor.jsx for CSV export to avoid a redundant copy.
+// REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}].
 const MonitData = {
 
   range: 600,      // live window length (seconds)
@@ -200,6 +205,7 @@ const MonitData = {
   _buf: {},
   tier: "raw",     // resolution tier serving the current window (for the UI)
   _nextFetch: 0,   // earliest ms epoch the live refetch may run again
+  _edge: false,    // frozen zoom sits at the live edge -> top up on raw tier
 
   //---------------------------------------------------------- Window
 
@@ -211,6 +217,9 @@ const MonitData = {
       // `∞` -> from epoch start: all history, served from the day tier.
       return [this.range === Infinity ? 0 : now - this.range, now];
     }
+    // A raw-tier zoom pinned at the live edge keeps its left anchor but follows
+    // "now" on the right, so new samples fill in instead of the view freezing.
+    if(this._edge && this.tier === "raw") return [this.from, Date.now() / 1000];
     return [this.from, this.to];
   },
 
@@ -234,10 +243,13 @@ const MonitData = {
     return { from, to, names: [...S.monitor], max_points: CHART_TARGET_POINTS };
   },
   readParams() {
-    if(!this.live) return null;   // frozen window: poll leaves it static
+    // Frozen window stays static, unless it's a raw-tier zoom at the live edge,
+    // which keeps topping up with new samples.
+    if(!this.live && !(this._edge && this.tier === "raw")) return null;
     const now = Date.now();
     if(now < this._nextFetch) return null;
     this._nextFetch = now + CHART_LIVE_MS;
+    if(!this.live) this.to = now / 1000;   // persist the followed edge
     return this.fetchParams();
   },
 
@@ -279,10 +291,14 @@ const MonitData = {
   //---------------------------------------------------------- Range / membership sync
 
   // Live window of length `s` (seconds), following "now".
-  setRange(s) { this.range = s; this.live = true; },
+  setRange(s) { this.range = s; this.live = true; this._edge = false; },
 
-  // Frozen window from a drag-zoom or date picker (stops following "now").
-  setWindow(from, to) { this.from = from; this.to = to; this.live = false; },
+  // Frozen window from a drag-zoom or date picker. A zoom whose right edge sits
+  // at the live edge keeps topping up on the raw tier (see `window`).
+  setWindow(from, to) {
+    this.from = from; this.to = to; this.live = false;
+    this._edge = (Date.now() / 1000 - to) <= Math.max((to - from) * CHART_EDGE_FRAC, CHART_EDGE_SEC);
+  },
 
   // Drop unsubscribed names; the next fetch repopulates the rest.
   sync() {

@@ -9,5 +9,4 @@
 .venv/
 .build/
 .dist/
-ignore.txt
-skip.txt
+index.html

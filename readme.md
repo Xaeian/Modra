@@ -17,7 +17,6 @@ There is no per-device configuration UI. The grid, controls, validation rules an
 ```bash
 py -3.12 -m venv .venv
 ./.venv/Scripts/activate
-py -m pip install -i pip
 py -m pip install -r requirements.txt
 py api.py # desktop window
 py serve.py # HTTP server
@@ -88,7 +87,7 @@ Click **📊** on any row. Registers sharing unit + scale share a panel; `bool`,
 - **drag on plot**: zoom in; the window refetches at a finer resolution, so detail appears as you go deeper
 - **double-click**: back to the live edge
 
-Each chart request is a time window, served from a resolution tier: raw for recent/narrow windows, minute/hour/day archives _(downsampled off raw)_ for wider ones. A year-wide overview is a few hundred points, not millions, and zooming refetches the new window at a finer tier.
+Each chart request is a time window, served from a resolution tier: raw for recent/narrow windows, minute/hour/day archives _(downsampled off raw)_ for wider ones. A year-wide overview is a few hundred points, not millions, and zooming refetches the new window at a finer tier. History comes from the local DB, so browsing works with no device connected.
 
 ## Hiding registers
 
@@ -103,7 +102,7 @@ History column is preserved; new rows after the ignore land as `NULL`. Membershi
 - **Baud** / **Parity** / **Stop** / **Timeout**: wire-level, changing forces reconnect
 - **Interval**: polling interval _(ms)_, drives both device polling and UI refresh rate
 - **Retries**: per-block retry budget on read errors
-- **History**: retention window _(days)_; older poll rows are pruned and the chart's max range follows it
+- **History**: raw retention _(days)_; older data survives in coarser minute/hour/day archives
 - **Address scan**: enter `1-10, 12, 100-110` → **🔍 Scan**, click result to connect
 - **📂 Import**: load `.ini` / `.csv` into pending edits _(no auto-send; reads locale CSV with `;` + decimal comma)_
 - **💾 CSV** / 💾 **INI**: export current RWs values to file
@@ -127,7 +126,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 | `data.db` | SQLite poll history, one table per addr | app |
 | `write.log` | audit log of every write | app |
 
-**Schema change:** if you edit `regs.csv`, delete `data.db` and it rebuilds fresh on next boot.
+**Schema change:** new `regs.csv` registers become DB columns automatically; a removed or retyped register is not migrated - delete `data.db` to rebuild.
 
 ## Simulator
 
@@ -140,7 +139,7 @@ Each register is simulated from its own descriptor row alone _(type, rws, min/ma
 - **enum R**: rare advance to neighbour state
 - **bits R**: rare random flip of individual labeled bits
 - **hex / ver**: stable _(firmware-controlled)_
-- **RWs / W**: static, only user writes change them
+- **RW / RWs / W**: static, only user writes change them
 
 ## Build
 

@@ -165,9 +165,9 @@ const Monitor = {
     this._zoomTimer = setTimeout(() => { this.refetch(); render(); this.mount(); }, 150);
   },
 
-  // Fetch the current window from the store and redraw. Shared by range
-  // buttons, zoom, trace add, and boot. Queries the DB directly, so it works
-  // with no device connected; `_rangeBusy` shields overlapping round-trips.
+  // Fetch the current window from the store and redraw. Queries the DB
+  // directly, so it works with no device connected; `_rangeBusy` shields
+  // overlapping round-trips.
   async refetch() {
     if(this._rangeBusy) return;
     this._rangeBusy = true;

@@ -158,9 +158,12 @@ ModbusMaster(
   baudrate: int = 9600,
   parity: "N"|"O"|"E" = "N",
   stopbits: 1|2 = 1,
+  timeout: float = 1, # Response timeout (s)
+  retries: int = 3, # Per-block retry budget
   group: bool = True, # Default output format
   max_block: int = 64,  # Max registers per read
   ignore_set: set[str] = None,  # Names excluded from read() polling (pair-aware)
+  client_factory = None, # (mb) -> client; swaps the transport (sim, tests), None = serial
 )
 ```
 
@@ -230,7 +233,7 @@ await mb.write({"Ctrl": {"Mode": "turbo"}})
 
 # Invalid version format
 mb.set_cache({"Dev": {"Version": "99.99.99"}})
-# ValueError: Dev:Version: version '99.99.99' exceeds uint16 (max 6.55.35)
+# ValueError: Dev:Version: version '99.99.99' over uint16 max 6.55.35
 
 # No sync before write with rule registers
 await mb.write({"Ctrl": {"Speed": 100}})

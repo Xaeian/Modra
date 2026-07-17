@@ -122,8 +122,8 @@ async function poll() {
     const prev = S.connected;
     applyStatus(res);
     connectionEdge(prev);
-    // History rows come from the DB, not the device, so ingest them before the
-    // connected gate: charts keep serving stored data through an outage.
+    // History rows come from the DB, not the device: ingest them even while
+    // unreachable so charts keep serving stored data through an outage.
     if("tier" in res) MonitData.tier = res.tier;
     if(S.monitor.size) Monitor.update(res.rows);
     if(!S.connected) {

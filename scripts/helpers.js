@@ -75,7 +75,7 @@ const Reg = (() => {
   const hi = (reg) => Array.isArray(reg.id) ? Math.max(...reg.id) : reg.id;
 
   // name → reg from the catalog, or null. Map cached on the catalog
-  // reference (loaded once at boot) - the one lookup every hot path uses.
+  // reference (loaded once at boot).
   let _byName = null, _byNameSrc = null;
   function byName(name) {
     if(_byNameSrc !== S.regs) {

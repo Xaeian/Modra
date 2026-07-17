@@ -112,7 +112,7 @@ class ModbusLink:
     timeout = self.state.get("timeout", 1000)
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
             f" baud:{self.mb.baudrate} timeout:{timeout}ms")
-    if self.mb.sim:
+    if self._sim:
       if self._sim_client is None:
         from sim import SimulatedClient
         self._sim_client = SimulatedClient(self.mb.id_map)

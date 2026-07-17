@@ -114,7 +114,7 @@ class ModbusMaster:
     group:bool = True,
     max_block:int = 64,
     ignore_set:set[str] = None,
-    sim:bool = False,
+    client_factory = None,
   ):
     self.port = port
     self.addr = addr
@@ -127,7 +127,8 @@ class ModbusMaster:
     self.max_block = max_block
     # Read-time filter only; the map below stays complete.
     self.ignore_set: set[str] = set(ignore_set) if ignore_set else set()
-    self.sim = sim
+    # Transport builder `(mb) -> client`; None → serial client from the params above.
+    self.client_factory = client_factory
     self.groups: dict[str, dict[str, dict]] = {}
     self.id_map: dict[int, dict] = {}
     self.name_map: dict[str, dict] = {}
@@ -199,9 +200,8 @@ class ModbusMaster:
   async def connect(self) -> AsyncModbusSerialClient:
     if self.client and self.client.connected: return self.client
     if self.client is None:
-      if self.sim:
-        from sim import SimulatedClient
-        self.client = SimulatedClient(self.id_map)
+      if self.client_factory:
+        self.client = self.client_factory(self)
       else:
         self.client = AsyncModbusSerialClient(
           port=self.port, baudrate=self.baudrate, parity=self.parity,
@@ -249,7 +249,7 @@ class ModbusMaster:
     cli = await self.connect()
     for start, count in blocks:
       last_err = None
-      for attempt in range(self.retries):
+      for _ in range(self.retries):
         try:
           rr = await cli.read_holding_registers(start, count=count, device_id=self.addr)
           if rr.isError(): raise RuntimeError(f"Read error R{start}: {rr}")
@@ -270,7 +270,7 @@ class ModbusMaster:
     written = 0
     for start, values in blocks:
       last_err = None
-      for attempt in range(self.retries):
+      for _ in range(self.retries):
         try:
           rr = await cli.write_registers(start, values, device_id=self.addr)
           if rr.isError(): raise RuntimeError(f"Write error R{start}: {rr}")

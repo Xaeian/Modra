@@ -83,10 +83,15 @@ def save_view(view:dict):
 
 #---------------------------------------------------------------------------- ModbusMaster wire
 
+def _sim_factory(mb:ModbusMaster):
+  from sim import SimulatedClient
+  return SimulatedClient(mb.id_map)
+
 def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   """ModbusMaster bound to current state + `view.ignore`. Ignore is applied
   inside `mb.read()`; the map itself stays complete so the DB schema covers
-  every register. `view=None` lets CLI tools skip view.json lookup."""
+  every register. `view=None` lets CLI tools skip view.json lookup. The SIM
+  port swaps the transport client here."""
   if view is None: view = load_view()
   port = port or str(state.get("port", ""))
   return ModbusMaster(
@@ -99,7 +104,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     timeout=_int(state.get("timeout"), 1000) / 1000,
     retries=_int(state.get("retries"), 3),
     ignore_set=set(view.get("ignore", [])),
-    sim=(port == "SIM"),
+    client_factory=_sim_factory if port == "SIM" else None,
   )
 
 #-------------------------------------------------------------------------- Map lint

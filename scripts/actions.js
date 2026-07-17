@@ -126,9 +126,8 @@ function toggleMonitor(reg) {
   Monitor.refresh();
   Monitor.mount();
   saveMonitor();
-  // Backfill the new trace from the store right away - a direct window fetch,
-  // not poll(), so it also lands with no device connected and inside a
-  // frozen (zoomed) window, and skips the live-fetch throttle.
+  // Backfill the new trace from the store right away: lands with no device
+  // connected, inside a frozen (zoomed) window, and skips the live throttle.
   if(adding) Monitor.refetch();
 }
 

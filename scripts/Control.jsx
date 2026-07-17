@@ -108,11 +108,10 @@ const Control = {
     const na = Reg.isNA(reg, value);
     // Non-nullable blank = discard the edit; nullable blank = commit null.
     // Blur always renders so the field normalizes without waiting for the
-    // device ack. A mechanical blur - the rebuild replacing this field
-    // (isRendering; Chrome fires it while the node is still connected) or
-    // one arriving already detached - is not the user leaving the field:
-    // acting on it would autosend a half-typed value and re-enter render()
-    // mid-swap, corrupting the tree.
+    // device ack. A mechanical blur (field replaced by a rebuild - fired
+    // while still connected - or arriving already detached) is not the user
+    // leaving: acting on it would autosend a half-typed value and re-enter
+    // render() mid-swap.
     const onBlur = (e) => {
       if(isRendering() || !e.target.isConnected) return;
       if(!ro && reg.name in S.dirty && S.dirty[reg.name] === null && !reg.nullable)

@@ -9,14 +9,13 @@ const Toolbar = () => {
   const lineUp = S.serial_open || S.connected;
   // Send reddens on a pending OOR (write still goes through); a wrap is the
   // harsher case and Send confirms first.
-  const dirtyOor = Object.entries(S.dirty).some(([name, val]) => {
-    const reg = S.regs.find(r => r.name === name);
-    return reg && Reg.outOfRange(reg, val);
-  });
-  const dirtyWrap = Object.entries(S.dirty).some(([name, val]) => {
-    const reg = S.regs.find(r => r.name === name);
-    return reg && Reg.willWrap(reg, val);
-  });
+  let dirtyOor = false, dirtyWrap = false;
+  for(const [name, val] of Object.entries(S.dirty)) {
+    const reg = Reg.byName(name);
+    if(!reg) continue;
+    if(Reg.outOfRange(reg, val)) dirtyOor = true;
+    if(Reg.willWrap(reg, val)) dirtyWrap = true;
+  }
   return (
     <div class="rb-toolbar">
       <select class="rb-port" value={S.portInput}
@@ -55,7 +54,7 @@ const Toolbar = () => {
       {ZOOM.enabled && <button class="rb-tbtn" onClick={ZOOM.out} title="Zoom out (Ctrl -)">A-</button>}
       {ZOOM.enabled && <button class="rb-tbtn" onClick={ZOOM.in} title="Zoom in (Ctrl +)">A+</button>}
       <button class={cls("rb-tbtn", S.showChart && "active")}
-        onClick={() => { S.showChart = !S.showChart; render(); }}
+        onClick={toggleChart}
         title="Toggle charts (p)">📈</button>
       <button class={cls("rb-tbtn", S.showDisabled && "active")}
         onClick={toggleShowDisabled}

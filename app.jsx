@@ -8,7 +8,13 @@
 
 let root = null;
 let _renderPending = false;
-let _pointerDown = false;
+let _gesture = false;
+let _rendering = false;
+
+// True while render() is swapping the DOM. Blur handlers use this to tell a
+// mechanical blur (the focused field is being replaced by the rebuild) from
+// the user actually leaving a field.
+function isRendering() { return _rendering; }
 
 // Mid-gesture renders tear sliders / selects out from under the user.
 // Defer until the gesture ends.
@@ -16,21 +22,17 @@ let _flushTimer = null;
 
 function _flush() {
   if(_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-  _pointerDown = false;
+  _gesture = false;
   if(_renderPending) render();
 }
-document.addEventListener("pointerdown", () => { _pointerDown = true; });
-// When an input loses focus to a button, its `onBlur` commit queues a
-// deferred render. Flushing it here on `pointerup` would rebuild the DOM and
-// replace the button *before* its `click` arrives, so the first click only
-// commits the input and the button needs a second click. Instead defer the
-// flush by a macrotask: the `click` fires synchronously right after
-// `pointerup`, runs the button's handler on the still-intact DOM, and flushes
-// via the `click` listener below. Only a gesture with no trailing click
-// (a drag, a slider release) falls through to the timer.
+// A gesture owns the DOM from `pointerdown` until its `click` has bubbled:
+// a render inside that window replaces the pressed element and the `click`,
+// aimed at the old node, lands on a detached tree - the press is lost.
+// Clickless gestures (drags, scrollbars) fall through to the timer, sized
+// past the `pointerup`→`click` gap.
+document.addEventListener("pointerdown", () => { _gesture = true; });
 document.addEventListener("pointerup", () => {
-  _pointerDown = false;
-  _flushTimer = setTimeout(_flush, 0);
+  _flushTimer = setTimeout(_flush, 80);
 });
 // Bubbles after the target button's own `onClick`, so the handler already ran
 // on the intact DOM. Also covers keyboard Enter (synthetic click, no pointer).
@@ -39,6 +41,11 @@ document.addEventListener("click", _flush);
 // gesture, user Alt+Tabs mid-drag) would otherwise leave the flag stuck.
 document.addEventListener("pointercancel", _flush);
 window.addEventListener("blur", _flush);
+// Focus leaving a text input releases the typing lock; land anything parked
+// once the browser settles focus on the next element.
+document.addEventListener("focusout", () => {
+  if(_renderPending) setTimeout(() => { if(_renderPending) render(); }, 0);
+});
 // Column count tracks viewport width; re-render (debounced) on resize.
 let _resizeTimer = null;
 window.addEventListener("resize", () => {
@@ -49,34 +56,71 @@ window.addEventListener("resize", () => {
 //---------------------------------------------------------- render()
 
 function render() {
-  if(_pointerDown || document.activeElement?.tagName === "SELECT") {
+  // Re-entrant call: replaceChild detaching the focused field fires its blur
+  // synchronously, and a render() from that handler would swap `root` out
+  // from under the in-flight replaceChild (NotFoundError, focus lost).
+  // Park it; the pending-flush machinery lands it after this pass.
+  if(_rendering) {
+    _renderPending = true;
+    return;
+  }
+  const active = document.activeElement;
+  // A caret in a text input is never disturbed by arriving data: async
+  // renders (no `window.event`) park until the field blurs or a user
+  // action renders. User-event renders proceed and restore focus below.
+  if(_gesture || active?.tagName === "SELECT"
+    || (active?.tagName === "INPUT" && active.type === "text" && !window.event)) {
     _renderPending = true;
     return;
   }
   _renderPending = false;
-  // Rebuild parks focus on <body>; restore it on the search input if that's
-  // where the user was typing.
-  const wasSearch = document.activeElement?.classList.contains("rb-search");
-  const el = <App />;
-  // `root` may be detached out-of-band: a deferred render races with an
-  // async handler that reparents body, or an extension wipes the tree.
-  // `replaceChild` then throws NotFoundError. Check parentage and fall
-  // back to a plain append so render never hard-fails.
-  if(root?.parentNode === document.body) {
-    document.body.replaceChild(el, root);
-  } else {
-    if(root?.parentNode) root.parentNode.removeChild(root);
-    document.body.appendChild(el);
-  }
-  root = el;
-  Monitor.mount();
-  if(wasSearch) {
-    const s = root.querySelector(".rb-search");
-    if(s) {
-      s.focus();
-      s.selectionStart = s.selectionEnd = S.query.length;
+  // Rebuild parks focus on <body>; restore it - the search box, the addr box,
+  // or a register field with caret and text.
+  const wasSearch = active?.classList.contains("rb-search");
+  const wasAddr = active?.classList.contains("rb-addr");
+  const regFocus = active?.classList.contains("rb-val") ? active.dataset.reg : null;
+  const regSel = (wasAddr || regFocus) ? [active.selectionStart, active.selectionEnd] : null;
+  const regText = regFocus ? active.value : null;
+  _rendering = true;
+  try {
+    const el = <App />;
+    // `root` may be detached out-of-band: a deferred render races with an
+    // async handler that reparents body, or an extension wipes the tree.
+    // `replaceChild` then throws NotFoundError. Check parentage and fall
+    // back to a plain append so render never hard-fails.
+    if(root?.parentNode === document.body) {
+      document.body.replaceChild(el, root);
+    } else {
+      if(root?.parentNode) root.parentNode.removeChild(root);
+      document.body.appendChild(el);
+    }
+    root = el;
+    Monitor.mount();
+    if(wasSearch) {
+      const s = root.querySelector(".rb-search");
+      if(s) {
+        s.focus();
+        s.selectionStart = s.selectionEnd = S.query.length;
+      }
+    }
+    else if(wasAddr || regFocus) {
+      const f = wasAddr ? root.querySelector(".rb-addr") : valInput(regFocus);
+      if(f && !f.disabled) {
+        f.focus();
+        // Keep the mid-edit text while it still parses to the staged value -
+        // the canonical re-render reformats ("12." -> "12") under the caret.
+        // Once the edit is reset or replaced underneath, canonical wins.
+        if(regFocus) {
+          const reg = Reg.byName(regFocus);
+          const staged = regFocus in S.dirty ? S.dirty[regFocus] : S.values[regFocus];
+          if(reg && f.value !== regText && Reg.same(Reg.parse(reg, regText), staged))
+            f.value = regText;
+        }
+        f.setSelectionRange(regSel[0], regSel[1]);
+      }
     }
   }
+  finally { _rendering = false; }
 }
 
 //---------------------------------------------------------- Boot
@@ -119,7 +163,7 @@ function render() {
         if(!known.has(name)) continue;
         S.monitor.add(name);
         if(!groupKey) {
-          const reg = regs.find(r => r.name === name);
+          const reg = Reg.byName(name);
           if(reg) groupKey = chartGroupKey(reg);
         }
       }
@@ -140,9 +184,11 @@ function render() {
   render();
 
   // Chart wasn't visible before, so its container had no measurable size.
-  // Refresh now that it's on screen.
+  // Refresh now that it's on screen, then backfill the window from the
+  // store - history must show even when no device is connected.
   if(S.monitor.size) {
     Monitor.refresh();
     Monitor.mount();
+    Monitor.refetch();
   }
 })();

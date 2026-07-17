@@ -7,7 +7,8 @@ archive tiers downsample it incrementally - minute (`addr_1_m`), hour
 (`addr_1_h`), day (`addr_1_d`) - each averaging the tier below. A chart query
 reads from whichever tier matches the requested time span, so an overview of a
 year is a 365-row read and a zoom into one minute is full resolution. Numeric
-columns average; TEXT (enum/ver) take the last value in the bucket.
+columns average; bits OR-reduce (any bit set in the window); TEXT (enum/ver)
+take the last value in the bucket.
 
 Schema is created lazily per table on first use and kept in sync with regs.csv
 by adding any missing columns (`ALTER TABLE ADD COLUMN`); column removal or a
@@ -22,7 +23,7 @@ import os
 from xaeian.db import SqliteAsyncDatabase, ident
 from xaeian import Print, DIR, PATH, Time
 
-p = Print()
+log = Print()
 
 # Archive tiers downsampled off the raw table: (suffix, bucket seconds,
 # retention days). Each tier averages the one above it (raw -> m -> h -> d),
@@ -59,7 +60,7 @@ class Store:
   def _type(reg:dict) -> str:
     typ = reg.get("type", "uint")
     if typ in ("enum", "ver"): return "TEXT"
-    if typ in ("bool", "hex"): return "INTEGER"
+    if typ in ("bool", "hex", "bits"): return "INTEGER"
     if typ in ("rule", "float"): return "REAL"
     scale = reg.get("scale", 1)
     if isinstance(scale, list): return "REAL"
@@ -79,7 +80,10 @@ class Store:
         for i in range(len(units)):
           self._cols.append({"col": f"{base}_{i}", "type": "REAL", "name": r["name"], "slot_idx": i})
       else:
-        self._cols.append({"col": self._col(r["name"]), "type": self._type(r), "name": r["name"], "slot_idx": None})
+        self._cols.append({
+          "col": self._col(r["name"]), "type": self._type(r), "name": r["name"],
+          "slot_idx": None, "agg": "or" if r.get("type") == "bits" else None,
+        })
 
   @staticmethod
   def _active_slot(units:list, switch_val) -> int|None:
@@ -112,7 +116,7 @@ class Store:
     DIR.ensure(path, is_file=True)
     self.db = SqliteAsyncDatabase(path)
     await self.db.exec("PRAGMA journal_mode=WAL")
-    p.ok(f"Store: {path} ({len(self._cols)} cols)")
+    log.ok(f"Store: {path} ({len(self._cols)} cols)")
 
   async def _ensure(self, table:str):
     """Create the table (same schema as raw) and its ts index if missing, and
@@ -127,9 +131,6 @@ class Store:
       if c["col"] not in have:
         await self.db.exec(f"ALTER TABLE {ident(table)} ADD COLUMN {c['col']} {c['type']}")
     self._tables.add(table)
-
-  async def _ensure_table(self, addr:int|str):
-    await self._ensure(self._table(addr))
 
   #------------------------------------------------------------------------------------ Resolve
 
@@ -147,7 +148,7 @@ class Store:
   async def log(self, cache:dict, addr:int|str):
     if not self._cols or not self.db: return
     try:
-      await self._ensure_table(addr)
+      await self._ensure(self._table(addr))
       row = {"ts": Time().to("ts")}
       # Per-rule active-slot cache so we resolve each switch only once per cycle.
       active:dict[str, int|None] = {}
@@ -164,7 +165,7 @@ class Store:
         row[c["col"]] = self._resolve(cache, name) if active[name] == slot_idx else None
       await self.db.insert(self._table(addr), row)
     except Exception as e:
-      p.err(f"log: {e}")
+      log.err(f"log: {e}")
 
   #---------------------------------------------------------------------------------- Downsample
 
@@ -184,7 +185,7 @@ class Store:
         total += await self._roll_tier(src, dst, bucket)
         src = dst
     except Exception as e:
-      p.err(f"roll: {e}")
+      log.err(f"roll: {e}")
     return total
 
   async def _roll_tier(self, src:str, dst:str, bucket:float) -> int:
@@ -212,6 +213,10 @@ class Store:
       for c in self._cols:
         vals = [r[c["col"]] for r in buckets[b] if r[c["col"]] is not None]
         if not vals: agg[c["col"]] = None
+        elif c.get("agg") == "or":                           # bitfield: any bit set in the window
+          acc = 0
+          for v in vals: acc |= int(v)
+          agg[c["col"]] = acc
         elif c["type"] == "TEXT": agg[c["col"]] = vals[-1]   # last value in bucket
         else: agg[c["col"]] = sum(vals) / len(vals)          # mean of the bucket
       await self.db.insert(dst, agg)
@@ -270,7 +275,7 @@ class Store:
              f"WHERE ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?")
       return await self.db.get_dicts(sql, (from_ts, to_ts, cap))
     except Exception as e:
-      p.err(f"query: {e}")
+      log.err(f"query: {e}")
       return []
 
   #----------------------------------------------------------------------------------- Retention
@@ -297,9 +302,9 @@ class Store:
         cut = cutoff.get(self._tier_suffix(t))
         if cut is None: continue
         total += await self.db.exec(f"DELETE FROM {ident(t)} WHERE ts < ?", (cut,)) or 0
-      if total: p.inf(f"Prune: removed {total} rows")
+      if total: log.inf(f"Prune: removed {total} rows")
     except Exception as e:
-      p.err(f"prune: {e}")
+      log.err(f"prune: {e}")
     return total
 
   async def reset(self) -> bool:
@@ -314,9 +319,9 @@ class Store:
       try:
         if os.path.isfile(f): os.remove(f)
       except OSError as e:
-        p.wrn(f"reset: {f}: {e}")
+        log.wrn(f"reset: {f}: {e}")
         if suffix == "": ok = False
     if self.db:
       await self.db.exec("PRAGMA journal_mode=WAL")
-    if ok: p.ok("Store reset")
+    if ok: log.ok("Store reset")
     return ok

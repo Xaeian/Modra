@@ -117,32 +117,34 @@ class Api:
       return {"error": str(e), "found": []}
 
   def read(self, params:dict=None) -> dict:
-    cache = link.read()
     result = {
-      "data": cache,
+      "data": link.read(),
       "connected": link.connected,
       "serial_open": link.serial_open,
       "port": link.mb.port if link.mb and link.serial_open else None,
       "addr": link.mb.addr if link.mb and link.connected else None,
     }
     if isinstance(params, dict):
-      frm = params.get("from")
-      to = params.get("to")
-      names = params.get("names")
-      max_points = params.get("max_points")
-    else:
-      frm = to = names = max_points = None
-    addr = link.store_key()
-    if frm is not None and to is not None and names and addr:
-      try: max_points = int(max_points or 2000)
-      except (ValueError, TypeError): max_points = 2000
-      rows = link.run_async(
-        link.store.query(addr, names, frm, to, max_points, link._history_days()),
-        timeout=10,
-      )
-      result["rows"] = rows or []
-      result["tier"] = link.store.tier_label(frm, to, max_points, link._history_days())
+      result.update(self._history(params))
     return result
+
+  @staticmethod
+  def _history(params:dict) -> dict:
+    """Chart rows + tier for a read that asked for a time window. Served from
+    the DB, so it works with no device connected."""
+    frm, to, names = params.get("from"), params.get("to"), params.get("names")
+    addr = link.store_key()
+    if frm is None or to is None or not names or not addr: return {}
+    try: max_points = int(params.get("max_points") or 2000)
+    except (ValueError, TypeError): max_points = 2000
+    rows = link.run_async(
+      link.store.query(addr, names, frm, to, max_points, link.history_days()),
+      timeout=10,
+    )
+    return {
+      "rows": rows or [],
+      "tier": link.store.tier_label(frm, to, max_points, link.history_days()),
+    }
 
   def sync(self) -> dict:
     if not link.connected:

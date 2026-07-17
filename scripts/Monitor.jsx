@@ -24,10 +24,10 @@ const Monitor = {
       <div class="rb-monitor">
         <div class="rb-monitor-bar">
           {[...S.monitor].map(name => {
-            const reg = S.regs.find(r => r.name === name);
+            const reg = Reg.byName(name);
             const c = colors[name];
             return (
-              <span class="rb-monitor-tag" onClick={() => reg && monitor(reg)}>
+              <span class="rb-monitor-tag" onClick={() => reg && toggleMonitor(reg)}>
                 {c && <i class="rb-tag-dot" style={"background:" + c}></i>}
                 {name} ✕
               </span>
@@ -64,6 +64,7 @@ const Monitor = {
       this._el.className = "rb-charts";
     }
     slot.appendChild(this._el);
+    this._stack?.syncRect();
   },
 
   // Live poll: replace the buffer with the freshly fetched window and redraw.
@@ -112,30 +113,7 @@ const Monitor = {
     });
     for(const [key, grp] of Object.entries(groups)) {
       this._keys.push(key);
-      const panelCfg = {
-        unit: grp.unit,
-        series: grp.names.map((name, i) => ({
-          label: name.includes(":") ? name.split(":").pop() : name,
-          color: chartColor(grp.idx, i),
-          stepped: grp.stepped,
-        })),
-      };
-      // Discrete y-axes: bool snaps to ON/OFF, enum maps integers back to
-      // labels so the axis reads as states, not numbers.
-      if(grp.type === "bool") {
-        panelCfg.yRange = [-0.2, 1.2];
-        panelCfg.yFormat = v => v == null ? "-" : v >= 0.5 ? "ON" : "OFF";
-      }
-      else if(grp.type === "enum" && grp.enumLabels) {
-        const keys = Object.keys(grp.enumLabels).map(Number);
-        const lo = Math.min(...keys), hi = Math.max(...keys);
-        panelCfg.yRange = [lo - 0.5, hi + 0.5];
-        const labels = grp.enumLabels;
-        panelCfg.yFormat = v => v == null ? "-" : (labels[Math.round(v)] ?? csFmtVal(v));
-      }
-      const sz = CHART_SIZE_CYCLE.includes(S.chartSizes[key]) ? S.chartSizes[key] : CHART_SIZE_DEFAULT;
-      panelCfg.height = CHART_SIZES[sz];
-      this._stack.addPanel(panelCfg);
+      this._stack.addPanel(this._panelCfg(key, grp));
     }
     this._stack.build();
     // Per-panel S/M/L cycle button. Must be hung after `build()` because
@@ -172,7 +150,7 @@ const Monitor = {
     MonitData.setRange(s);
     render();
     this.mount();
-    await this._refetch();
+    await this.refetch();
     render();
     this.mount();
   },
@@ -184,12 +162,13 @@ const Monitor = {
     if(a == null) MonitData.setRange(MonitData.range);
     else MonitData.setWindow(a, b);
     clearTimeout(this._zoomTimer);
-    this._zoomTimer = setTimeout(() => { this._refetch(); render(); this.mount(); }, 150);
+    this._zoomTimer = setTimeout(() => { this.refetch(); render(); this.mount(); }, 150);
   },
 
-  // Fetch the current window and redraw. Shared by range buttons and zoom;
-  // `_rangeBusy` shields against overlapping round-trips.
-  async _refetch() {
+  // Fetch the current window from the store and redraw. Shared by range
+  // buttons, zoom, trace add, and boot. Queries the DB directly, so it works
+  // with no device connected; `_rangeBusy` shields overlapping round-trips.
+  async refetch() {
     if(this._rangeBusy) return;
     this._rangeBusy = true;
     const params = MonitData.fetchParams();
@@ -227,6 +206,48 @@ const Monitor = {
   },
 
   //---------------------------------------------------------- Internals
+
+  // Panel config for one chart group: series styling plus the type-specific
+  // y-axis. Discrete y-axes: bool snaps to ON/OFF, enum maps integers back
+  // to labels so the axis reads as states, not numbers - both stay off the
+  // shared tooltip since the state is already spelled out on the y-axis.
+  _panelCfg(key, grp) {
+    const cfg = {
+      unit: grp.unit,
+      // Full name incl. group: same-unit panels mix registers from different
+      // groups, so a bare short name in the tooltip is ambiguous.
+      series: grp.names.map((name, i) => ({
+        label: name,
+        color: chartColor(grp.idx, i),
+        stepped: grp.stepped,
+      })),
+    };
+    if(grp.type === "bool") {
+      cfg.yRange = [-0.2, 1.2];
+      cfg.yFormat = v => v == null ? "-" : v >= 0.5 ? "ON" : "OFF";
+      cfg.noTip = true;
+    }
+    else if(grp.type === "enum" && grp.enumLabels) {
+      const keys = Object.keys(grp.enumLabels).map(Number);
+      const lo = Math.min(...keys), hi = Math.max(...keys);
+      const labels = grp.enumLabels;
+      cfg.yRange = [lo - 0.5, hi + 0.5];
+      cfg.yFormat = v => v == null ? "-" : (labels[Math.round(v)] ?? csFmtVal(v));
+      cfg.noTip = true;
+      // The enum's "unit" is its raw label map; the y-axis already names the
+      // states, so it isn't repeated as a corner unit tag.
+      cfg.unit = "";
+    }
+    else if(grp.type === "bits" && grp.bitsLabels) {
+      // A bitmask isn't legible from one y-position, so unlike bool/enum the
+      // shared tooltip is kept; yFormat decodes the mask to its active labels.
+      const labels = grp.bitsLabels;
+      cfg.yFormat = v => (v == null || v < 0) ? "-" : bitsText(labels, Math.round(v));
+    }
+    const sz = CHART_SIZE_CYCLE.includes(S.chartSizes[key]) ? S.chartSizes[key] : CHART_SIZE_DEFAULT;
+    cfg.height = CHART_SIZES[sz];
+    return cfg;
+  },
 
   // Layout signature: each group key plus its member names. A rule-slot flip
   // can change a group's members while its key stays, so comparing this (not

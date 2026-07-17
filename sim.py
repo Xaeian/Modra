@@ -10,6 +10,7 @@ traces rather than a clean sinusoid or pure noise.
   numeric R  → mean-reverting random walk, clamped to min/max
   bool R     → toggles with small per-tick probability
   enum R     → advances one slot with small per-tick probability
+  bits R     → flips individual labeled bits with small per-tick probability
   hex/ver    → stable (firmware-controlled)
   RW/RWs/W   → never drifts (user-controlled)
 
@@ -138,6 +139,9 @@ class SimulatedClient:
       if len(parts) != 3: return 0
       raw = int(parts[0])*10000 + int(parts[1])*100 + int(parts[2])
       return raw & 0xFFFF
+    if typ == "bits":
+      try: return int(val) & 0xFFFF
+      except (TypeError, ValueError): return 0
     scale = SimulatedClient._first(entry.get("scale", 1)) or 1
     try: f = float(val) * float(scale)
     except (TypeError, ValueError): f = 0.0
@@ -222,6 +226,14 @@ class SimulatedClient:
         # always cycling in one direction.
         step = 1 if random.random() < 0.5 else -1
         self.values[rid] = keys[(idx + step) % len(keys)]
+      return
+
+    if typ == "bits":
+      # Flip each labeled bit independently so the status word looks alive.
+      chance = self._param(rid, "bits_c", BOOL_CHANCE_MIN, BOOL_CHANCE_MAX)
+      for k in entry.get("bits", {}):
+        if random.random() < chance:
+          self.values[rid] = (self.values[rid] ^ (1 << int(k))) & 0xFFFF
       return
 
     # Numeric (uint/int/rule): mean-reverting random walk.

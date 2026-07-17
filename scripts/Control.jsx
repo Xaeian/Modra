@@ -9,10 +9,13 @@ const _btnClass = (isActive, isDirty) =>
   cls("rb-btn", isActive && "on", isDirty && isActive && "dirty");
 
 // Inline `null` toggle for writable nullable regs (Bool and Input share it).
+// No focus steal: blurring the row's input would autosend the value this
+// toggle replaces.
 const NullCheckbox = ({ reg }) => {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
   return (
-    <label class="rb-null-cb" title="Send null">
+    <label class="rb-null-cb" title="Send null"
+      onMouseDown={(e) => e.preventDefault()}>
       <input type="checkbox" checked={cur == null} onChange={() => toggleNull(reg)} />
       null
     </label>
@@ -29,6 +32,22 @@ function _valHint(reg, value) {
   if(Reg.outOfRange(reg, value))
     return `Outside the allowed range ${Reg.min(reg)}..${Reg.max(reg)}${suffix}. It will still be written; the device decides what to do.`;
   return undefined;
+}
+
+// Enter commits (blur). Tab / Shift+Tab hops between register fields, skipping
+// the row's action buttons; at the ends it leaves the grid. Blur may rebuild the
+// DOM, so the destination is re-found by name afterward and selected for overtype.
+function _onValKeyDown(e) {
+  if(e.key === "Enter") { e.target.blur(); return; }
+  if(e.key !== "Tab") return;
+  const inputs = [...document.querySelectorAll("input.rb-val:not([disabled])")];
+  const dest = inputs[inputs.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
+  if(!dest) return;
+  e.preventDefault();
+  const name = dest.dataset.reg;
+  e.target.blur();
+  const el = valInput(name);
+  if(el) { el.focus(); el.select(); }
 }
 
 const Control = {
@@ -62,6 +81,23 @@ const Control = {
     );
   },
 
+  // Bitfield: one toggle per labeled bit, multi-select. A click flips that bit
+  // in the mask. R/O status words show the same buttons disabled with set bits
+  // lit; a confirmed device null renders like the other nullable read-only cells.
+  Bits: ({ reg, value, isDirty, ro }) => {
+    if(ro && Reg.isNA(reg, value)) return <span class="rb-ro na">null</span>;
+    const mask = value ?? 0;
+    return (
+      <div class="rb-btns">
+        {Object.entries(reg.bits).map(([k, name]) => (
+          <button class={_btnClass((mask >> Number(k)) & 1, isDirty)} disabled={ro}
+            onClick={() => !ro && editSend(reg, mask ^ (1 << Number(k)))}
+          >{name}</button>
+        ))}
+      </div>
+    );
+  },
+
   // Version string from `Reg.display` (X.YY.ZZ). Always read-only.
   Ver: ({ reg, value }) => (
     <span class="rb-ro">{Reg.display(reg, value) || "-"}</span>
@@ -71,12 +107,20 @@ const Control = {
   Input: ({ reg, value, isDirty, ro }) => {
     const na = Reg.isNA(reg, value);
     // Non-nullable blank = discard the edit; nullable blank = commit null.
-    const onBlur = () => {
+    // Blur always renders so the field normalizes without waiting for the
+    // device ack. A mechanical blur - the rebuild replacing this field
+    // (isRendering; Chrome fires it while the node is still connected) or
+    // one arriving already detached - is not the user leaving the field:
+    // acting on it would autosend a half-typed value and re-enter render()
+    // mid-swap, corrupting the tree.
+    const onBlur = (e) => {
+      if(isRendering() || !e.target.isConnected) return;
       if(!ro && reg.name in S.dirty && S.dirty[reg.name] === null && !reg.nullable)
         resetOne(reg);
-      else if(shouldAutosend(reg))
-        autosendOne(reg);
-      else render();
+      else {
+        if(shouldAutosend(reg)) autosendOne(reg);
+        render();
+      }
     };
     return (
       <div class="rb-val-wrap">
@@ -92,11 +136,14 @@ const Control = {
           disabled={ro}
           onFocus={(e) => na && e.target.select()}
           onInput={(e) => !ro && editSilent(reg, Reg.parse(reg, e.target.value))}
-          onKeyDown={(e) => { if(e.key === "Enter") e.target.blur(); }}
+          onKeyDown={_onValKeyDown}
           onBlur={onBlur} />
         {reg.nullable && !ro && !Reg.isInactive(reg) && <NullCheckbox reg={reg} />}
+        {/* preventDefault: discarding must not blur-autosend the discarded value */}
         {isDirty &&
-          <button class="rb-val-reset" onClick={() => resetOne(reg)} title="Discard">✕</button>}
+          <button class="rb-val-reset" title="Discard"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => resetOne(reg)}>✕</button>}
       </div>
     );
   },
@@ -106,6 +153,7 @@ const Control = {
     if(Reg.isEnum(props.reg)) return <Control.Enum {...props} />;
     if(Reg.isBool(props.reg)) return <Control.Bool {...props} />;
     if(Reg.isVer(props.reg))  return <Control.Ver  {...props} />;
+    if(Reg.isBits(props.reg)) return <Control.Bits {...props} />;
     return <Control.Input {...props} />;
   },
 };

@@ -14,6 +14,41 @@ function cls(base, ...mods) {
   return out;
 }
 
+// Grid input editing `name` - looked up fresh, render() detaches held nodes.
+const valInput = (name) =>
+  document.querySelector(`input.rb-val[data-reg="${CSS.escape(name)}"]`);
+
+// Labels of the bits set in `mask`, unlabeled ones as `bN` so a stray flag still
+// shows; "-" when none. `labels` is the index->name map (reg.bits); shared by the
+// grid display and the chart formatter.
+function bitsText(labels, mask) {
+  const out = [];
+  for(let i = 0; i < 16; i++) if((mask >> i) & 1) out.push(labels[i] ?? ("b" + i));
+  return out.length ? out.join(" | ") : "-";
+}
+
+// "2026-07-17" - date stamp for exported file names.
+const fileStamp = () => new Date().toISOString().slice(0, 10);
+
+// Parse range expressions like "1-10, 12, 100-110" into a sorted dedup'd
+// list of valid Modbus addresses (1..247).
+function parseAddrRange(str) {
+  const addrs = new Set();
+  for(const part of str.split(",")) {
+    const t = part.trim();
+    const range = t.match(/^(\d+)-(\d+)$/);
+    if(range) {
+      const a = parseInt(range[1]);
+      const b = parseInt(range[2]);
+      for(let i = Math.min(a, b); i <= Math.max(a, b); i++) addrs.add(i);
+    }
+    else if(/^\d+$/.test(t)) addrs.add(parseInt(t));
+  }
+  return [...addrs]
+    .filter(a => a >= 1 && a <= 247)
+    .sort((a, b) => a - b);
+}
+
 //---------------------------------------------------------- Register helpers
 
 const Reg = (() => {
@@ -38,6 +73,17 @@ const Reg = (() => {
   // Pair registers store `id` as `[hi, lo]`; collapse to the two extremes.
   const lo = (reg) => Array.isArray(reg.id) ? Math.min(...reg.id) : reg.id;
   const hi = (reg) => Array.isArray(reg.id) ? Math.max(...reg.id) : reg.id;
+
+  // name → reg from the catalog, or null. Map cached on the catalog
+  // reference (loaded once at boot) - the one lookup every hot path uses.
+  let _byName = null, _byNameSrc = null;
+  function byName(name) {
+    if(_byNameSrc !== S.regs) {
+      _byNameSrc = S.regs;
+      _byName = new Map(S.regs.map(r => [r.name, r]));
+    }
+    return _byName.get(name) || null;
+  }
 
   // "12" for a single, "12-13" for a pair.
   function label(reg) {
@@ -128,6 +174,7 @@ const Reg = (() => {
       return "0x" + (value >>> 0).toString(16).toUpperCase().padStart(8, "0");
     }
     if(reg.type === "hex") return "0x" + (value >>> 0).toString(16).toUpperCase().padStart(4, "0");
+    if(reg.type === "bits") return bitsText(reg.bits, value);
     if(typeof value === "number") return value.toFixed(_decimals(step(reg)));
     return String(value);
   }
@@ -174,12 +221,16 @@ const Reg = (() => {
 
   //---------------------------------------------------------- Predicates
 
-  // Anything except enum / bool / ver renders as a numeric input (uint, int,
-  // rule, hex - the last formatted as hex string but still a number).
+  // Value is a JS number (uint / int / rule / hex / bits) - drives parse,
+  // willWrap and import. Render dispatch is `isScalar` / Control.For.
   const isNumeric = (reg) => !["enum", "bool", "ver"].includes(reg.type);
   const isEnum = (reg) => reg.type === "enum" && reg.enum;
   const isBool = (reg) => reg.type === "bool";
   const isVer  = (reg) => reg.type === "ver";
+  const isBits = (reg) => reg.type === "bits" && reg.bits;
+
+  // Renders the free-text Input control (Control.For's fallthrough).
+  const isScalar = (reg) => !isEnum(reg) && !isBool(reg) && !isVer(reg) && !isBits(reg);
 
   // Device-reported null - tells a real N/A apart from never-polled.
   const isNA = (reg, value) =>
@@ -196,7 +247,7 @@ const Reg = (() => {
   }
 
   // 16-bit register span per type; types absent here don't scale-encode.
-  const _RAW_RANGE = { uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], int: [-0x8000, 0x7FFF] };
+  const _RAW_RANGE = { uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], bits: [0, 0xFFFF], int: [-0x8000, 0x7FFF] };
 
   // round(value*scale) overflows the register and wraps to a different number.
   function willWrap(reg, value) {
@@ -264,15 +315,43 @@ const Reg = (() => {
     return regs.filter(r => !S.ignore.has(r.name));
   }
 
-  // Group registers into contiguous blocks of adjacent ids - e.g.
-  // [1,2,3,5,6] → [[1,2,3], [5,6]]. Drives the visual gaps in the grid.
-  function blocks(regs) {
+  // Contiguous runs of adjacent ids - e.g. [1,2,3,5,6] → [[1,2,3], [5,6]].
+  function _contiguous(regs) {
     if(!regs.length) return [];
     const s = [...regs].sort((a, b) => lo(a) - lo(b));
     const out = [[s[0]]];
     for(let i = 1; i < s.length; i++) {
       if(lo(s[i]) <= hi(out.at(-1).at(-1)) + 1) out.at(-1).push(s[i]);
       else out.push([s[i]]);
+    }
+    return out;
+  }
+
+  // Canonical block boundaries: the upper id of each contiguous run in the
+  // FULL catalog, cached on the catalog reference (loaded once at boot).
+  let _edges = null, _edgesSrc = null;
+  function _blockEdges() {
+    if(_edgesSrc !== S.regs) {
+      _edgesSrc = S.regs;
+      _edges = _contiguous(S.regs).map(b => hi(b.at(-1)));
+    }
+    return _edges;
+  }
+
+  // Group registers into blocks along the canonical boundaries. Grouping is
+  // fixed by the full catalog, so search/ignore hiding registers thins a
+  // block out instead of splitting it at every hole. Drives the visual gaps
+  // in the grid.
+  function blocks(regs) {
+    if(!regs.length) return [];
+    const s = [...regs].sort((a, b) => lo(a) - lo(b));
+    const edges = _blockEdges();
+    const out = [];
+    let bi = 0, prev = -1;
+    for(const r of s) {
+      while(bi < edges.length - 1 && lo(r) > edges[bi]) bi++;
+      if(bi !== prev) { out.push([]); prev = bi; }
+      out.at(-1).push(r);
     }
     return out;
   }
@@ -300,12 +379,12 @@ const Reg = (() => {
   }
 
   return {
-    lo, hi, label,
+    lo, hi, label, byName,
     ruleIndex, isInactive,
     unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
-    isNumeric, isEnum, isBool, isVer, isNA,
+    isNumeric, isEnum, isBool, isVer, isBits, isScalar, isNA,
     outOfRange, willWrap, wrapPreview,
     tooltip, filter, visibility, blocks, columns,
   };

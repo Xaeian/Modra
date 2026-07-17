@@ -36,7 +36,7 @@ await mb.disconnect()
 | `name`    | `Group:Name` format                       | `Ctrl:Mode`                |
 | `rws`     | Access: R, W, RW, RWs                     | `RW`                       |
 | `type`    | Data type (prefix `?` = nullable)         | `uint` / `?int`            |
-| `unit`    | Unit or enum definition                   | `rpm` or `0=off 1=on`      |
+| `unit`    | Unit, or enum / bits label map            | `rpm` or `0=off 1=on`      |
 | `scale`   | Multiplier (or `/` separated list)        | `10` or `1/10/100`         |
 | `min`     | Minimum value                             | `0`                        |
 | `max`     | Maximum value                             | `10000`                    |
@@ -64,16 +64,17 @@ Pair_keys (e.g. `Auth:SecretKey`) expand to both underlying halves when matched.
 
 ### Types
 
-| Type    | Description                                         |
-| ------- | --------------------------------------------------- |
-| `uint`  | Unsigned 16-bit                                     |
-| `int`   | Signed 16-bit                                       |
-| `bool`  | Boolean (0/1)                                       |
-| `enum`  | Enumeration (parsed from `unit`)                    |
-| `hex`   | Hex display                                         |
-| `ver`   | Version X.YY.ZZ (max 6.55.35)                       |
-| `rule`  | Dynamic scale/unit based on switch                  |
-| `float` | IEEE 754 single, used in `high`/`low` pair (32-bit) |
+| Type    | Description                                               |
+| ------- | --------------------------------------------------------- |
+| `uint`  | Unsigned 16-bit                                           |
+| `int`   | Signed 16-bit                                             |
+| `bool`  | Boolean (0/1)                                             |
+| `enum`  | Enumeration (parsed from `unit`)                          |
+| `bits`  | Bitfield: per-bit labels from `unit`, value is a raw mask |
+| `hex`   | Hex display                                               |
+| `ver`   | Version X.YY.ZZ (max 6.55.35)                             |
+| `rule`  | Dynamic scale/unit based on switch                        |
+| `float` | IEEE 754 single, used in `high`/`low` pair (32-bit)       |
 
 ### Nullable registers
 
@@ -94,10 +95,12 @@ via the `null` column when the device uses a different value.
 16-bit word - `0`/`1` are HIGH/LOW, anything else is free for N/A.
 
 `float` pairs are nullable by default - NaN is the natural sentinel and
-`?` is redundant. `enum` / `ver` / `rule` accept `?` for metadata
-purposes but have no clean spare encoding (`ver` packs all 16 bits,
-`enum` raw outside the table reads as an integer fallback, and `rule`
-already returns `None` for an inactive slot).
+`?` is redundant. `enum` / `ver` / `rule` / `bits` accept `?` for
+metadata purposes but have no clean spare encoding (`ver` packs all 16
+bits, `enum` raw outside the table reads as an integer fallback, `rule`
+already returns `None` for an inactive slot, and `bits` treats `0xFFFF`
+as a valid all-set mask - use an explicit `null` override if a device
+reserves a sentinel).
 
 ```csv
 33,0x21,MeasSlow:Freq,R,?uint,Hz,100,,,Frequency (N/A when output disabled),,
@@ -105,11 +108,12 @@ already returns `None` for an inactive slot).
 60,0x3C,Energy:Total,R,?uint,Wh,1,,,Accumulated energy (N/A = not accumulated),,0
 ```
 
-Writing `None` on a nullable register emits the sentinel; writing
-`None` on a non-nullable register is silently skipped (no garbage write).
-The DB stores SQLite NULL for any nullable read that decoded as None,
-so the history column reads as a gap rather than a sentinel-valued
-spike.
+Writing `None` emits the sentinel where the type has one; on a
+non-nullable register - or a nullable type with no spare encoding
+(`?enum` / `?ver` / `?rule` / `?bits`) - the write is silently skipped
+(no garbage write). The DB stores SQLite NULL for any nullable read that
+decoded as None, so the history column reads as a gap rather than a
+sentinel-valued spike.
 
 ### Rules
 
@@ -132,12 +136,14 @@ For float pairs, `unit`/`scale`/`min`/`max` are taken from the high half so
 the pair carries real engineering metadata.
 
 **Switch-based scaling** - dynamic unit/scale based on another register (case-insensitive matching):
+
 ```csv
 10,0x0A,Ctrl:Mode,RW,enum,0=off 1=rpm 2=hz,-,-,-,-
 11,0x0B,Ctrl:Speed,RW,rule,off/rpm/Hz,1/10/100,0/0/0,0/10000/20000,switch=Ctrl:Mode
 ```
-When `Mode=rpm`: Speed uses scale=10, unit="rpm"  
-When `Mode=hz`: Speed uses scale=100, unit="Hz"  
+
+When `Mode=rpm`: Speed uses scale=10, unit="rpm"
+When `Mode=hz`: Speed uses scale=100, unit="Hz"
 When `Mode=off`: Speed returns `None`, write skips
 
 ## API

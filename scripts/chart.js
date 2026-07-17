@@ -193,6 +193,7 @@ class ChartStack {
       height: cfg.height || this._cfg.height,
       yRange: cfg.yRange || null,
       yFormat: cfg.yFormat || null,
+      noTip: cfg.noTip || false,
     });
   }
 
@@ -239,6 +240,13 @@ class ChartStack {
     this._syncing = false;
   }
 
+  // uPlot caches the pointer-origin rect and refreshes it only on resize,
+  // scroll or mouseenter. The chart element is re-parented on every render, so
+  // drop the cache and let it re-read at the next pointer event.
+  syncRect() {
+    for(const e of this._entries) e?.plot?.syncRect?.(true);
+  }
+
   // Drop user zoom, return to auto-scroll. Triggered by dblclick on a plot.
   resetZoom() {
     this._autoScroll = true;
@@ -277,6 +285,7 @@ class ChartStack {
       const pe = this._entries[p];
       if(!pe?.plot?.data?.[0]?.length) continue;
       const panel = this._panels[p];
+      if(panel.noTip) continue;   // discrete bool/enum: state reads off the y-axis
       const pidx = (pe.plot === u) ? idx : csClosestIdx(pe.plot.data[0], ts);
       if(pidx == null) continue;
       for(let s = 0; s < panel.series.length; s++) {
@@ -354,6 +363,14 @@ class ChartStack {
         sync: { key: cfg.syncKey, setSeries: true, scales: ["x", null] },
         drag: { x: true, y: false, setScale: true },
         points: { size: 6, width: 1.5 },
+        // Page zoom scales the plot's bounding rect (the pointer origin) but not
+        // its own width, so a raw pointer reads Z times too far along. Synced
+        // sibling panels arrive already in plot px and carry no pointer event.
+        move: (u, left, top) => {
+          if(u.cursor.event == null) return [left, top];
+          const z = parseFloat(document.body.style.zoom) || 1;
+          return [left / z, top / z];
+        },
       },
       axes: [
         {

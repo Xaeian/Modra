@@ -26,27 +26,23 @@ NULLABLE_BASE_TYPES = {"uint", "int", "hex", "float", "bool"}
 class ModbusMaster:
 
   @staticmethod
-  def _parse_scale(scale:str|int|float) -> float|list[float]:
-    s = str(scale).strip()
-    if s == "" or s == "-": return 1.0
-    if "/" in s: return [ModbusMaster._parse_scale(x) for x in s.split("/")]
-    try: return float(s)
-    except ValueError: return 1.0
-
-  @staticmethod
-  def _parse_minmax(val:str) -> float|list[float]|None:
+  def _parse_slots(val, conv, empty=None):
+    """CSV cell → value or `/`-separated rule-slot list. Empty / `-` → `empty`;
+    `conv` maps one token and supplies its own fallback on garbage."""
     s = str(val).strip()
-    if s == "" or s == "-": return None
-    if "/" in s: return [ModbusMaster._parse_minmax(x) for x in s.split("/")]
-    try: return float(s)
-    except ValueError: return None
+    if s in ("", "-"): return empty
+    if "/" in s: return [ModbusMaster._parse_slots(x, conv, empty) for x in s.split("/")]
+    return conv(s)
 
   @staticmethod
-  def _parse_unit(unit:str) -> str|list[str]|None:
-    s = str(unit).strip()
-    if s == "" or s == "-": return None
-    if "/" in s: return [x.strip() for x in s.split("/")]
-    return s
+  def _float(s, fallback=None):
+    try: return float(s)
+    except ValueError: return fallback
+
+  @staticmethod
+  def _num_or_str(s):
+    try: return int(s)
+    except ValueError: return ModbusMaster._float(s, s)
 
   @staticmethod
   def _parse_enum(text:str) -> dict[int, str]:
@@ -68,16 +64,6 @@ class ModbusMaster:
         k, v = part.split("=", 1)
         out[k.strip()] = v.strip()
     return out if out else None
-
-  @staticmethod
-  def _parse_default(val:str):
-    s = str(val).strip()
-    if s == "" or s == "-": return None
-    if "/" in s: return [ModbusMaster._parse_default(x) for x in s.split("/")]
-    try: return int(s)
-    except ValueError:
-      try: return float(s)
-      except ValueError: return s
 
   @staticmethod
   def _parse_null_override(val) -> int|None:
@@ -193,15 +179,19 @@ class ModbusMaster:
       "nullable": nullable,
       "null_override": null_override,
       "null_raw": self._compute_null_raw_16(type_val, nullable, null_override),
-      "unit": self._parse_unit(row.get("unit", "")),
-      "scale": self._parse_scale(row.get("scale", "1")),
-      "min": self._parse_minmax(row.get("min", "")),
-      "max": self._parse_minmax(row.get("max", "")),
+      "unit": self._parse_slots(row.get("unit", ""), lambda s: s),
+      "scale": self._parse_slots(row.get("scale", "1"), lambda s: self._float(s, 1.0), 1.0),
+      "min": self._parse_slots(row.get("min", ""), self._float),
+      "max": self._parse_slots(row.get("max", ""), self._float),
       "desc": row.get("desc") if row.get("desc") not in ("", "-") else None,
       "rule": self._parse_rule(row.get("rule", "")),
-      "default": self._parse_default(row.get("default", "")),
+      "default": self._parse_slots(row.get("default", ""), self._num_or_str),
     }
     if type_val == "enum": entry["enum"] = self._parse_enum(row.get("unit", ""))
+    # The unit column holds the bit->label map (like enum), not a real unit.
+    if type_val == "bits":
+      entry["bits"] = self._parse_enum(row.get("unit", ""))
+      entry["unit"] = None
     return entry
 
   #--------------------------------------------------------------------------------- Connection
@@ -248,17 +238,9 @@ class ModbusMaster:
     return blocks
 
   def _write_blocks(self, raw_data:dict[int, int]) -> list[tuple[int, list[int]]]:
-    ids = sorted(raw_data.keys())
-    if not ids: return []
-    blocks = []
-    start = prev = ids[0]
-    for a in ids[1:]:
-      if a == prev + 1 and (a - start + 1) <= self.max_block: prev = a
-      else:
-        blocks.append((start, [(raw_data.get(i, 0) & 0xFFFF) for i in range(start, prev + 1)]))
-        start = prev = a
-    blocks.append((start, [(raw_data.get(i, 0) & 0xFFFF) for i in range(start, prev + 1)]))
-    return blocks
+    # A block is a contiguous run, so every id in its range is a key.
+    return [(start, [raw_data[i] & 0xFFFF for i in range(start, start + count)])
+            for start, count in self._get_blocks(list(raw_data.keys()))]
 
   async def read_registers(self, reg_ids:list[int]) -> dict[int, int]:
     blocks = self._get_blocks(reg_ids)
@@ -391,52 +373,46 @@ class ModbusMaster:
       if u.lower() == switch_label: return i
     return None
 
+  @staticmethod
+  def _slot(val, index:int=None, fallback=None):
+    """Value for the active rule slot: lists pick `index` (slot 0 when out of
+    range), scalars pass through, missing → `fallback`."""
+    if isinstance(val, list):
+      if index is not None and 0 <= index < len(val): return val[index]
+      return val[0] if val else fallback
+    return val if val is not None else fallback
+
   def _get_scale(self, entry:dict, index:int=None) -> float:
-    scale = entry.get("scale", 1.0)
-    if isinstance(scale, list):
-      if index is not None and 0 <= index < len(scale): return scale[index]
-      return scale[0] if scale else 1.0
-    return scale if scale else 1.0
+    return self._slot(entry.get("scale"), index, 1.0) or 1.0
 
   def _get_unit(self, entry:dict, index:int=None) -> str|None:
-    unit = entry.get("unit")
-    if isinstance(unit, list):
-      if index is not None and 0 <= index < len(unit): return unit[index]
-      return unit[0] if unit else None
-    return unit
+    return self._slot(entry.get("unit"), index)
 
   def _get_minmax(self, entry:dict, index:int=None) -> tuple[float|None, float|None]:
-    mn, mx = entry.get("min"), entry.get("max")
-    if isinstance(mn, list):
-      mn = mn[index] if index is not None and 0 <= index < len(mn) else mn[0] if mn else None
-    if isinstance(mx, list):
-      mx = mx[index] if index is not None and 0 <= index < len(mx) else mx[0] if mx else None
-    return (mn, mx)
+    return (self._slot(entry.get("min"), index), self._slot(entry.get("max"), index))
 
   #------------------------------------------------------------------------------ Encode/decode
 
-  def _decode_raw(self, reg_id:int, raw:int) -> tuple[any, str|None]:
+  def _decode_raw(self, reg_id:int, raw:int):
     entry = self.id_map.get(reg_id)
-    if not entry: return (raw, None)
+    if not entry: return raw
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry) if typ == "rule" else None
-    unit = self._get_unit(entry, rule_idx)
     # Nullable sentinel is checked before type decode, so an N/A read returns
     # None rather than -32768 / 65535.
     null_raw = entry.get("null_raw")
     if null_raw is not None and raw == null_raw:
-      return (None, unit)
+      return None
     scale = self._get_scale(entry, rule_idx)
-    if typ == "enum":
-      val = entry.get("enum", {}).get(int(raw), str(int(raw)))
-    elif typ == "ver":
+    if typ == "enum": return entry.get("enum", {}).get(int(raw), str(int(raw)))
+    if typ == "ver":
       s = str(int(raw)).zfill(6)
-      val = f"{int(s[:-4])}.{int(s[-4:-2])}.{int(s[-2:])}"
-    elif typ == "bool": val = bool(raw & 1)
-    elif typ == "int": val = (raw if raw < 0x8000 else raw - 0x10000) / scale
-    elif typ in ("hex", "uint", "rule"): val = raw / scale
-    else: val = int(raw)
-    return (val, unit)
+      return f"{int(s[:-4])}.{int(s[-4:-2])}.{int(s[-2:])}"
+    if typ == "bool": return bool(raw & 1)
+    if typ == "int": return (raw if raw < 0x8000 else raw - 0x10000) / scale
+    if typ in ("hex", "uint", "rule"): return raw / scale
+    if typ == "bits": return int(raw)   # raw bitmask, never scaled
+    return int(raw)
 
   def _encode_value(
     self, reg_id:int, value:any,
@@ -478,52 +454,61 @@ class ModbusMaster:
       return int(round(float(value) * scale)) & 0xFFFF
     return int(value) & 0xFFFF
 
-  def decode(self, raw_data:dict[int, int]=None,
-    rws_filter:list[str]=None, grouped:bool=None) -> dict:
-    if raw_data is None: raw_data = {k: v for k, v in self.cache_raw.items() if v is not None}
-    if rws_filter is None: rws_filter = []
+  @staticmethod
+  def _put(data:dict, grouped:bool, group, name, fullname, val):
+    if grouped:
+      if group not in data: data[group] = {}
+      data[group][name] = val
+    else:
+      data[fullname] = val
+
+  def _decode_map(
+    self, raw_data:dict[int, int], rws_filter:list[str]=None,
+    grouped:bool=None, missing_as_none:bool=False,
+  ) -> dict:
+    """Raw ids → engineering values, shared by `decode` and `get_cache`.
+    Pairs emit once under their pair key; a rule reg with no active slot
+    emits None. `missing_as_none` walks the full map and reports unpolled
+    registers as None (cache view) instead of skipping them."""
     if grouped is None: grouped = self.group
     data = {}
     pair_part, pair_anchor = self._get_pair_maps()
-    emitted_pairs = set()
-    for reg_id in sorted(raw_data.keys()):
-      if reg_id in pair_anchor:
-        for pair_key in pair_anchor[reg_id]:
-          if pair_key in emitted_pairs: continue
-          info = self.pairs[pair_key]
-          h, l = info.get("high"), info.get("low")
-          if not h or not l: continue
-          if rws_filter and h["rws"] not in rws_filter: continue
-          hr, lr = raw_data.get(h["id"]), raw_data.get(l["id"])
-          if hr is not None and lr is not None:
-            val = self._pair_decode(
-              (hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"),
-            )
-            emitted_pairs.add(pair_key)
-            group, name = info.get("group"), info.get("name")
-            if grouped:
-              if group not in data: data[group] = {}
-              data[group][name] = val
-            else:
-              data[pair_key] = val
+    emitted = set()
+    ids = sorted(self.id_map.keys() if missing_as_none else raw_data.keys())
+    for reg_id in ids:
+      for pair_key in pair_anchor.get(reg_id, []):
+        if pair_key in emitted: continue
+        info = self.pairs[pair_key]
+        h, l = info.get("high"), info.get("low")
+        if not h or not l: continue
+        if rws_filter and h["rws"] not in rws_filter: continue
+        hr, lr = raw_data.get(h["id"]), raw_data.get(l["id"])
+        if hr is None or lr is None:
+          if not missing_as_none: continue
+          val = None
+        else:
+          val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"))
+        emitted.add(pair_key)
+        self._put(data, grouped, info.get("group"), info.get("name"), pair_key, val)
       if reg_id in pair_part: continue
-      raw = raw_data.get(reg_id)
-      if raw is None: continue
       entry = self.id_map.get(reg_id)
       if not entry: continue
       if rws_filter and entry["rws"] not in rws_filter: continue
-      typ = entry.get("type", "uint")
-      if typ == "rule":
-        rule_idx = self._resolve_rule_index(entry)
-        val = None if rule_idx is None else self._decode_raw(reg_id, raw)[0]
+      raw = raw_data.get(reg_id)
+      if raw is None:
+        if not missing_as_none: continue
+        val = None
+      elif entry["type"] == "rule" and self._resolve_rule_index(entry) is None:
+        val = None
       else:
-        val = self._decode_raw(reg_id, raw)[0]
-      if grouped:
-        if entry["group"] not in data: data[entry["group"]] = {}
-        data[entry["group"]][entry["name"]] = val
-      else:
-        data[entry["fullname"]] = val
+        val = self._decode_raw(reg_id, raw)
+      self._put(data, grouped, entry["group"], entry["name"], entry["fullname"], val)
     return data
+
+  def decode(self, raw_data:dict[int, int]=None,
+    rws_filter:list[str]=None, grouped:bool=None) -> dict:
+    if raw_data is None: raw_data = {k: v for k, v in self.cache_raw.items() if v is not None}
+    return self._decode_map(raw_data, rws_filter, grouped)
 
   def encode(self, data:dict, rws_filter:list[str]=None, grouped:bool=None) -> dict[int, int]:
     if grouped is None: grouped = self._detect_grouped(data)
@@ -649,46 +634,7 @@ class ModbusMaster:
   #-------------------------------------------------------------------------------------- Cache
 
   def get_cache(self, grouped:bool=None) -> dict:
-    if grouped is None: grouped = self.group
-    data = {}
-    pair_part, pair_anchor = self._get_pair_maps()
-    for reg_id in sorted(self.id_map.keys()):
-      if reg_id in pair_anchor:
-        for pair_key in pair_anchor[reg_id]:
-          info = self.pairs[pair_key]
-          h, l = info.get("high"), info.get("low")
-          val = None
-          if h and l:
-            hr, lr = self.cache_raw.get(h["id"]), self.cache_raw.get(l["id"])
-            if hr is not None and lr is not None:
-              val = self._pair_decode(
-                (hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"),
-              )
-          group, name = info.get("group"), info.get("name")
-          if grouped:
-            if group not in data: data[group] = {}
-            data[group][name] = val
-          else:
-            data[pair_key] = val
-        continue
-      if reg_id in pair_part: continue
-      entry = self.id_map[reg_id]
-      raw = self.cache_raw.get(reg_id)
-      typ = entry.get("type", "uint")
-      if raw is not None:
-        if typ == "rule":
-          rule_idx = self._resolve_rule_index(entry)
-          val = None if rule_idx is None else self._decode_raw(reg_id, raw)[0]
-        else:
-          val = self._decode_raw(reg_id, raw)[0]
-      else:
-        val = None
-      if grouped:
-        if entry["group"] not in data: data[entry["group"]] = {}
-        data[entry["group"]][entry["name"]] = val
-      else:
-        data[entry["fullname"]] = val
-    return data
+    return self._decode_map(self.cache_raw, grouped=grouped, missing_as_none=True)
 
   def set_cache(self, data:dict, grouped:bool=None):
     raw_data = self.encode(data, grouped=grouped)
@@ -717,6 +663,7 @@ class ModbusMaster:
       "default": entry.get("default"),
     }
     if entry["type"] == "enum": info["enum"] = entry.get("enum", {})
+    if entry["type"] == "bits": info["bits"] = entry.get("bits", {})
     rule = entry.get("rule")
     if rule:
       info["rule"] = {}

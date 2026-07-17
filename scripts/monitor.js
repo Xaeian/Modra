@@ -30,10 +30,9 @@ const CHART_TARGET_POINTS = 5000;
 // throttled while the chart keeps sliding on the buffer it already has.
 const CHART_LIVE_MS = 1000;
 
-// A drag-zoom whose right edge lands within this fraction of its width, or
-// CHART_EDGE_SEC (whichever is larger, to absorb drag + refresh lag), of "now"
-// counts as live-edge: on the raw tier it keeps topping up.
-const CHART_EDGE_FRAC = 0.1;
+// A drag-zoom whose right edge lands within CHART_EDGE_SEC of "now" counts as
+// live-edge: on the raw tier it keeps topping up. Enough to absorb drag and
+// refresh lag; a window ending further back is a deliberate historical view.
 const CHART_EDGE_SEC = 15;
 
 // Range buttons: full fixed set. Tiers cover any span, so the list is not
@@ -120,19 +119,20 @@ function chartFmtCSV(ts) {
 const chartColor = (gi, si) => CHART_COLORS[gi % CHART_COLORS.length][si % CHART_COLORS[0].length];
 
 // Stepped lines for series that don't interpolate cleanly: non-read-only
-// (write-side jumps between samples) and bool/enum/hex (discrete).
+// (write-side jumps between samples) and bool/enum/bits/hex (discrete).
 function chartIsStepped(reg) {
-  return reg.rws !== "R" || reg.type === "bool" || reg.type === "enum" || reg.type === "hex";
+  return reg.rws !== "R" || reg.type === "bool" || reg.type === "enum" || reg.type === "bits" || reg.type === "hex";
 }
 
 // Group key = unit + scale fingerprint. Two registers share a panel iff
-// their engineering unit and scale match. bool/enum get their own panel each
-// (different y-axis semantics). Rule registers use the *confirmed* (device-
+// their engineering unit and scale match. bool/enum/bits get their own panel
+// each (different y-axis semantics). Rule registers use the *confirmed* (device-
 // acknowledged) slot so the chart only regroups after the device reports the
 // new mode - clicking Hz on Ctrl:mode doesn't relabel until the write is ack'd.
 function chartGroupKey(reg) {
   if(reg.type === "bool") return "bool|" + reg.name;
   if(reg.type === "enum") return "enum|" + reg.name;
+  if(reg.type === "bits") return "bits|" + reg.name;
   return Reg.unit(reg, true) + "|" + Reg.scale(reg, true);
 }
 
@@ -143,6 +143,13 @@ function chartTagColors() {
     grp.names.forEach((name, i) => { map[name] = chartColor(grp.idx, i); });
   }
   return map;
+}
+
+// JSON label maps come string-keyed; charts index them by numeric value.
+function chartLabels(map) {
+  const out = {};
+  for(const [k, v] of Object.entries(map)) out[parseInt(k)] = v;
+  return out;
 }
 
 // Backend returns enums as labels and bools as JS booleans; uPlot needs
@@ -177,7 +184,7 @@ function chartExportCSV(names, buf) {
     const m = new Map();
     for(const p of (buf[n] || [])) m.set(p.ts, p.v);
     maps[n] = m;
-    const reg = S.regs.find(r => r.name === n);
+    const reg = Reg.byName(n);
     decs[n] = reg ? Reg.decimals(reg) : 0;
   }
   const rows = sorted.map(ts => {
@@ -272,17 +279,18 @@ const MonitData = {
   ingest(rows) {
     if(!Array.isArray(rows)) return;
     const next = {};
-    for(const name of S.monitor) next[name] = [];
+    const traces = [];   // [name, reg, col] per name with a resolvable column
+    for(const name of S.monitor) {
+      next[name] = [];
+      const reg = Reg.byName(name);
+      const col = this._activeColumn(reg);
+      if(col) traces.push([name, reg, col]);
+    }
     for(const row of rows) {
-      for(const name of S.monitor) {
-        const reg = S.regs.find(r => r.name === name);
-        const col = this._activeColumn(reg);
-        if(!col || !(col in row)) continue;
+      for(const [name, reg, col] of traces) {
         const raw = row[col];
         if(raw == null) continue;   // gap: inactive slot / no data this bucket
-        let v = raw;
-        if(typeof v !== "number" && reg) v = chartToNum(reg, v);
-        next[name].push({ ts: row.ts, v });
+        next[name].push({ ts: row.ts, v: typeof raw === "number" ? raw : chartToNum(reg, raw) });
       }
     }
     this._buf = next;
@@ -297,7 +305,7 @@ const MonitData = {
   // at the live edge keeps topping up on the raw tier (see `window`).
   setWindow(from, to) {
     this.from = from; this.to = to; this.live = false;
-    this._edge = (Date.now() / 1000 - to) <= Math.max((to - from) * CHART_EDGE_FRAC, CHART_EDGE_SEC);
+    this._edge = (Date.now() / 1000 - to) <= CHART_EDGE_SEC;
   },
 
   // Drop unsubscribed names; the next fetch repopulates the rest.
@@ -314,7 +322,7 @@ const MonitData = {
     const out = {};
     let idx = 0;
     for(const name of S.monitor) {
-      const reg = S.regs.find(r => r.name === name);
+      const reg = Reg.byName(name);
       if(!reg || !this._activeColumn(reg)) continue;
       const key = chartGroupKey(reg);
       if(!out[key]) {
@@ -324,10 +332,8 @@ const MonitData = {
           type: reg.type,
           names: [],
         };
-        if(reg.type === "enum" && reg.enum) {
-          grp.enumLabels = {};
-          for(const [k, v] of Object.entries(reg.enum)) grp.enumLabels[parseInt(k)] = v;
-        }
+        if(reg.type === "enum" && reg.enum) grp.enumLabels = chartLabels(reg.enum);
+        if(reg.type === "bits" && reg.bits) grp.bitsLabels = chartLabels(reg.bits);
         out[key] = grp;
       }
       out[key].names.push(name);

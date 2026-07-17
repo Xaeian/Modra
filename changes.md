@@ -1,5 +1,11 @@
 # Changes `modra`
 
+## `1.2.4` Bits
+
+- `bits` register type: a toggle per labeled bit, own chart panel
+- History browsing works offline, straight from the DB
+- Mini fixes: field focus, grid grouping, chart tooltip
+
 ## `1.2.3` Lint, Input guards
 
 - `regs.csv` lint on boot

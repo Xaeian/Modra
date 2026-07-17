@@ -15,7 +15,7 @@ function _isTyping() {
 const BINDINGS = {
   i: () => toggleShowDisabled(),
   o: () => toggleSerial(),
-  p: () => { S.showChart = !S.showChart; render(); },
+  p: () => toggleChart(),
 };
 
 document.addEventListener("keydown", (e) => {

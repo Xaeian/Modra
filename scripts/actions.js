@@ -9,8 +9,6 @@ const VIEW_SAVE_DEBOUNCE_MS = 500;
 const MIN_ADDR = 1;
 const MAX_ADDR = 247;
 
-const fileStamp = () => new Date().toISOString().slice(0, 10);
-
 // Debounced batched persist for view.json. Collects partial patches and
 // flushes them in a single POST so monitor + ignore edits land race-free
 // when multiple actions hit the same 500ms window.
@@ -60,16 +58,21 @@ function reset() {
   render();
 }
 
-// Toggle a pending device-null between set and reverted.
+// Toggle a pending device-null between set and reverted. Setting it counts
+// as a pick, so autosend writes it immediately - same contract as an enum click.
 function toggleNull(reg) {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
-  cur == null ? resetOne(reg) : edit(reg, null);
+  cur == null ? resetOne(reg) : editSend(reg, null);
 }
 
 //---------------------------------------------------------- Send single register
 
 // Autosend fires for an editable reg with a pending value while connected.
 const shouldAutosend = (reg) => S.serial?.autosend && S.connected && reg.name in S.dirty;
+
+// Value already on the wire per register - collapses a blur autosend and an
+// immediate 🎯 on the same field into a single write.
+const _sending = new Map();
 
 // Write one register and adopt the device-confirmed cache; drops its pending edit.
 async function _writeOne(reg, val) {
@@ -85,30 +88,23 @@ function sendOne(reg) {
   if(!S.connected) return;
   S.dirty[reg.name] = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
   if(shouldAutosend(reg)) autosendOne(reg);
-  else render();
+  render();
 }
 
 // Autosend a single reg: flush its pending value, then adopt the device cache.
-// Focus that a Tab moved to the next field is restored across the rebuild.
 async function autosendOne(reg) {
   const val = S.dirty[reg.name];
-  // Capture focus before any render so a Tab to the next field survives.
-  const keep = document.activeElement?.dataset?.reg;
-  const refocus = () => {
-    if(!keep) return;
-    const el = root?.querySelector(`[data-reg="${CSS.escape(keep)}"]`);
-    if(el) el.focus();
-  };
   // Don't autosend a wrapping value; leave it staged for the explicit Send.
   if(Reg.willWrap(reg, val)) {
     alert.wrn(`${reg.name} would be stored as ${Reg.display(reg, Reg.wrapPreview(reg, val))} on the device - not sent`);
     render();
-    refocus();
     return;
   }
-  await _writeOne(reg, val);
+  if(_sending.has(reg.name) && Reg.same(_sending.get(reg.name), val)) return;
+  _sending.set(reg.name, val);
+  try { await _writeOne(reg, val); }
+  finally { _sending.delete(reg.name); }
   render();
-  refocus();
 }
 
 // Enum/bool pick: set the value, and in autosend mode write it on the spot.
@@ -119,7 +115,7 @@ function editSend(reg, val) {
 
 //---------------------------------------------------------- UI toggles
 
-function monitor(reg) {
+function toggleMonitor(reg) {
   const adding = !S.monitor.has(reg.name);
   if(adding) S.monitor.add(reg.name);
   else S.monitor.delete(reg.name);
@@ -130,15 +126,18 @@ function monitor(reg) {
   Monitor.refresh();
   Monitor.mount();
   saveMonitor();
-  // Kick a fresh poll so the new trace gets backfilled within the visible
-  // window instead of waiting up to one tick (~100ms) with an empty series.
-  if(adding) poll();
+  // Backfill the new trace from the store right away - a direct window fetch,
+  // not poll(), so it also lands with no device connected and inside a
+  // frozen (zoomed) window, and skips the live-fetch throttle.
+  if(adding) Monitor.refetch();
 }
 
-function utilOpen(reg) {
+function toggleUtil(reg) {
   S.utilOpen = (S.utilOpen === reg.name) ? null : reg.name;
   render();
 }
+
+function toggleChart() { S.showChart = !S.showChart; render(); }
 
 function search(q) { S.query = q; render(); }
 
@@ -219,7 +218,7 @@ async function toggleConnection() {
 // different number). False only when the user cancels.
 function _confirmWraps(batch) {
   const bad = Object.entries(batch)
-    .map(([name, val]) => [S.regs.find(r => r.name === name), val])
+    .map(([name, val]) => [Reg.byName(name), val])
     .filter(([reg, val]) => reg && Reg.willWrap(reg, val));
   if(!bad.length || typeof confirm !== "function") return true;
   const lines = bad.map(([reg, val]) =>
@@ -324,9 +323,8 @@ async function importConfig() {
   );
   // Parse to the register's type like keyboard input, so numerics stage as
   // numbers (range/wrap checks need that); enum/bool/ver stay strings.
-  const regByName = new Map(S.regs.map(r => [r.name, r]));
   const stage = (name, val) => {
-    const reg = regByName.get(name);
+    const reg = Reg.byName(name);
     editSilent(reg || { name }, reg ? Reg.parse(reg, val) : val);
   };
   const ext = file.name.split(".").pop().toLowerCase();

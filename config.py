@@ -107,7 +107,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
 # 16-bit register span per type; the encoder masks round(value*scale) with
 # & 0xFFFF, so a bound/default that overflows wraps instead of being rejected.
 _RAW_RANGE = {
-  "uint": (0, 0xFFFF), "hex": (0, 0xFFFF), "rule": (0, 0xFFFF),
+  "uint": (0, 0xFFFF), "hex": (0, 0xFFFF), "rule": (0, 0xFFFF), "bits": (0, 0xFFFF),
   "int": (-0x8000, 0x7FFF),
 }
 

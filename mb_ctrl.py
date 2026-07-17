@@ -10,13 +10,13 @@ import sys, asyncio, os
 from xaeian import INI, CSV, Print, Color as c
 import config
 
-p = Print()
+log = Print()
 
 SUDO_KEY = 0x5D8E41B3
 
 async def main():
   if len(sys.argv) < 2:
-    p.wrn("Usage: py mb_ctrl.py {import|export|sudo} [file]"); return
+    log.wrn("Usage: py mb_ctrl.py {import|export|sudo} [file]"); return
 
   state = config.load_state()
   mb = config.create_mb(state)
@@ -39,12 +39,12 @@ async def main():
       else:
         data = mb.annotate(mb.decode(rws_filter=["RWs"], grouped=True), ["unit"])
         INI.save(file, data)
-      p.inf(f"{file} {c.TURQUS}<<{c.END} Motor")
+      log.inf(f"{file} {c.TURQUS}<<{c.END} Motor")
 
     case "export" | "exp":
       file = sys.argv[2] if len(sys.argv) > 2 else "config.ini"
       if not os.path.exists(file):
-        p.err(f"File not found: {file}"); return
+        log.err(f"File not found: {file}"); return
       ext = os.path.splitext(file)[1].lstrip(".").lower()
       if ext == "csv":
         rows = CSV.load(file)
@@ -55,16 +55,16 @@ async def main():
       await mb.connect()
       await mb.write(data)
       await mb.disconnect()
-      p.inf(f"{file} {c.TURQUS}>>{c.END} Motor")
+      log.inf(f"{file} {c.TURQUS}>>{c.END} Motor")
 
     case "sudo" | "su":
       await mb.connect()
       await mb.write({"Auth:SecretKey": SUDO_KEY})
       await mb.disconnect()
-      p.ok(f"You are {c.TURQUS}admin{c.END} now")
+      log.ok(f"You are {c.TURQUS}admin{c.END} now")
 
     case _:
-      p.wrn(f"Unknown action: {action}")
+      log.wrn(f"Unknown action: {action}")
 
 if __name__ == "__main__":
   asyncio.run(main())

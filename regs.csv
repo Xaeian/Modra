@@ -1,345 +1,607 @@
-id,hex,name,rws,type,unit,scale,min,max,desc,rule,default
-0,0x00,Ctrl:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,-,-,Motor control mode,,ai
-1,0x01,Ctrl:Setpoint,RW,rule,rpm/%/Hz,1/100/100,0/0/0,5000/100/300,Setpoint value; interpreted per Ctrl:Mode,switch=Ctrl:Mode,
-2,0x02,Auth:SecretHigh,RW,hex,-,-,,,Secret key (high word) for access control,high=SecretKey,
-3,0x03,Auth:SecretLow,RW,hex,-,-,,,Secret key (low word) for access control,low=SecretKey,
-4,0x04,RS485:Address,RWs,uint,-,1,1,247,RS-485 node address,,1
-5,0x05,RS485:Baudrate,RWs,uint,bps,0.01,,,RS-485 baud rate,,9600
-6,0x06,RS485:Parity,RWs,enum,0:none 1:odd 2:even,-,,,RS-485 parity mode,,none
-7,0x07,RS485:StopBits,RWs,enum,0:0.5bs 1:1bs 2:2bs 3:1.5bs,-,,,RS-485 stop-bit setting,,1bs
-8,0x08,Speed:Min,RWs,uint,rpm,1,0,10000,Minimum motor speed; below this motor stops,,600/500/400
-9,0x09,Speed:Max,RWs,uint,rpm,1,0,10000,Maximum motor speed,,3300/2600/1520
-10,0x0A,Speed:Derating,RWs,uint,rpm,1,0,10000,Speed ceiling under thermal/current derating,,1850/2200/750
-11,0x0B,AnalogInput:Stop,RWs,uint,V,1000,0,10,AI voltage below which motor stops,,0.7
-12,0x0C,AnalogInput:Min,RWs,uint,V,1000,0,10,AI voltage mapped to Speed:Min,,1.0
-13,0x0D,AnalogInput:Max,RWs,uint,V,1000,0,10,AI voltage mapped to Speed:Max,,10.0
-14,0x0E,Digital:InputMode,RWs,enum,0:off 1:allow 2:reset,-,,,Digital input function,,reset
-15,0x0F,Digital:RelayMode,RWs,enum,0:off 1:run 2:alarm,-,,,Relay output function,,alarm
-16,0x10,Digital:LedMode,RWs,enum,0:off 1:fault 2:rs485 3:link 4:update,-,,,Status LED mode,,fault
-17,0x11,Failsafe:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,,,Mode used when RS-485 communication is lost,,rpm
-18,0x12,Failsafe:Setpoint,RWs,rule,rpm/%/Hz,1/100/100,0/0/0,5000/100/300,Failsafe setpoint; interpreted per Failsafe:Mode,switch=Failsafe:Mode,0
-19,0x13,Failsafe:Delay,RWs,uint,s,1,1,600,Timeout before failsafe activates,,60
-20,0x14,Resonance:0Low,RWs,uint,rpm,1,0,10000,Resonance zone 0 lower limit,,0
-21,0x15,Resonance:0High,RWs,uint,rpm,1,0,10000,Resonance zone 0 upper limit,,0
-22,0x16,Resonance:1Low,RWs,uint,rpm,1,0,10000,Resonance zone 1 lower limit,,0
-23,0x17,Resonance:1High,RWs,uint,rpm,1,0,10000,Resonance zone 1 upper limit,,0
-24,0x18,Resonance:2Low,RWs,uint,rpm,1,0,10000,Resonance zone 2 lower limit,,0
-25,0x19,Resonance:2High,RWs,uint,rpm,1,0,10000,Resonance zone 2 upper limit,,0
-28,0x1C,Journal:Skip,W,uint,-,1,0,65535,Skip first N records in journal query (0 = skip nothing),,
-29,0x1D,Journal:Read,W,enum,0:none 1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr 30:err 31:inf 32:all,-,,,Trigger journal read with code filter,,
-30,0x1E,Fault:Reset,W,enum,0:none 1:soft 2:hard 3:fcty,-,,,soft: reinit interfaces; hard: reboot both MCUs; fcty: hard reset and wipe stored config,,
-31,0x1F,Fault:Clear,W,bool,-,-,,,Write 1 to clear Fault:Code,,
-32,0x20,Fault:Code,R,enum,0:ok 1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link,-,,,Active fault code,,
-33,0x21,MeasSlow:Freq,R,?uint,Hz,100,,,Electrical output frequency,,
-34,0x22,MeasSlow:CurrU,R,?uint,A,1000,,,Phase U current RMS,,
-35,0x23,MeasSlow:CurrV,R,?uint,A,1000,,,Phase V current RMS,,
-36,0x24,MeasSlow:CurrW,R,?uint,A,1000,,,Phase W current RMS,,
-37,0x25,MeasSlow:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,
-38,0x26,MeasSlow:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,
-39,0x27,MeasSlow:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,
-40,0x28,MeasSlow:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,
-41,0x29,MeasSlow:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,
-42,0x2A,MeasSlow:Temp,R,?int,°C,100,,,Power stage temperature,,
-43,0x2B,MeasSlow:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,
-44,0x2C,MeasSlow:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,
-45,0x2D,MeasSlow:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,
-46,0x2E,MeasSlow:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,
-47,0x2F,MeasSlow:Power,R,?uint,W,1,,,Estimated electrical power,,
-48,0x30,MeasFast:Freq,R,?uint,Hz,100,,,Electrical output frequency,,
-49,0x31,MeasFast:CurrU,R,?uint,A,1000,,,Phase U current RMS,,
-50,0x32,MeasFast:CurrV,R,?uint,A,1000,,,Phase V current RMS,,
-51,0x33,MeasFast:CurrW,R,?uint,A,1000,,,Phase W current RMS,,
-52,0x34,MeasFast:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,
-53,0x35,MeasFast:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,
-54,0x36,MeasFast:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,
-55,0x37,MeasFast:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,
-56,0x38,MeasFast:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,
-57,0x39,MeasFast:Temp,R,?int,°C,100,,,Power stage temperature,,
-58,0x3A,MeasFast:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,
-59,0x3B,MeasFast:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,
-60,0x3C,MeasFast:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,
-61,0x3D,MeasFast:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,
-62,0x3E,MeasFast:Power,R,?uint,W,1,,,Estimated electrical power,,
-63,0x3F,MeasNow:Freq,R,?uint,Hz,100,,,Electrical output frequency,,
-64,0x40,MeasNow:CurrU,R,?uint,A,1000,,,Phase U current RMS,,
-65,0x41,MeasNow:CurrV,R,?uint,A,1000,,,Phase V current RMS,,
-66,0x42,MeasNow:CurrW,R,?uint,A,1000,,,Phase W current RMS,,
-67,0x43,MeasNow:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,
-68,0x44,MeasNow:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,
-69,0x45,MeasNow:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,
-70,0x46,MeasNow:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,
-71,0x47,MeasNow:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,
-72,0x48,MeasNow:Temp,R,?int,°C,100,,,Power stage temperature,,
-73,0x49,MeasNow:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,
-74,0x4A,MeasNow:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,
-75,0x4B,MeasNow:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,
-76,0x4C,MeasNow:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,
-77,0x4D,MeasNow:Power,R,?uint,W,1,,,Estimated electrical power,,
-78,0x4E,Auth:Access,R,enum,0:guest 1:user 2:service 3:admin,-,,,Current access level,,
-79,0x4F,AnalogInput:Value,R,?uint,V,1000,,,Analog input voltage,,
-80,0x50,Digital:InputState,R,?bool,-,-,,,Digital input state,,
-81,0x51,Digital:RelayState,R,?bool,-,-,,,Relay output state,,
-82,0x52,Version:Hardware,R,ver,type.version.revision,-,,,Hardware version,,
-83,0x53,Version:Software,R,ver,major.minor.patch,-,,,Firmware version,,
-84,0x54,Feedback:SetpointSpeed,R,?uint,rpm,1,,,Requested speed after mode conversion,,
-85,0x55,Feedback:SetpointFreq,R,?uint,Hz,100,,,Requested frequency after mode conversion,,
-86,0x56,Feedback:RenderSpeed,R,?uint,rpm,1,,,Current control target speed,,
-87,0x57,Feedback:RenderFreq,R,?uint,Hz,100,,,Current control target frequency,,
-88,0x58,Feedback:ModIndex,R,?uint,m%,100,,,Active modulation index,,
-89,0x59,Feedback:State,R,enum,0:shd 1:str 2:run 3:coa,-,,,Motor control state,,
-90,0x5A,Debug:RiseDelta,R,?uint,Hz,100,,,Acceleration slew rate at current frequency,,
-91,0x5B,Debug:FallDelta,R,?uint,Hz,100,,,Deceleration slew rate at current frequency,,
-92,0x5C,Debug:BrakingTime,R,?uint,ms,1,,,Coasting time at current frequency,,
-93,0x5D,Debug:IrGain,R,?uint,m%/A,100,,,IR compensation gain at current frequency,,
-94,0x5E,Debug:IrBoost,R,?uint,m%,100,,,IR boost applied to modulation index,,
-95,0x5F,Debug:CurrLimit,R,?uint,A,1000,,,Current limit at current frequency,,
-96,0x60,Debug:CurrReduce,R,?uint,Hz,100,,,Hz subtracted from setpoint by current limiter [0:inactive],,
-97,0x61,Debug:RampGain,R,?uint,%,100,,,Ramp stretch gain at current frequency,,
-98,0x62,Debug:RampStretch,R,?uint,-,1,,,Ramp stretch applied to UpdateN [0:inactive],,
-99,0x63,Debug:UpdateN,R,?uint,-,1,,,Effective update interval (base + stretch),,
-100,0x64,Debug:PeakCount,R,?uint,-,1,,,Peak overcurrent events since last clear,,
-101,0x65,Debug:FreqDiff,R,?uint,Hz,100,,,|render_Hz - measured_Hz| deviation,,
-102,0x66,Debug:FreqBand,R,?uint,Hz,100,,,Acceptable frequency deviation band,,
-103,0x67,Counter:Hours,R,?uint,h,1,,,Total operating hours,,
-104,0x68,Counter:PowerUp,R,?uint,-,1,,,Power-up count,,
-105,0x69,Counter:Watchdog,R,?uint,-,1,,,Watchdog reset count,,
-106,0x6A,Counter:RS485,R,?uint,-,1,,,RS-485 error count,,
-107,0x6B,Counter:Link,R,?uint,-,1,,,Link error count,,
-112,0x70,Speed:DerateTemp,RWs,int,°C,100,0,200,Temperature above which speed is derated down to Speed:Derating,,80.0
-113,0x71,Speed:DerateCurr,RWs,uint,A,1000,0,30,Current above which speed is derated down to Speed:Derating,,6.5/14.5/15.0
-114,0x72,Thresh:Temp,RWs,int,°C,100,0,200,Temperature threshold for emergency shutdown,,85.0
-115,0x73,Thresh:CurrRms,RWs,uint,A,1000,0,30,RMS current threshold for emergency shutdown,,7.0/15.0/16.0
-116,0x74,Thresh:CurrPeak,RWs,uint,A,1000,0,60,Peak current threshold for emergency shutdown,,17.5/37.5/40.0
-117,0x75,Thresh:PeakCount,RWs,uint,-,1,1,50,Cumulative peak events since last clear before fault triggers,,1
-118,0x76,Thresh:DcBusMin,RWs,uint,V,10,0,800,DC-bus undervoltage threshold,,520.0/500.0/500.0
-119,0x77,Thresh:DcBusMax,RWs,uint,V,10,0,800,DC-bus overvoltage threshold,,750.0
-120,0x78,Thresh:FlybackMin,RWs,uint,V,100,0,50,Flyback undervoltage threshold,,16.0
-121,0x79,Thresh:FlybackMax,RWs,uint,V,100,0,50,Flyback overvoltage threshold,,18.0
-122,0x7A,Thresh:Ripple,RWs,uint,V,100,0,50,DC-bus ripple RMS threshold,,2.0
-123,0x7B,Thresh:SyncConst,RWs,uint,Hz,100,0,50,Sync loss: constant frequency tolerance,,5.0
-124,0x7C,Thresh:SyncScale,RWs,uint,%,100,0,100,Sync loss: tolerance proportional to rendered frequency,,5.0
-125,0x7D,Thresh:SyncTimeout,RWs,uint,ms,1,50,10000,Sync loss: time before fault triggers,,500
-126,0x7E,Thresh:StartFreq,RWs,uint,Hz,100,0,200,Sync loss and adaptive control: disabled below this frequency,,200.0
-127,0x7F,Fault:RetryDelay,RWs,uint,s,1,0,3600,Extra delay after braking before auto-retry (min 1s enforced),,60
-128,0x80,Fault:RetryCount,RWs,uint,-,1,0,10,Auto-restart attempts before permanent fault [0:disabled],,5
-129,0x81,Fault:RetryTimeout,RWs,uint,s,1,1,3600,Fault-free time to reset retry counter,,300
-130,0x82,Ctrl:BootDelay,RWs,uint,ms,1,0,60000,Stabilization delay after DC bus reaches Thresh:DcBusMin,,5000/0/5000
-132,0x84,Motor:Type,RWs,enum,1:1500W 2:4000W 3:7500W,-,,,Motor and PCB power variant,,1500W/4000W/7500W
-133,0x85,Motor:Poles,RWs,uint,-,1,1,20,Pole pair count,,3
-134,0x86,Pwm:InitFreq,RWs,uint,Hz,100,0.5,10,Starting frequency for initial rotor alignment,,0.5
-135,0x87,Pwm:Deadtime,RWs,uint,ns,1,100,5000,Complementary half-bridge dead-time,,2500
-136,0x88,Pwm:ClampShort,RWs,uint,-,1,0,500,Short-pulse suppression in PWM timer counts [0:off],,2
-137,0x89,Pwm:Shape,RWs,enum,0:sine 1:svpwm 2:trap,-,,,Output waveform shape,,svpwm
-138,0x8A,Ramp:UpdateN,RWs,uint,-,1,1,10000,Frequency step every N PWM cycles,,600
-139,0x8B,Ramp:RiseDeltaStart,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at 0Hz,,0.02
-140,0x8C,Ramp:RiseDeltaStop,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at Adapt:StopFreq,,0.1
-141,0x8D,Ramp:RiseDeltaBend,RWs,int,-,1,-100,100,Bend for acceleration slew rate curve,,0
-142,0x8E,Ramp:FallDeltaStart,RWs,uint,Hz,100,0.01,100,Deceleration slew rate at 0Hz,,0.02/0.01/0.02
-143,0x8F,Ramp:FallDeltaStop,RWs,uint,Hz,100,0.01,100,Deceleration slew rate at Adapt:StopFreq,,0.1/0.04/0.1
-144,0x90,Ramp:FallDeltaBend,RWs,int,-,1,-100,100,Bend for deceleration slew rate curve,,0
-145,0x91,Brake:TimeStart,RWs,uint,s,1,0,60,Coasting time before restart at 0Hz,,2
-146,0x92,Brake:TimeStop,RWs,uint,s,1,0,60,Coasting time before restart at max frequency,,60
-147,0x93,Brake:TimeBend,RWs,int,-,1,-100,100,Bend for coasting time curve,,0
-148,0x94,Brake:StartDelay,RWs,uint,ms,1,0,10000,High-side enable delay before acceleration begins,,500
-149,0x95,MeasCfg:FilterTime,RWs,uint,ms,1,10,5000,Ring-buffer averaging window (Slow tier),,500
-150,0x96,MeasCfg:CountMin,RWs,uint,-,1,1,1000,Minimum samples before slow tier update,,3
-151,0x97,MeasCfg:EmaScale,RWs,uint,%,100,10,500,Global EMA alpha multiplier [100%:default],,100.0
-152,0x98,MeasCfg:HampelScale,RWs,uint,%,100,10,500,Global Hampel k multiplier [100%:default],,100.0
-153,0x99,MeasCfg:SchmittConst,RWs,uint,-,1,0,65535,BEMF hysteresis: threshold = const + amplitude × SchmittScale/100,,50
-154,0x9A,MeasCfg:SchmittScale,RWs,uint,%,100,0,100,BEMF hysteresis: proportional term (see SchmittConst),,9.0
-155,0x9B,MeasCfg:FreqRConst,RWs,uint,Hz,100,0,50,BEMF valid frequency band (range): constant tolerance,,35.0
-156,0x9C,MeasCfg:FreqRScale,RWs,uint,%,100,0,100,BEMF valid frequency band (range): proportional to rendered frequency,,65.0
-157,0x9D,Const:ShuntRes,RWs,uint,mΩ,1,1,100,Current sense shunt resistance,,10/5/2
-158,0x9E,Const:ShuntGain,RWs,uint,-,1000,1,65,Current sense amplifier gain (e.g. 20.0 = ×20),,22.0/12.195/21.277
-159,0x9F,Const:TempA,RWs,int,°C/V,100,-327,327,Linear temp sensor slope: T = A × V_adc + B (linear sensor variant only),,50.0
-160,0xA0,Const:TempB,RWs,int,°C,100,-327,327,Linear temp sensor offset: T = A × V_adc + B (linear sensor variant only),,-5.0
-161,0xA1,Const:NtcPullUp,RWs,uint,Ω,1,0,50000,NTC pull-up resistor value,,0/1000/1000
-162,0xA2,Const:NtcBeta,RWs,uint,-,1,0,6000,NTC beta coefficient,,0/3375/4000
-163,0xA3,Const:NtcR0,RWs,uint,Ω,1,0,50000,NTC resistance at 25°C,,0/5000/22000
-164,0xA4,Trim:CurrOffset,RWs,int,A,1000,-5,5,Current zero offset,,0.0
-165,0xA5,Trim:CurrScale,RWs,int,%,100,50,200,Current gain correction,,100.0
-166,0xA6,Trim:TempOffset,RWs,int,°C,100,-20,20,Power stage temperature offset,,0.0
-167,0xA7,Trim:TempScale,RWs,int,%,100,50,200,Power stage temperature gain correction,,100.0
-168,0xA8,Trim:DcBusOffset,RWs,int,V,10,-50,50,DC-bus voltage offset,,0.0
-169,0xA9,Trim:DcBusScale,RWs,int,%,100,50,200,DC-bus voltage gain correction,,100.8
-170,0xAA,Trim:FlybackOffset,RWs,int,V,100,-5,5,Flyback voltage offset,,0.0
-171,0xAB,Trim:FlybackScale,RWs,int,%,100,50,200,Flyback voltage gain correction,,100.0
-172,0xAC,Adapt:StopFreq,RWs,uint,Hz,100,5,400,Reference frequency (x_max) for Adapt and Ramp bend functions,,300.0
-173,0xAD,Adapt:IrGainStart,RWs,uint,m%/A,100,0,500,IR voltage compensation gain at 0Hz,,1.0
-174,0xAE,Adapt:IrGainStop,RWs,uint,m%/A,100,0,500,IR voltage compensation gain at Adapt:StopFreq,,0.2
-175,0xAF,Adapt:IrGainBend,RWs,int,-,1,-1000,1000,Bend for IR gain curve [>0: gain drops to Stop quickly at low freq],,300
-176,0xB0,Adapt:IrMax,RWs,uint,m%,100,0,50,Maximum allowed IR boost on modulation index,,5.0
-177,0xB1,Adapt:CurrLimitStart,RWs,uint,A,1000,0.5,30,Current limit at 0Hz,,4.0/5.5/9.0
-178,0xB2,Adapt:CurrLimitStop,RWs,uint,A,1000,0.5,30,Current limit at Adapt:StopFreq,,5.5/8.0/13.0
-179,0xB3,Adapt:CurrLimitBend,RWs,int,-,1,-1000,1000,Bend for current limit curve [>0: limit rises to Stop quickly at low freq],,700
-180,0xB4,Adapt:CurrReduceGain,RWs,uint,Hz/A,100,1,100,Frequency reduction per ampere of overcurrent above Adapt:CurrLimit,,5.0
-181,0xB5,Adapt:VdcLow,RWs,uint,V,10,300,700,DC-bus voltage below which acceleration ramp is stretched (see Adapt:VdcHigh),,550.0
-182,0xB6,Adapt:VdcHigh,RWs,uint,V,10,300,800,DC-bus voltage above which deceleration ramp is stretched (see Adapt:VdcLow),,700.0
-183,0xB7,Adapt:RampGainStart,RWs,uint,%,100,0,100,Ramp stretch intensity at 0Hz,,10.0
-184,0xB8,Adapt:RampGainStop,RWs,uint,%,100,0,100,Ramp stretch intensity at Adapt:StopFreq,,0.0
-185,0xB9,Adapt:RampGainBend,RWs,int,-,1,-1000,1000,Bend for ramp stretch curve [>0: stretch drops to Stop quickly at low freq],,700
-186,0xBA,Stall:CurrStart,RWs,uint,A,1000,0,30,Stall current threshold at 0Hz,,1.75/3.0/4.0
-187,0xBB,Stall:CurrEnd,RWs,uint,A,1000,0,30,Stall current threshold at Stall:FreqEnd,,1.5/3.0/4.0
-188,0xBC,Stall:FreqEnd,RWs,uint,Hz,100,0,200,Stall protection disabled above this frequency (also bend x_max),,15.0
-189,0xBD,Stall:Bend,RWs,int,-,1,-1000,1000,Bend for stall current threshold curve [>0: drops to Stop quickly at low freq],,0
-191,0xBF,Journal:Count,R,uint,-,1,0,32,Number of records returned by last Journal:Read (0..32),,
-192,0xC0,Journal:0Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 0 event code,,
-193,0xC1,Journal:0Hours,R,?uint,h,1,,,Journal entry 0 operating hours,,
-194,0xC2,Journal:1Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 1 event code,,
-195,0xC3,Journal:1Hours,R,?uint,h,1,,,Journal entry 1 operating hours,,
-196,0xC4,Journal:2Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 2 event code,,
-197,0xC5,Journal:2Hours,R,?uint,h,1,,,Journal entry 2 operating hours,,
-198,0xC6,Journal:3Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 3 event code,,
-199,0xC7,Journal:3Hours,R,?uint,h,1,,,Journal entry 3 operating hours,,
-200,0xC8,Journal:4Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 4 event code,,
-201,0xC9,Journal:4Hours,R,?uint,h,1,,,Journal entry 4 operating hours,,
-202,0xCA,Journal:5Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 5 event code,,
-203,0xCB,Journal:5Hours,R,?uint,h,1,,,Journal entry 5 operating hours,,
-204,0xCC,Journal:6Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 6 event code,,
-205,0xCD,Journal:6Hours,R,?uint,h,1,,,Journal entry 6 operating hours,,
-206,0xCE,Journal:7Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 7 event code,,
-207,0xCF,Journal:7Hours,R,?uint,h,1,,,Journal entry 7 operating hours,,
-208,0xD0,Journal:8Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 8 event code,,
-209,0xD1,Journal:8Hours,R,?uint,h,1,,,Journal entry 8 operating hours,,
-210,0xD2,Journal:9Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 9 event code,,
-211,0xD3,Journal:9Hours,R,?uint,h,1,,,Journal entry 9 operating hours,,
-212,0xD4,Journal:10Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 10 event code,,
-213,0xD5,Journal:10Hours,R,?uint,h,1,,,Journal entry 10 operating hours,,
-214,0xD6,Journal:11Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 11 event code,,
-215,0xD7,Journal:11Hours,R,?uint,h,1,,,Journal entry 11 operating hours,,
-216,0xD8,Journal:12Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 12 event code,,
-217,0xD9,Journal:12Hours,R,?uint,h,1,,,Journal entry 12 operating hours,,
-218,0xDA,Journal:13Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 13 event code,,
-219,0xDB,Journal:13Hours,R,?uint,h,1,,,Journal entry 13 operating hours,,
-220,0xDC,Journal:14Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 14 event code,,
-221,0xDD,Journal:14Hours,R,?uint,h,1,,,Journal entry 14 operating hours,,
-222,0xDE,Journal:15Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 15 event code,,
-223,0xDF,Journal:15Hours,R,?uint,h,1,,,Journal entry 15 operating hours,,
-224,0xE0,Journal:16Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 16 event code,,
-225,0xE1,Journal:16Hours,R,?uint,h,1,,,Journal entry 16 operating hours,,
-226,0xE2,Journal:17Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 17 event code,,
-227,0xE3,Journal:17Hours,R,?uint,h,1,,,Journal entry 17 operating hours,,
-228,0xE4,Journal:18Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 18 event code,,
-229,0xE5,Journal:18Hours,R,?uint,h,1,,,Journal entry 18 operating hours,,
-230,0xE6,Journal:19Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 19 event code,,
-231,0xE7,Journal:19Hours,R,?uint,h,1,,,Journal entry 19 operating hours,,
-232,0xE8,Journal:20Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 20 event code,,
-233,0xE9,Journal:20Hours,R,?uint,h,1,,,Journal entry 20 operating hours,,
-234,0xEA,Journal:21Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 21 event code,,
-235,0xEB,Journal:21Hours,R,?uint,h,1,,,Journal entry 21 operating hours,,
-236,0xEC,Journal:22Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 22 event code,,
-237,0xED,Journal:22Hours,R,?uint,h,1,,,Journal entry 22 operating hours,,
-238,0xEE,Journal:23Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 23 event code,,
-239,0xEF,Journal:23Hours,R,?uint,h,1,,,Journal entry 23 operating hours,,
-240,0xF0,Journal:24Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 24 event code,,
-241,0xF1,Journal:24Hours,R,?uint,h,1,,,Journal entry 24 operating hours,,
-242,0xF2,Journal:25Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 25 event code,,
-243,0xF3,Journal:25Hours,R,?uint,h,1,,,Journal entry 25 operating hours,,
-244,0xF4,Journal:26Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 26 event code,,
-245,0xF5,Journal:26Hours,R,?uint,h,1,,,Journal entry 26 operating hours,,
-246,0xF6,Journal:27Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 27 event code,,
-247,0xF7,Journal:27Hours,R,?uint,h,1,,,Journal entry 27 operating hours,,
-248,0xF8,Journal:28Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 28 event code,,
-249,0xF9,Journal:28Hours,R,?uint,h,1,,,Journal entry 28 operating hours,,
-250,0xFA,Journal:29Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 29 event code,,
-251,0xFB,Journal:29Hours,R,?uint,h,1,,,Journal entry 29 operating hours,,
-252,0xFC,Journal:30Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 30 event code,,
-253,0xFD,Journal:30Hours,R,?uint,h,1,,,Journal entry 30 operating hours,,
-254,0xFE,Journal:31Event,R,?enum,1:peak 2:irms 3:imax 4:stall 5:temp 6:sync 7:hv- 8:hv+ 9:lv- 10:lv+ 11:link 12:boot 13:perm 14:clr 15:st 16:sp 17:rb 18:ftr,-,,,Journal entry 31 event code,,
-255,0xFF,Journal:31Hours,R,?uint,h,1,,,Journal entry 31 operating hours,,
-320,0x140,Table:2Hz,RWs,uint,m%,100,0,100,Modulation index at 2.05Hz,,7.0/5.0/5.5
-321,0x141,Table:4Hz,RWs,uint,m%,100,0,100,Modulation index at 4.10Hz,,7.5/6.5/7.5
-322,0x142,Table:6Hz,RWs,uint,m%,100,0,100,Modulation index at 6.15Hz,,8.0/7.5/9.0
-323,0x143,Table:8Hz,RWs,uint,m%,100,0,100,Modulation index at 8.19Hz,,9.0/9.0/11.0
-324,0x144,Table:10Hz,RWs,uint,m%,100,0,100,Modulation index at 10.24Hz,,10.0/10.0/13.0
-325,0x145,Table:12Hz,RWs,uint,m%,100,0,100,Modulation index at 12.29Hz,,11.0/11.0/15.0
-326,0x146,Table:14Hz,RWs,uint,m%,100,0,100,Modulation index at 14.34Hz,,12.0/12.5/18.0
-327,0x147,Table:16Hz,RWs,uint,m%,100,0,100,Modulation index at 16.39Hz,,13.0/14.0/21.0
-328,0x148,Table:18Hz,RWs,uint,m%,100,0,100,Modulation index at 18.43Hz,,14.0/15.5/23.0
-329,0x149,Table:20Hz,RWs,uint,m%,100,0,100,Modulation index at 20.48Hz,,15.0/17.0/25.0
-330,0x14A,Table:23Hz,RWs,uint,m%,100,0,100,Modulation index at 22.53Hz,,16.0/19.0/27.0
-331,0x14B,Table:25Hz,RWs,uint,m%,100,0,100,Modulation index at 24.58Hz,,17.5/20.0/29.0
-332,0x14C,Table:27Hz,RWs,uint,m%,100,0,100,Modulation index at 26.63Hz,,19.0/21.5/32.0
-333,0x14D,Table:29Hz,RWs,uint,m%,100,0,100,Modulation index at 28.68Hz,,19.5/23.0/35.0
-334,0x14E,Table:31Hz,RWs,uint,m%,100,0,100,Modulation index at 30.73Hz,,20.0/25.0/37.0
-335,0x14F,Table:33Hz,RWs,uint,m%,100,0,100,Modulation index at 32.77Hz,,21.0/26.0/40.0
-336,0x150,Table:35Hz,RWs,uint,m%,100,0,100,Modulation index at 34.82Hz,,21.5/28.0/43.0
-337,0x151,Table:37Hz,RWs,uint,m%,100,0,100,Modulation index at 36.87Hz,,22.0/30.0/46.0
-338,0x152,Table:39Hz,RWs,uint,m%,100,0,100,Modulation index at 38.92Hz,,22.5/31.0/49.0
-339,0x153,Table:41Hz,RWs,uint,m%,100,0,100,Modulation index at 40.97Hz,,23.0/32.0/52.0
-340,0x154,Table:43Hz,RWs,uint,m%,100,0,100,Modulation index at 43.02Hz,,24.0/34.0/55.0
-341,0x155,Table:45Hz,RWs,uint,m%,100,0,100,Modulation index at 45.07Hz,,25.0/36.0/59.0
-342,0x156,Table:47Hz,RWs,uint,m%,100,0,100,Modulation index at 47.12Hz,,26.0/38.0/62.0
-343,0x157,Table:49Hz,RWs,uint,m%,100,0,100,Modulation index at 49.17Hz,,27.0/40.0/65.0
-344,0x158,Table:51Hz,RWs,uint,m%,100,0,100,Modulation index at 51.22Hz,,28.0/41.25/68.0
-345,0x159,Table:53Hz,RWs,uint,m%,100,0,100,Modulation index at 53.27Hz,,29.0/42.5/71.0
-346,0x15A,Table:55Hz,RWs,uint,m%,100,0,100,Modulation index at 55.33Hz,,30.0/44.0/73.5
-347,0x15B,Table:57Hz,RWs,uint,m%,100,0,100,Modulation index at 57.38Hz,,31.0/46.0/75.5
-348,0x15C,Table:59Hz,RWs,uint,m%,100,0,100,Modulation index at 59.43Hz,,32.0/48.0/76.5
-349,0x15D,Table:61Hz,RWs,uint,m%,100,0,100,Modulation index at 61.49Hz,,33.0/49.0/77.5
-350,0x15E,Table:64Hz,RWs,uint,m%,100,0,100,Modulation index at 63.54Hz,,34.0/50.0/79.0
-351,0x15F,Table:66Hz,RWs,uint,m%,100,0,100,Modulation index at 65.60Hz,,35.0/52.0/79.5
-352,0x160,Table:68Hz,RWs,uint,m%,100,0,100,Modulation index at 67.65Hz,,36.0/54.0/80.0
-353,0x161,Table:70Hz,RWs,uint,m%,100,0,100,Modulation index at 69.71Hz,,37.0/55.0/80.5
-354,0x162,Table:72Hz,RWs,uint,m%,100,0,100,Modulation index at 71.77Hz,,38.0/56.0/81.0
-355,0x163,Table:74Hz,RWs,uint,m%,100,0,100,Modulation index at 73.83Hz,,39.0/57.0/81.5
-356,0x164,Table:76Hz,RWs,uint,m%,100,0,100,Modulation index at 75.90Hz,,40.0/58.0/82.0
-357,0x165,Table:78Hz,RWs,uint,m%,100,0,100,Modulation index at 77.96Hz,,41.0/59.0/82.5
-358,0x166,Table:80Hz,RWs,uint,m%,100,0,100,Modulation index at 80.03Hz,,42.0/60.0/83.0
-359,0x167,Table:82Hz,RWs,uint,m%,100,0,100,Modulation index at 82.10Hz,,43.0/61.0/83.5
-360,0x168,Table:84Hz,RWs,uint,m%,100,0,100,Modulation index at 84.18Hz,,44.0/62.0/84.0
-361,0x169,Table:86Hz,RWs,uint,m%,100,0,100,Modulation index at 86.26Hz,,45.0/63.0/84.5
-362,0x16A,Table:88Hz,RWs,uint,m%,100,0,100,Modulation index at 88.34Hz,,46.0/64.0/85.0
-363,0x16B,Table:90Hz,RWs,uint,m%,100,0,100,Modulation index at 90.44Hz,,47.0/65.0/87.0
-364,0x16C,Table:93Hz,RWs,uint,m%,100,0,100,Modulation index at 92.53Hz,,48.0/66.0/89.0
-365,0x16D,Table:95Hz,RWs,uint,m%,100,0,100,Modulation index at 94.64Hz,,49.0/67.0/91.0
-366,0x16E,Table:97Hz,RWs,uint,m%,100,0,100,Modulation index at 96.75Hz,,50.0/68.0/93.0
-367,0x16F,Table:99Hz,RWs,uint,m%,100,0,100,Modulation index at 98.87Hz,,51.0/69.0/95.0
-368,0x170,Table:101Hz,RWs,uint,m%,100,0,100,Modulation index at 101.00Hz,,52.0/70.0/97.0
-369,0x171,Table:103Hz,RWs,uint,m%,100,0,100,Modulation index at 103.15Hz,,53.0/71.0/99.0
-370,0x172,Table:105Hz,RWs,uint,m%,100,0,100,Modulation index at 105.31Hz,,54.0/72.0/100.0
-371,0x173,Table:107Hz,RWs,uint,m%,100,0,100,Modulation index at 107.48Hz,,55.0/73.0/100.0
-372,0x174,Table:110Hz,RWs,uint,m%,100,0,100,Modulation index at 109.68Hz,,56.0/73.5/100.0
-373,0x175,Table:112Hz,RWs,uint,m%,100,0,100,Modulation index at 111.90Hz,,57.0/74.0/100.0
-374,0x176,Table:114Hz,RWs,uint,m%,100,0,100,Modulation index at 114.14Hz,,58.0/74.25/100.0
-375,0x177,Table:116Hz,RWs,uint,m%,100,0,100,Modulation index at 116.42Hz,,59.0/74.5/100.0
-376,0x178,Table:119Hz,RWs,uint,m%,100,0,100,Modulation index at 118.72Hz,,60.0/74.75/100.0
-377,0x179,Table:121Hz,RWs,uint,m%,100,0,100,Modulation index at 121.07Hz,,61.0/75.0/100.0
-378,0x17A,Table:123Hz,RWs,uint,m%,100,0,100,Modulation index at 123.46Hz,,62.0/75.25/100.0
-379,0x17B,Table:126Hz,RWs,uint,m%,100,0,100,Modulation index at 125.90Hz,,63.0/75.5/100.0
-380,0x17C,Table:128Hz,RWs,uint,m%,100,0,100,Modulation index at 128.40Hz,,64.0/75.75/100.0
-381,0x17D,Table:131Hz,RWs,uint,m%,100,0,100,Modulation index at 130.97Hz,,65.0/76.0/100.0
-382,0x17E,Table:134Hz,RWs,uint,m%,100,0,100,Modulation index at 133.62Hz,,66.0/76.25/100.0
-383,0x17F,Table:136Hz,RWs,uint,m%,100,0,100,Modulation index at 136.35Hz,,67.0/81.0/100.0
-384,0x180,Table:139Hz,RWs,uint,m%,100,0,100,Modulation index at 139.19Hz,,68.0/98.0/100.0
-385,0x181,Table:142Hz,RWs,uint,m%,100,0,100,Modulation index at 142.15Hz,,69.0/99.0/100.0
-386,0x182,Table:145Hz,RWs,uint,m%,100,0,100,Modulation index at 145.24Hz,,70.0/99.0/100.0
-387,0x183,Table:148Hz,RWs,uint,m%,100,0,100,Modulation index at 148.49Hz,,71.0/99.0/100.0
-388,0x184,Table:152Hz,RWs,uint,m%,100,0,100,Modulation index at 151.92Hz,,72.0/99.0/100.0
-389,0x185,Table:156Hz,RWs,uint,m%,100,0,100,Modulation index at 155.56Hz,,73.0/99.0/100.0
-390,0x186,Table:159Hz,RWs,uint,m%,100,0,100,Modulation index at 159.43Hz,,74.0/99.0/100.0
-391,0x187,Table:164Hz,RWs,uint,m%,100,0,100,Modulation index at 163.58Hz,,75.0/99.0/100.0
-392,0x188,Table:168Hz,RWs,uint,m%,100,0,100,Modulation index at 168.04Hz,,76.0/99.0/100.0
-393,0x189,Table:173Hz,RWs,uint,m%,100,0,100,Modulation index at 172.86Hz,,89.0/99.0/100.0
-394,0x18A,Table:178Hz,RWs,uint,m%,100,0,100,Modulation index at 178.10Hz,,90.0/99.0/100.0
-395,0x18B,Table:184Hz,RWs,uint,m%,100,0,100,Modulation index at 183.82Hz,,91.0/99.0/100.0
-396,0x18C,Table:190Hz,RWs,uint,m%,100,0,100,Modulation index at 190.08Hz,,92.0/99.0/100.0
-397,0x18D,Table:197Hz,RWs,uint,m%,100,0,100,Modulation index at 196.98Hz,,93.0/99.0/100.0
-398,0x18E,Table:205Hz,RWs,uint,m%,100,0,100,Modulation index at 204.60Hz,,93.91/99.0/100.0
-399,0x18F,Table:213Hz,RWs,uint,m%,100,0,100,Modulation index at 213.06Hz,,94.81/99.19/100.0
-400,0x190,Table:222Hz,RWs,uint,m%,100,0,100,Modulation index at 222.48Hz,,95.69/99.31/100.0
-401,0x191,Table:233Hz,RWs,uint,m%,100,0,100,Modulation index at 233.00Hz,,96.41/99.41/100.0
-402,0x192,Table:245Hz,RWs,uint,m%,100,0,100,Modulation index at 244.79Hz,,97.09/99.5/100.0
-403,0x193,Table:258Hz,RWs,uint,m%,100,0,100,Modulation index at 258.03Hz,,97.59/99.59/100.0
-404,0x194,Table:273Hz,RWs,uint,m%,100,0,100,Modulation index at 272.96Hz,,98.19/99.69/100.0
-405,0x195,Table:290Hz,RWs,uint,m%,100,0,100,Modulation index at 289.81Hz,,98.59/99.81/100.0
-406,0x196,Table:309Hz,RWs,uint,m%,100,0,100,Modulation index at 308.87Hz,,99.09/99.91/100.0
-407,0x197,Table:330Hz,RWs,uint,m%,100,0,100,Modulation index at 330.49Hz,,99.41/100.0/100.0
-408,0x198,Table:355Hz,RWs,uint,m%,100,0,100,Modulation index at 355.03Hz,,99.69/100.0/100.0
-409,0x199,Table:383Hz,RWs,uint,m%,100,0,100,Modulation index at 382.95Hz,,99.81/100.0/100.0
-410,0x19A,Table:415Hz,RWs,uint,m%,100,0,100,Modulation index at 414.73Hz,,99.91/100.0/100.0
-411,0x19B,Table:451Hz,RWs,uint,m%,100,0,100,Modulation index at 450.97Hz,,100.0
-412,0x19C,Table:492Hz,RWs,uint,m%,100,0,100,Modulation index at 492.32Hz,,100.0
-413,0x19D,Table:540Hz,RWs,uint,m%,100,0,100,Modulation index at 539.56Hz,,100.0
-414,0x19E,Table:594Hz,RWs,uint,m%,100,0,100,Modulation index at 593.57Hz,,100.0
-415,0x19F,Table:655Hz,RWs,uint,m%,100,0,100,Modulation index at 655.35Hz,,100.0
+id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
+0,0x00,Ctrl:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,-,-,Motor control mode,,ai,guest
+1,0x01,Ctrl:Setpoint,RW,rule,rpm/%/Hz,1/100/100,0/0/0,5000/100/300,Setpoint value; interpreted per Ctrl:Mode,switch=Ctrl:Mode,,guest
+2,0x02,Auth:SecretHigh,RW,hex,-,-,,,Secret key (high word) for access control,high=SecretKey,,guest
+3,0x03,Auth:SecretLow,RW,hex,-,-,,,Secret key (low word) for access control,low=SecretKey,,guest
+4,0x04,RS485:Address,RWs,uint,-,1,1,247,RS-485 node address,,1,user
+5,0x05,RS485:Baudrate,RWs,uint,bps,0.01,,,RS-485 baud rate,,9600,user
+6,0x06,RS485:Parity,RWs,enum,0:none 1:odd 2:even,-,,,RS-485 parity mode,,none,user
+7,0x07,RS485:StopBits,RWs,enum,0:0.5bs 1:1bs 2:2bs 3:1.5bs,-,,,RS-485 stop-bit setting,,1bs,user
+8,0x08,Speed:Min,RWs,uint,rpm,1,0,10000,Minimum motor speed; below this motor stops,,600/500/400,user
+9,0x09,Speed:Max,RWs,uint,rpm,1,0,10000,Maximum motor speed,,3300/2600/1520,user
+10,0x0A,Speed:Derating,RWs,uint,rpm,1,0,10000,Speed ceiling under thermal/current derating,,1850/2200/750,user
+11,0x0B,AnalogInput:Stop,RWs,uint,V,1000,0,10,AI voltage below which motor stops,,0.7,user
+12,0x0C,AnalogInput:Min,RWs,uint,V,1000,0,10,AI voltage mapped to Speed:Min,,1.0,user
+13,0x0D,AnalogInput:Max,RWs,uint,V,1000,0,10,AI voltage mapped to Speed:Max,,10.0,user
+14,0x0E,Digital:InputMode,RWs,enum,0:off 1:allow 2:reset,-,,,Digital input function,,reset,user
+15,0x0F,Digital:RelayMode,RWs,enum,0:off 1:run 2:alarm,-,,,Relay output function,,alarm,user
+16,0x10,Digital:LedMode,RWs,enum,0:off 1:fault 2:rs485 3:link 4:update,-,,,Status LED mode,,fault,user
+17,0x11,Failsafe:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,,,Mode used when RS-485 communication is lost,,rpm,user
+18,0x12,Failsafe:Setpoint,RWs,rule,rpm/%/Hz,1/100/100,0/0/0,5000/100/300,Failsafe setpoint; interpreted per Failsafe:Mode,switch=Failsafe:Mode,0,user
+19,0x13,Failsafe:Delay,RWs,uint,s,1,1,600,Timeout before failsafe activates,,60,user
+20,0x14,Resonance:0Low,RWs,uint,rpm,1,0,10000,Resonance zone 0 lower limit,,0,user
+21,0x15,Resonance:0High,RWs,uint,rpm,1,0,10000,Resonance zone 0 upper limit,,0,user
+22,0x16,Resonance:1Low,RWs,uint,rpm,1,0,10000,Resonance zone 1 lower limit,,0,user
+23,0x17,Resonance:1High,RWs,uint,rpm,1,0,10000,Resonance zone 1 upper limit,,0,user
+24,0x18,Resonance:2Low,RWs,uint,rpm,1,0,10000,Resonance zone 2 lower limit,,0,user
+25,0x19,Resonance:2High,RWs,uint,rpm,1,0,10000,Resonance zone 2 upper limit,,0,user
+28,0x1C,Journal:Skip,W,uint,-,1,0,65535,Skip first N records in journal query (0 = skip nothing),,,guest
+29,0x1D,Journal:Read,W,enum,0:none 1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr 29:err 30:inf 31:all,-,,,Trigger journal read with code filter,,,guest
+30,0x1E,Fault:Reset,W,enum,0:none 1:soft 2:hard 3:fcty,-,,,soft: reinit interfaces; hard: reboot both MCUs; fcty: hard reset and wipe stored config,,,service
+31,0x1F,Fault:Clear,W,bool,-,-,,,Write 1 to clear Fault:Code,,,guest
+32,0x20,Fault:Code,R,enum,0:ok 1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link,-,,,Active fault code,,,-
+33,0x21,MeasSlow:Freq,R,?uint,Hz,100,,,Electrical output frequency,,,-
+34,0x22,MeasSlow:CurrU,R,?uint,A,1000,,,Phase U current RMS,,,-
+35,0x23,MeasSlow:CurrV,R,?uint,A,1000,,,Phase V current RMS,,,-
+36,0x24,MeasSlow:CurrW,R,?uint,A,1000,,,Phase W current RMS,,,-
+37,0x25,MeasSlow:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,,-
+38,0x26,MeasSlow:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,,-
+39,0x27,MeasSlow:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,,-
+40,0x28,MeasSlow:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,,-
+41,0x29,MeasSlow:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,,-
+42,0x2A,MeasSlow:Temp,R,?int,°C,100,,,Power stage temperature,,,-
+43,0x2B,MeasSlow:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,,-
+44,0x2C,MeasSlow:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,,-
+45,0x2D,MeasSlow:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,,-
+46,0x2E,MeasSlow:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,,-
+47,0x2F,MeasSlow:Power,R,?uint,W,1,,,Estimated electrical power,,,-
+48,0x30,MeasFast:Freq,R,?uint,Hz,100,,,Electrical output frequency,,,-
+49,0x31,MeasFast:CurrU,R,?uint,A,1000,,,Phase U current RMS,,,-
+50,0x32,MeasFast:CurrV,R,?uint,A,1000,,,Phase V current RMS,,,-
+51,0x33,MeasFast:CurrW,R,?uint,A,1000,,,Phase W current RMS,,,-
+52,0x34,MeasFast:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,,-
+53,0x35,MeasFast:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,,-
+54,0x36,MeasFast:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,,-
+55,0x37,MeasFast:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,,-
+56,0x38,MeasFast:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,,-
+57,0x39,MeasFast:Temp,R,?int,°C,100,,,Power stage temperature,,,-
+58,0x3A,MeasFast:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,,-
+59,0x3B,MeasFast:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,,-
+60,0x3C,MeasFast:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,,-
+61,0x3D,MeasFast:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,,-
+62,0x3E,MeasFast:Power,R,?uint,W,1,,,Estimated electrical power,,,-
+63,0x3F,MeasNow:Freq,R,?uint,Hz,100,,,Electrical output frequency,,,-
+64,0x40,MeasNow:CurrU,R,?uint,A,1000,,,Phase U current RMS,,,-
+65,0x41,MeasNow:CurrV,R,?uint,A,1000,,,Phase V current RMS,,,-
+66,0x42,MeasNow:CurrW,R,?uint,A,1000,,,Phase W current RMS,,,-
+67,0x43,MeasNow:CurrAvg,R,?uint,A,1000,,,Three-phase average current RMS,,,-
+68,0x44,MeasNow:PeakU,R,?uint,A,1000,,,Phase U peak-to-peak amplitude,,,-
+69,0x45,MeasNow:PeakV,R,?uint,A,1000,,,Phase V peak-to-peak amplitude,,,-
+70,0x46,MeasNow:PeakW,R,?uint,A,1000,,,Phase W peak-to-peak amplitude,,,-
+71,0x47,MeasNow:PeakMax,R,?uint,A,1000,,,Three-phase maximum peak-to-peak amplitude,,,-
+72,0x48,MeasNow:Temp,R,?int,°C,100,,,Power stage temperature,,,-
+73,0x49,MeasNow:ExTemp,R,?int,°C,100,,,External sensor temperature (PT100),,,-
+74,0x4A,MeasNow:DcBus,R,?uint,V,10,,,DC-bus voltage (rectifier output),,,-
+75,0x4B,MeasNow:Flyback,R,?uint,V,100,,,Flyback converter output voltage,,,-
+76,0x4C,MeasNow:Ripple,R,?uint,V,100,,,DC-bus voltage ripple RMS,,,-
+77,0x4D,MeasNow:Power,R,?uint,W,1,,,Estimated electrical power,,,-
+78,0x4E,Auth:Access,R,enum,0:guest 1:user 2:service 3:admin,-,,,Current access level,,,-
+79,0x4F,AnalogInput:Value,R,?uint,V,1000,,,Analog input voltage,,,-
+80,0x50,Digital:InputState,R,?bool,-,-,,,Digital input state,,,-
+81,0x51,Digital:RelayState,R,?bool,-,-,,,Relay output state,,,-
+82,0x52,Version:Hardware,R,ver,type.version.revision,-,,,Hardware version,,,-
+83,0x53,Version:Software,R,ver,major.minor.patch,-,,,Firmware version,,,-
+84,0x54,Feedback:SetpointSpeed,R,?uint,rpm,1,,,Requested speed after mode conversion,,,-
+85,0x55,Feedback:SetpointFreq,R,?uint,Hz,100,,,Requested frequency after mode conversion,,,-
+86,0x56,Feedback:RenderSpeed,R,?uint,rpm,1,,,Current control target speed,,,-
+87,0x57,Feedback:RenderFreq,R,?uint,Hz,100,,,Current control target frequency,,,-
+88,0x58,Feedback:ModIndex,R,?uint,m%,100,,,Active modulation index,,,-
+89,0x59,Feedback:State,R,enum,0:shd 1:str 2:run 3:coa,-,,,Motor control state,,,-
+90,0x5A,Debug:RiseDelta,R,?uint,Hz,100,,,Acceleration slew rate at current frequency,,,-
+91,0x5B,Debug:FallDelta,R,?uint,Hz,100,,,Deceleration slew rate at current frequency,,,-
+92,0x5C,Debug:BrakingTime,R,?uint,ms,1,,,Coasting time at current frequency,,,-
+95,0x5F,Debug:CurrLimit,R,?uint,A,1000,,,Current limit at current frequency,,,-
+99,0x63,Debug:UpdateN,R,?uint,-,1,,,Effective update interval (base + stretch),,,-
+100,0x64,Debug:PeakCount,R,?uint,-,1,,,Peak overcurrent events since last clear,,,-
+101,0x65,Debug:FreqDiff,R,?uint,Hz,100,,,|render_Hz - measured_Hz| deviation,,,-
+102,0x66,Debug:FreqBand,R,?uint,Hz,100,,,Acceptable frequency deviation band,,,-
+103,0x67,Counter:Hours,R,?uint,h,1,,,Total operating hours,,,-
+104,0x68,Counter:PowerUp,R,?uint,-,1,,,Power-up count,,,-
+105,0x69,Counter:Watchdog,R,?uint,-,1,,,Watchdog reset count,,,-
+106,0x6A,Counter:RS485,R,?uint,-,1,,,RS-485 error count,,,-
+107,0x6B,Counter:Link,R,?uint,-,1,,,Link error count,,,-
+108,0x6C,Flow:Value,R,?uint,m³/h,1,,,Estimated volumetric flow (soft-sensor: Freq+Power),,,-
+109,0x6D,AnalogInput:SensValue,R,?uint,-,1,,,Converted sensor value (AI mapped via SensMin/Max; type per Mode),,,-
+112,0x70,Speed:DerateTemp,RWs,int,°C,100,0,200,Temperature above which speed is derated down to Speed:Derating,,80.0,service
+113,0x71,Speed:DerateCurr,RWs,uint,A,1000,0,30,Current above which speed is derated down to Speed:Derating,,6.5/13.0/19.0,service
+114,0x72,Thresh:Temp,RWs,int,°C,100,0,200,Temperature threshold for emergency shutdown,,85.0,service
+115,0x73,Thresh:CurrRms,RWs,uint,A,1000,0,30,RMS current threshold for emergency shutdown,,8/16.0/21.0,service
+116,0x74,Thresh:CurrPeak,RWs,uint,A,1000,0,60,Peak current threshold for emergency shutdown,,18/37.5/40.0,service
+117,0x75,Thresh:PeakCount,RWs,uint,-,1,1,50,Cumulative peak events since last clear before fault triggers,,12,service
+118,0x76,Thresh:DcBusMin,RWs,uint,V,10,0,800,DC-bus undervoltage threshold,,520.0/500.0/500.0,service
+119,0x77,Thresh:DcBusMax,RWs,uint,V,10,0,800,DC-bus overvoltage threshold,,750.0,service
+120,0x78,Thresh:FlybackMin,RWs,uint,V,100,0,50,Flyback undervoltage threshold,,16.0,service
+121,0x79,Thresh:FlybackMax,RWs,uint,V,100,0,50,Flyback overvoltage threshold,,18.0,service
+122,0x7A,Thresh:Ripple,RWs,uint,V,100,0,50,DC-bus ripple RMS threshold,,2.0,service
+123,0x7B,Thresh:SyncConst,RWs,uint,Hz,100,0,50,Sync loss: constant frequency tolerance,,5.0,service
+124,0x7C,Thresh:SyncScale,RWs,uint,%,100,0,100,Sync loss: tolerance proportional to rendered frequency,,5.0,service
+125,0x7D,Thresh:SyncTimeout,RWs,uint,ms,1,50,10000,Sync loss: time before fault triggers,,500,service
+126,0x7E,Thresh:StartFreq,RWs,uint,Hz,100,0,200,Sync loss and adaptive control: disabled below this frequency,,24.0/20.0/16.0,service
+127,0x7F,Fault:RetryDelay,RWs,uint,s,1,0,3600,Extra delay after braking before auto-retry (min 1s enforced),,60,service
+128,0x80,Fault:RetryCount,RWs,uint,-,1,0,10,Auto-restart attempts before permanent fault [0:disabled],,5,service
+129,0x81,Fault:RetryTimeout,RWs,uint,s,1,1,3600,Fault-free time to reset retry counter,,300,service
+130,0x82,Ctrl:BootDelay,RWs,uint,ms,1,0,60000,Stabilization delay after DC bus reaches Thresh:DcBusMin,,5000,service
+131,0x83,Motor:Invert,RWs,bool,-,-,,,Inverter phase sequence (UVW/UWV); reverses rotation direction,,false,service
+132,0x84,Motor:Type,RWs,enum,1:1500W 2:4000W 3:7500W,-,,,Motor and PCB power variant,,1500W/4000W/7500W,admin
+133,0x85,Motor:Poles,RWs,uint,-,1,1,20,Pole pair count,,3,admin
+134,0x86,Pwm:InitFreq,RWs,uint,Hz,100,0.5,10,Starting frequency for initial rotor alignment,,0.5,admin
+135,0x87,Pwm:Deadtime,RWs,uint,ns,1,100,5000,Complementary half-bridge dead-time,,2500,admin
+136,0x88,Pwm:ClampShort,RWs,uint,-,1,0,500,Short-pulse suppression in PWM timer counts [0:off],,2,admin
+137,0x89,Pwm:Shape,RWs,enum,0:sine 1:svpwm 2:trap,-,,,Output waveform shape,,svpwm,admin
+138,0x8A,Ramp:UpdateN,RWs,uint,-,1,1,10000,Frequency step every N PWM cycles,,600,admin
+139,0x8B,Ramp:RiseDeltaStart,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at 0Hz,,0.05,admin
+140,0x8C,Ramp:RiseDeltaStop,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at Adapt:StopFreq,,0.1,admin
+141,0x8D,Ramp:RiseDeltaBend,RWs,int,-,1,-100,100,Bend for acceleration slew rate curve,,0,admin
+142,0x8E,Ramp:FallDeltaStart,RWs,uint,Hz,100,0.01,100,Deceleration slew rate at 0Hz,,0.03,admin
+143,0x8F,Ramp:FallDeltaStop,RWs,uint,Hz,100,0.01,100,Deceleration slew rate at Adapt:StopFreq,,0.15,admin
+144,0x90,Ramp:FallDeltaBend,RWs,int,-,1,-100,100,Bend for deceleration slew rate curve,,0,admin
+145,0x91,Brake:TimeStart,RWs,uint,s,1,0,60,Coasting time before restart at 0Hz,,2,admin
+146,0x92,Brake:TimeStop,RWs,uint,s,1,0,60,Coasting time before restart at max frequency,,60,admin
+147,0x93,Brake:TimeBend,RWs,int,-,1,-100,100,Bend for coasting time curve,,0,admin
+148,0x94,Brake:StartDelay,RWs,uint,ms,1,0,10000,Static-vector rotor alignment before acceleration begins; PWM holds a frozen phase so the rotor settles at a known angle,,700,admin
+149,0x95,MeasCfg:FilterTime,RWs,uint,ms,1,10,5000,Ring-buffer averaging window (Slow tier),,500,admin
+150,0x96,MeasCfg:CountMin,RWs,uint,-,1,1,1000,Minimum samples before slow tier update,,3,admin
+151,0x97,MeasCfg:EmaScale,RWs,uint,%,100,10,500,Global EMA alpha multiplier [100%:default],,100.0,admin
+152,0x98,MeasCfg:HampelScale,RWs,uint,%,100,10,500,Global Hampel k multiplier [100%:default],,100.0,admin
+153,0x99,MeasCfg:SchmittConst,RWs,uint,-,1,0,65535,BEMF hysteresis: threshold = const + amplitude × SchmittScale/100,,50,admin
+154,0x9A,MeasCfg:SchmittScale,RWs,uint,%,100,0,100,BEMF hysteresis: proportional term (see SchmittConst),,9.0,admin
+155,0x9B,MeasCfg:FreqRConst,RWs,uint,Hz,100,0,50,BEMF valid frequency band (range): constant tolerance,,35.0,admin
+156,0x9C,MeasCfg:FreqRScale,RWs,uint,%,100,0,100,BEMF valid frequency band (range): proportional to rendered frequency,,65.0,admin
+157,0x9D,Const:ShuntRes,RWs,uint,mΩ,1,1,100,Current sense shunt resistance,,10/5/2,admin
+158,0x9E,Const:ShuntGain,RWs,uint,-,1000,1,65,Current sense amplifier gain (e.g. 20.0 = ×20),,22.0/12.195/21.277,admin
+159,0x9F,Const:TempA,RWs,int,°C/V,100,-327,327,Linear temp sensor slope: T = A × V_adc + B (linear sensor variant only),,50.0,admin
+160,0xA0,Const:TempB,RWs,int,°C,100,-327,327,Linear temp sensor offset: T = A × V_adc + B (linear sensor variant only),,-5.0,admin
+161,0xA1,Const:NtcPullUp,RWs,uint,Ω,1,0,50000,NTC pull-up resistor value,,0/1000/1000,admin
+162,0xA2,Const:NtcBeta,RWs,uint,-,1,0,6000,NTC beta coefficient,,0/3375/4000,admin
+163,0xA3,Const:NtcR0,RWs,uint,Ω,1,0,50000,NTC resistance at 25°C,,0/5000/22000,admin
+164,0xA4,Trim:CurrOffset,RWs,int,A,1000,-5,5,Current zero offset,,0.0,admin
+165,0xA5,Trim:CurrScale,RWs,int,%,100,50,200,Current gain correction,,100.0,admin
+166,0xA6,Trim:TempOffset,RWs,int,°C,100,-20,20,Power stage temperature offset,,0.0,admin
+167,0xA7,Trim:TempScale,RWs,int,%,100,50,200,Power stage temperature gain correction,,100.0,admin
+168,0xA8,Trim:DcBusOffset,RWs,int,V,10,-50,50,DC-bus voltage offset,,0.0,admin
+169,0xA9,Trim:DcBusScale,RWs,int,%,100,50,200,DC-bus voltage gain correction,,100.8,admin
+170,0xAA,Trim:FlybackOffset,RWs,int,V,100,-5,5,Flyback voltage offset,,0.0,admin
+171,0xAB,Trim:FlybackScale,RWs,int,%,100,50,200,Flyback voltage gain correction,,100.0,admin
+172,0xAC,Adapt:StopFreq,RWs,uint,Hz,100,5,400,Reference frequency (x_max) for Adapt and Ramp bend functions,,300.0,admin
+177,0xB1,Adapt:CurrLimitStart,RWs,uint,A,1000,0.5,30,Current limit at 0Hz,,4/7.0/11.0,admin
+178,0xB2,Adapt:CurrLimitStop,RWs,uint,A,1000,0.5,30,Current limit at Adapt:StopFreq; must stay below the current at which the hardware peak comparator fires,,8/10.5/17.0,admin
+179,0xB3,Adapt:CurrLimitBend,RWs,int,-,1,-1000,1000,Bend for current limit curve [>0: limit rises to Stop quickly at low freq],,700,admin
+180,0xB4,Adapt:CurrHyst,RWs,uint,A,1000,0.05,5,Current gate release hysteresis below Adapt:CurrLimit,,0.5,admin
+181,0xB5,Adapt:VdcLow,RWs,uint,V,10,300,700,DC-bus voltage below which acceleration ramp is stretched (see Adapt:VdcHigh),,550.0,admin
+182,0xB6,Adapt:VdcHigh,RWs,uint,V,10,300,800,DC-bus voltage above which deceleration ramp is stretched (see Adapt:VdcLow),,640.0,admin
+183,0xB7,Adapt:VdcHyst,RWs,uint,V,10,1,50,Bus gate release hysteresis (both directions),,5.0,admin
+186,0xBA,Stall:CurrStart,RWs,uint,A,1000,0,30,Stall current threshold at 0Hz,,4.5/9.5/10.0,service
+187,0xBB,Stall:CurrEnd,RWs,uint,A,1000,0,30,Stall current threshold at Stall:FreqEnd,,4.0/8.5/9.0,service
+188,0xBC,Stall:FreqEnd,RWs,uint,Hz,100,0,200,Stall protection disabled above this frequency (also bend x_max),,15.0,service
+189,0xBD,Stall:Bend,RWs,int,-,1,-1000,1000,Bend for stall current threshold curve [>0: drops to Stop quickly at low freq],,0,service
+190,0xBE,Trim:PowerOffset,RWs,int,W,1,-1000,1000,Estimated power zero offset,,0,admin
+191,0xBF,Trim:PowerScale,RWs,int,%,100,50,200,Estimated power gain correction,,100.0,admin
+192,0xC0,AnalogInput:Mode,RWs,enum,0:speed 1:sens_u16 2:sens_i16 3:flow,-,,,Analog input function (sens_u16/i16 raw type; flow overrides Flow LUT),,speed,user
+193,0xC1,AnalogInput:SensMin,RWs,uint,-,1,,,Raw value at AnalogInput:Min voltage (type per Mode; no scale),,0,user
+194,0xC2,AnalogInput:SensMax,RWs,uint,-,1,,,Raw value at AnalogInput:Max voltage (type per Mode; no scale),,100,user
+195,0xC3,Pwm:CutoffFreq,RWs,uint,Hz,100,0,10,Decel cutoff: PWM off when ramping down below this [0:off],,20.0,admin
+255,0xFF,Journal:Count,R,uint,-,1,0,32,Number of records returned by last Journal:Read (0..32),,,-
+256,0x100,Journal:0Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 0 event code,,,-
+257,0x101,Journal:0Hours,R,?uint,h,1,,,Journal entry 0 operating hours,,,-
+258,0x102,Journal:1Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 1 event code,,,-
+259,0x103,Journal:1Hours,R,?uint,h,1,,,Journal entry 1 operating hours,,,-
+260,0x104,Journal:2Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 2 event code,,,-
+261,0x105,Journal:2Hours,R,?uint,h,1,,,Journal entry 2 operating hours,,,-
+262,0x106,Journal:3Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 3 event code,,,-
+263,0x107,Journal:3Hours,R,?uint,h,1,,,Journal entry 3 operating hours,,,-
+264,0x108,Journal:4Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 4 event code,,,-
+265,0x109,Journal:4Hours,R,?uint,h,1,,,Journal entry 4 operating hours,,,-
+266,0x10A,Journal:5Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 5 event code,,,-
+267,0x10B,Journal:5Hours,R,?uint,h,1,,,Journal entry 5 operating hours,,,-
+268,0x10C,Journal:6Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 6 event code,,,-
+269,0x10D,Journal:6Hours,R,?uint,h,1,,,Journal entry 6 operating hours,,,-
+270,0x10E,Journal:7Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 7 event code,,,-
+271,0x10F,Journal:7Hours,R,?uint,h,1,,,Journal entry 7 operating hours,,,-
+272,0x110,Journal:8Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 8 event code,,,-
+273,0x111,Journal:8Hours,R,?uint,h,1,,,Journal entry 8 operating hours,,,-
+274,0x112,Journal:9Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 9 event code,,,-
+275,0x113,Journal:9Hours,R,?uint,h,1,,,Journal entry 9 operating hours,,,-
+276,0x114,Journal:10Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 10 event code,,,-
+277,0x115,Journal:10Hours,R,?uint,h,1,,,Journal entry 10 operating hours,,,-
+278,0x116,Journal:11Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 11 event code,,,-
+279,0x117,Journal:11Hours,R,?uint,h,1,,,Journal entry 11 operating hours,,,-
+280,0x118,Journal:12Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 12 event code,,,-
+281,0x119,Journal:12Hours,R,?uint,h,1,,,Journal entry 12 operating hours,,,-
+282,0x11A,Journal:13Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 13 event code,,,-
+283,0x11B,Journal:13Hours,R,?uint,h,1,,,Journal entry 13 operating hours,,,-
+284,0x11C,Journal:14Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 14 event code,,,-
+285,0x11D,Journal:14Hours,R,?uint,h,1,,,Journal entry 14 operating hours,,,-
+286,0x11E,Journal:15Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 15 event code,,,-
+287,0x11F,Journal:15Hours,R,?uint,h,1,,,Journal entry 15 operating hours,,,-
+288,0x120,Journal:16Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 16 event code,,,-
+289,0x121,Journal:16Hours,R,?uint,h,1,,,Journal entry 16 operating hours,,,-
+290,0x122,Journal:17Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 17 event code,,,-
+291,0x123,Journal:17Hours,R,?uint,h,1,,,Journal entry 17 operating hours,,,-
+292,0x124,Journal:18Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 18 event code,,,-
+293,0x125,Journal:18Hours,R,?uint,h,1,,,Journal entry 18 operating hours,,,-
+294,0x126,Journal:19Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 19 event code,,,-
+295,0x127,Journal:19Hours,R,?uint,h,1,,,Journal entry 19 operating hours,,,-
+296,0x128,Journal:20Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 20 event code,,,-
+297,0x129,Journal:20Hours,R,?uint,h,1,,,Journal entry 20 operating hours,,,-
+298,0x12A,Journal:21Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 21 event code,,,-
+299,0x12B,Journal:21Hours,R,?uint,h,1,,,Journal entry 21 operating hours,,,-
+300,0x12C,Journal:22Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 22 event code,,,-
+301,0x12D,Journal:22Hours,R,?uint,h,1,,,Journal entry 22 operating hours,,,-
+302,0x12E,Journal:23Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 23 event code,,,-
+303,0x12F,Journal:23Hours,R,?uint,h,1,,,Journal entry 23 operating hours,,,-
+304,0x130,Journal:24Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 24 event code,,,-
+305,0x131,Journal:24Hours,R,?uint,h,1,,,Journal entry 24 operating hours,,,-
+306,0x132,Journal:25Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 25 event code,,,-
+307,0x133,Journal:25Hours,R,?uint,h,1,,,Journal entry 25 operating hours,,,-
+308,0x134,Journal:26Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 26 event code,,,-
+309,0x135,Journal:26Hours,R,?uint,h,1,,,Journal entry 26 operating hours,,,-
+310,0x136,Journal:27Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 27 event code,,,-
+311,0x137,Journal:27Hours,R,?uint,h,1,,,Journal entry 27 operating hours,,,-
+312,0x138,Journal:28Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 28 event code,,,-
+313,0x139,Journal:28Hours,R,?uint,h,1,,,Journal entry 28 operating hours,,,-
+314,0x13A,Journal:29Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 29 event code,,,-
+315,0x13B,Journal:29Hours,R,?uint,h,1,,,Journal entry 29 operating hours,,,-
+316,0x13C,Journal:30Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 30 event code,,,-
+317,0x13D,Journal:30Hours,R,?uint,h,1,,,Journal entry 30 operating hours,,,-
+318,0x13E,Journal:31Event,R,?enum,1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 16:boot 17:st 18:sp 19:perm 20:clr 21:rst 22:ftr,-,,,Journal entry 31 event code,,,-
+319,0x13F,Journal:31Hours,R,?uint,h,1,,,Journal entry 31 operating hours,,,-
+320,0x140,ModTab:2Hz,RWs,uint,m%,100,0,100,Modulation index at 2.05Hz,,7.8/5.0/5.5,admin
+321,0x141,ModTab:4Hz,RWs,uint,m%,100,0,100,Modulation index at 4.10Hz,,8.26/6.5/7.5,admin
+322,0x142,ModTab:6Hz,RWs,uint,m%,100,0,100,Modulation index at 6.15Hz,,8.72/7.5/9.0,admin
+323,0x143,ModTab:8Hz,RWs,uint,m%,100,0,100,Modulation index at 8.19Hz,,9.17/9.0/11.0,admin
+324,0x144,ModTab:10Hz,RWs,uint,m%,100,0,100,Modulation index at 10.24Hz,,9.64/10.0/13.0,admin
+325,0x145,ModTab:12Hz,RWs,uint,m%,100,0,100,Modulation index at 12.29Hz,,10.12/11.0/15.0,admin
+326,0x146,ModTab:14Hz,RWs,uint,m%,100,0,100,Modulation index at 14.34Hz,,10.59/12.5/18.0,admin
+327,0x147,ModTab:16Hz,RWs,uint,m%,100,0,100,Modulation index at 16.39Hz,,11.03/14.0/21.0,admin
+328,0x148,ModTab:18Hz,RWs,uint,m%,100,0,100,Modulation index at 18.43Hz,,11.51/15.5/23.0,admin
+329,0x149,ModTab:20Hz,RWs,uint,m%,100,0,100,Modulation index at 20.48Hz,,12.04/17.0/25.0,admin
+330,0x14A,ModTab:23Hz,RWs,uint,m%,100,0,100,Modulation index at 22.53Hz,,12.62/19.0/27.0,admin
+331,0x14B,ModTab:25Hz,RWs,uint,m%,100,0,100,Modulation index at 24.58Hz,,13.18/20.0/29.0,admin
+332,0x14C,ModTab:27Hz,RWs,uint,m%,100,0,100,Modulation index at 26.63Hz,,13.69/21.5/32.0,admin
+333,0x14D,ModTab:29Hz,RWs,uint,m%,100,0,100,Modulation index at 28.68Hz,,14.28/23.0/35.0,admin
+334,0x14E,ModTab:31Hz,RWs,uint,m%,100,0,100,Modulation index at 30.73Hz,,14.95/25.0/37.0,admin
+335,0x14F,ModTab:33Hz,RWs,uint,m%,100,0,100,Modulation index at 32.77Hz,,15.7/26.0/40.0,admin
+336,0x150,ModTab:35Hz,RWs,uint,m%,100,0,100,Modulation index at 34.82Hz,,16.52/28.0/43.0,admin
+337,0x151,ModTab:37Hz,RWs,uint,m%,100,0,100,Modulation index at 36.87Hz,,17.38/30.0/46.0,admin
+338,0x152,ModTab:39Hz,RWs,uint,m%,100,0,100,Modulation index at 38.92Hz,,18.23/31.0/49.0,admin
+339,0x153,ModTab:41Hz,RWs,uint,m%,100,0,100,Modulation index at 40.97Hz,,19.1/32.0/52.0,admin
+340,0x154,ModTab:43Hz,RWs,uint,m%,100,0,100,Modulation index at 43.02Hz,,19.98/34.0/55.0,admin
+341,0x155,ModTab:45Hz,RWs,uint,m%,100,0,100,Modulation index at 45.07Hz,,20.85/36.0/59.0,admin
+342,0x156,ModTab:47Hz,RWs,uint,m%,100,0,100,Modulation index at 47.12Hz,,21.78/38.0/62.0,admin
+343,0x157,ModTab:49Hz,RWs,uint,m%,100,0,100,Modulation index at 49.17Hz,,22.68/40.0/65.0,admin
+344,0x158,ModTab:51Hz,RWs,uint,m%,100,0,100,Modulation index at 51.22Hz,,23.5/41.25/68.0,admin
+345,0x159,ModTab:53Hz,RWs,uint,m%,100,0,100,Modulation index at 53.27Hz,,24.33/42.5/71.0,admin
+346,0x15A,ModTab:55Hz,RWs,uint,m%,100,0,100,Modulation index at 55.33Hz,,25.15/44.0/73.5,admin
+347,0x15B,ModTab:57Hz,RWs,uint,m%,100,0,100,Modulation index at 57.38Hz,,25.93/46.0/75.5,admin
+348,0x15C,ModTab:59Hz,RWs,uint,m%,100,0,100,Modulation index at 59.43Hz,,26.68/48.0/76.5,admin
+349,0x15D,ModTab:61Hz,RWs,uint,m%,100,0,100,Modulation index at 61.49Hz,,27.46/49.0/77.5,admin
+350,0x15E,ModTab:64Hz,RWs,uint,m%,100,0,100,Modulation index at 63.54Hz,,28.26/50.0/79.0,admin
+351,0x15F,ModTab:66Hz,RWs,uint,m%,100,0,100,Modulation index at 65.60Hz,,29.06/52.0/79.5,admin
+352,0x160,ModTab:68Hz,RWs,uint,m%,100,0,100,Modulation index at 67.65Hz,,29.8/54.0/80.0,admin
+353,0x161,ModTab:70Hz,RWs,uint,m%,100,0,100,Modulation index at 69.71Hz,,30.54/55.0/80.5,admin
+354,0x162,ModTab:72Hz,RWs,uint,m%,100,0,100,Modulation index at 71.77Hz,,31.29/56.0/81.0,admin
+355,0x163,ModTab:74Hz,RWs,uint,m%,100,0,100,Modulation index at 73.83Hz,,31.99/57.0/81.5,admin
+356,0x164,ModTab:76Hz,RWs,uint,m%,100,0,100,Modulation index at 75.90Hz,,32.67/58.0/82.0,admin
+357,0x165,ModTab:78Hz,RWs,uint,m%,100,0,100,Modulation index at 77.96Hz,,33.48/59.0/82.5,admin
+358,0x166,ModTab:80Hz,RWs,uint,m%,100,0,100,Modulation index at 80.03Hz,,34.37/60.0/83.0,admin
+359,0x167,ModTab:82Hz,RWs,uint,m%,100,0,100,Modulation index at 82.10Hz,,35.29/61.0/83.5,admin
+360,0x168,ModTab:84Hz,RWs,uint,m%,100,0,100,Modulation index at 84.18Hz,,36.15/62.0/84.0,admin
+361,0x169,ModTab:86Hz,RWs,uint,m%,100,0,100,Modulation index at 86.26Hz,,36.94/63.0/84.5,admin
+362,0x16A,ModTab:88Hz,RWs,uint,m%,100,0,100,Modulation index at 88.34Hz,,37.74/64.0/85.0,admin
+363,0x16B,ModTab:90Hz,RWs,uint,m%,100,0,100,Modulation index at 90.44Hz,,38.54/65.0/87.0,admin
+364,0x16C,ModTab:93Hz,RWs,uint,m%,100,0,100,Modulation index at 92.53Hz,,39.32/66.0/89.0,admin
+365,0x16D,ModTab:95Hz,RWs,uint,m%,100,0,100,Modulation index at 94.64Hz,,40.14/67.0/91.0,admin
+366,0x16E,ModTab:97Hz,RWs,uint,m%,100,0,100,Modulation index at 96.75Hz,,40.95/68.0/93.0,admin
+367,0x16F,ModTab:99Hz,RWs,uint,m%,100,0,100,Modulation index at 98.87Hz,,41.75/69.0/95.0,admin
+368,0x170,ModTab:101Hz,RWs,uint,m%,100,0,100,Modulation index at 101.00Hz,,42.67/70.0/97.0,admin
+369,0x171,ModTab:103Hz,RWs,uint,m%,100,0,100,Modulation index at 103.15Hz,,43.61/71.0/99.0,admin
+370,0x172,ModTab:105Hz,RWs,uint,m%,100,0,100,Modulation index at 105.31Hz,,44.52/72.0/100.0,admin
+371,0x173,ModTab:107Hz,RWs,uint,m%,100,0,100,Modulation index at 107.48Hz,,45.45/73.0/100.0,admin
+372,0x174,ModTab:110Hz,RWs,uint,m%,100,0,100,Modulation index at 109.68Hz,,46.4/73.5/100.0,admin
+373,0x175,ModTab:112Hz,RWs,uint,m%,100,0,100,Modulation index at 111.90Hz,,47.35/74.0/100.0,admin
+374,0x176,ModTab:114Hz,RWs,uint,m%,100,0,100,Modulation index at 114.14Hz,,48.35/74.25/100.0,admin
+375,0x177,ModTab:116Hz,RWs,uint,m%,100,0,100,Modulation index at 116.42Hz,,49.34/74.5/100.0,admin
+376,0x178,ModTab:119Hz,RWs,uint,m%,100,0,100,Modulation index at 118.72Hz,,50.38/74.75/100.0,admin
+377,0x179,ModTab:121Hz,RWs,uint,m%,100,0,100,Modulation index at 121.07Hz,,51.52/75.0/100.0,admin
+378,0x17A,ModTab:123Hz,RWs,uint,m%,100,0,100,Modulation index at 123.46Hz,,52.64/75.25/100.0,admin
+379,0x17B,ModTab:126Hz,RWs,uint,m%,100,0,100,Modulation index at 125.90Hz,,53.71/75.5/100.0,admin
+380,0x17C,ModTab:128Hz,RWs,uint,m%,100,0,100,Modulation index at 128.40Hz,,54.75/75.75/100.0,admin
+381,0x17D,ModTab:131Hz,RWs,uint,m%,100,0,100,Modulation index at 130.97Hz,,55.76/76.0/100.0,admin
+382,0x17E,ModTab:134Hz,RWs,uint,m%,100,0,100,Modulation index at 133.62Hz,,56.74/76.25/100.0,admin
+383,0x17F,ModTab:136Hz,RWs,uint,m%,100,0,100,Modulation index at 136.35Hz,,57.68/77.1/100.0,admin
+384,0x180,ModTab:139Hz,RWs,uint,m%,100,0,100,Modulation index at 139.19Hz,,58.58/78.0/100.0,admin
+385,0x181,ModTab:142Hz,RWs,uint,m%,100,0,100,Modulation index at 142.15Hz,,59.35/79.0/100.0,admin
+386,0x182,ModTab:145Hz,RWs,uint,m%,100,0,100,Modulation index at 145.24Hz,,60.05/80.0/100.0,admin
+387,0x183,ModTab:148Hz,RWs,uint,m%,100,0,100,Modulation index at 148.49Hz,,60.78/81.0/100.0,admin
+388,0x184,ModTab:152Hz,RWs,uint,m%,100,0,100,Modulation index at 151.92Hz,,61.52/82.1/100.0,admin
+389,0x185,ModTab:156Hz,RWs,uint,m%,100,0,100,Modulation index at 155.56Hz,,62.3/83.3/100.0,admin
+390,0x186,ModTab:159Hz,RWs,uint,m%,100,0,100,Modulation index at 159.43Hz,,63.08/84.5/100.0,admin
+391,0x187,ModTab:164Hz,RWs,uint,m%,100,0,100,Modulation index at 163.58Hz,,63.83/85.9/100.0,admin
+392,0x188,ModTab:168Hz,RWs,uint,m%,100,0,100,Modulation index at 168.04Hz,,64.6/87.3/100.0,admin
+393,0x189,ModTab:173Hz,RWs,uint,m%,100,0,100,Modulation index at 172.86Hz,,65.38/88.8/100.0,admin
+394,0x18A,ModTab:178Hz,RWs,uint,m%,100,0,100,Modulation index at 178.10Hz,,66.13/90.5/100.0,admin
+395,0x18B,ModTab:184Hz,RWs,uint,m%,100,0,100,Modulation index at 183.82Hz,,66.9/92.3/100.0,admin
+396,0x18C,ModTab:190Hz,RWs,uint,m%,100,0,100,Modulation index at 190.08Hz,,67.68/94.3/100.0,admin
+397,0x18D,ModTab:197Hz,RWs,uint,m%,100,0,100,Modulation index at 196.98Hz,,68.43/96.6/100.0,admin
+398,0x18E,ModTab:205Hz,RWs,uint,m%,100,0,100,Modulation index at 204.60Hz,,69.2/99.0/100.0,admin
+399,0x18F,ModTab:213Hz,RWs,uint,m%,100,0,100,Modulation index at 213.06Hz,,69.97/99.19/100.0,admin
+400,0x190,ModTab:222Hz,RWs,uint,m%,100,0,100,Modulation index at 222.48Hz,,70.68/99.31/100.0,admin
+401,0x191,ModTab:233Hz,RWs,uint,m%,100,0,100,Modulation index at 233.00Hz,,71.33/99.41/100.0,admin
+402,0x192,ModTab:245Hz,RWs,uint,m%,100,0,100,Modulation index at 244.79Hz,,72/99.5/100.0,admin
+403,0x193,ModTab:258Hz,RWs,uint,m%,100,0,100,Modulation index at 258.03Hz,,72.68/99.59/100.0,admin
+404,0x194,ModTab:273Hz,RWs,uint,m%,100,0,100,Modulation index at 272.96Hz,,73.25/99.69/100.0,admin
+405,0x195,ModTab:290Hz,RWs,uint,m%,100,0,100,Modulation index at 289.81Hz,,73.72/99.81/100.0,admin
+406,0x196,ModTab:309Hz,RWs,uint,m%,100,0,100,Modulation index at 308.87Hz,,74.2/99.91/100.0,admin
+407,0x197,ModTab:330Hz,RWs,uint,m%,100,0,100,Modulation index at 330.49Hz,,74.68/100.0/100.0,admin
+408,0x198,ModTab:355Hz,RWs,uint,m%,100,0,100,Modulation index at 355.03Hz,,75.07/100.0/100.0,admin
+409,0x199,ModTab:383Hz,RWs,uint,m%,100,0,100,Modulation index at 382.95Hz,,75.38/100.0/100.0,admin
+410,0x19A,ModTab:415Hz,RWs,uint,m%,100,0,100,Modulation index at 414.73Hz,,75.55/100.0/100.0,admin
+411,0x19B,ModTab:451Hz,RWs,uint,m%,100,0,100,Modulation index at 450.97Hz,,75.65/100.0/100.0,admin
+412,0x19C,ModTab:492Hz,RWs,uint,m%,100,0,100,Modulation index at 492.32Hz,,75.78/100.0/100.0,admin
+413,0x19D,ModTab:540Hz,RWs,uint,m%,100,0,100,Modulation index at 539.56Hz,,75.88/100.0/100.0,admin
+414,0x19E,ModTab:594Hz,RWs,uint,m%,100,0,100,Modulation index at 593.57Hz,,75.93/100.0/100.0,admin
+415,0x19F,ModTab:655Hz,RWs,uint,m%,100,0,100,Modulation index at 655.35Hz,,76/100.0/100.0,admin
+416,0x1A0,Flow:PwrMax100rpm,RWs,uint,W,1,0,65535,Max power at 100rpm (normalizes load axis),,0/0/2,admin
+417,0x1A1,Flow:PwrMax200rpm,RWs,uint,W,1,0,65535,Max power at 200rpm (normalizes load axis),,0/2/17,admin
+418,0x1A2,Flow:PwrMax300rpm,RWs,uint,W,1,0,65535,Max power at 300rpm (normalizes load axis),,2/6/58,admin
+419,0x1A3,Flow:PwrMax400rpm,RWs,uint,W,1,0,65535,Max power at 400rpm (normalizes load axis),,4/15/137,admin
+420,0x1A4,Flow:PwrMax500rpm,RWs,uint,W,1,0,65535,Max power at 500rpm (normalizes load axis),,7/28/267,admin
+421,0x1A5,Flow:PwrMax600rpm,RWs,uint,W,1,0,65535,Max power at 600rpm (normalizes load axis),,12/49/461,admin
+422,0x1A6,Flow:PwrMax700rpm,RWs,uint,W,1,0,65535,Max power at 700rpm (normalizes load axis),,19/78/733,admin
+423,0x1A7,Flow:PwrMax800rpm,RWs,uint,W,1,0,65535,Max power at 800rpm (normalizes load axis),,28/117/1093,admin
+424,0x1A8,Flow:PwrMax1000rpm,RWs,uint,W,1,0,65535,Max power at 1000rpm (normalizes load axis),,56/228/2136,admin
+425,0x1A9,Flow:PwrMax1200rpm,RWs,uint,W,1,0,65535,Max power at 1200rpm (normalizes load axis),,96/393/3690,admin
+426,0x1AA,Flow:PwrMax1400rpm,RWs,uint,W,1,0,65535,Max power at 1400rpm (normalizes load axis),,153/624/5860,admin
+427,0x1AB,Flow:PwrMax1600rpm,RWs,uint,W,1,0,65535,Max power at 1600rpm (normalizes load axis),,228/932/7500,admin
+428,0x1AC,Flow:PwrMax1800rpm,RWs,uint,W,1,0,65535,Max power at 1800rpm (normalizes load axis),,325/1327/7500,admin
+429,0x1AD,Flow:PwrMax2000rpm,RWs,uint,W,1,0,65535,Max power at 2000rpm (normalizes load axis),,445/1821/7500,admin
+430,0x1AE,Flow:PwrMax2200rpm,RWs,uint,W,1,0,65535,Max power at 2200rpm (normalizes load axis),,593/2423/7500,admin
+431,0x1AF,Flow:PwrMax2400rpm,RWs,uint,W,1,0,65535,Max power at 2400rpm (normalizes load axis),,769/3146/7500,admin
+432,0x1B0,Flow:PwrMax2600rpm,RWs,uint,W,1,0,65535,Max power at 2600rpm (normalizes load axis),,978/4000/7500,admin
+433,0x1B1,Flow:PwrMax2800rpm,RWs,uint,W,1,0,65535,Max power at 2800rpm (normalizes load axis),,1222/4000/7500,admin
+434,0x1B2,Flow:PwrMax3000rpm,RWs,uint,W,1,0,65535,Max power at 3000rpm (normalizes load axis),,1503/4000/7500,admin
+435,0x1B3,Flow:PwrMax3200rpm,RWs,uint,W,1,0,65535,Max power at 3200rpm (normalizes load axis),,1824/4000/7500,admin
+436,0x1B4,Flow:PwrMax3400rpm,RWs,uint,W,1,0,65535,Max power at 3400rpm (normalizes load axis),,2000/4000/7500,admin
+437,0x1B5,Flow:PwrMax3600rpm,RWs,uint,W,1,0,65535,Max power at 3600rpm (normalizes load axis),,2000/4000/7500,admin
+438,0x1B6,Flow:PwrMax3800rpm,RWs,uint,W,1,0,65535,Max power at 3800rpm (normalizes load axis),,2000/4000/7500,admin
+439,0x1B7,Flow:PwrMax4000rpm,RWs,uint,W,1,0,65535,Max power at 4000rpm (normalizes load axis),,2000/4000/7500,admin
+440,0x1B8,Flow:100rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 10% load,,15/46/145,admin
+441,0x1B9,Flow:100rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 20% load,,30/92/289,admin
+442,0x1BA,Flow:100rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 30% load,,45/138/434,admin
+443,0x1BB,Flow:100rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 40% load,,61/185/579,admin
+444,0x1BC,Flow:100rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 50% load,,76/231/724,admin
+445,0x1BD,Flow:100rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 60% load,,91/277/868,admin
+446,0x1BE,Flow:100rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 70% load,,106/323/1013,admin
+447,0x1BF,Flow:100rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 80% load,,121/369/1158,admin
+448,0x1C0,Flow:100rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 90% load,,136/415/1303,admin
+449,0x1C1,Flow:100rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 100rpm over 100% load,,152/462/1447,admin
+450,0x1C2,Flow:200rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 10% load,,30/92/289,admin
+451,0x1C3,Flow:200rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 20% load,,61/185/579,admin
+452,0x1C4,Flow:200rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 30% load,,91/277/868,admin
+453,0x1C5,Flow:200rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 40% load,,121/369/1158,admin
+454,0x1C6,Flow:200rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 50% load,,152/462/1447,admin
+455,0x1C7,Flow:200rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 60% load,,182/554/1737,admin
+456,0x1C8,Flow:200rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 70% load,,212/646/2026,admin
+457,0x1C9,Flow:200rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 80% load,,242/738/2316,admin
+458,0x1CA,Flow:200rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 90% load,,273/831/2605,admin
+459,0x1CB,Flow:200rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 200rpm over 100% load,,303/923/2895,admin
+460,0x1CC,Flow:300rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 10% load,,45/138/434,admin
+461,0x1CD,Flow:300rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 20% load,,91/277/868,admin
+462,0x1CE,Flow:300rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 30% load,,136/415/1303,admin
+463,0x1CF,Flow:300rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 40% load,,182/554/1737,admin
+464,0x1D0,Flow:300rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 50% load,,227/692/2171,admin
+465,0x1D1,Flow:300rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 60% load,,273/831/2605,admin
+466,0x1D2,Flow:300rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 70% load,,318/969/3039,admin
+467,0x1D3,Flow:300rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 80% load,,364/1108/3474,admin
+468,0x1D4,Flow:300rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 90% load,,409/1246/3908,admin
+469,0x1D5,Flow:300rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 300rpm over 100% load,,455/1385/4342,admin
+470,0x1D6,Flow:400rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 10% load,,61/185/579,admin
+471,0x1D7,Flow:400rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 20% load,,121/369/1158,admin
+472,0x1D8,Flow:400rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 30% load,,182/554/1737,admin
+473,0x1D9,Flow:400rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 40% load,,242/738/2316,admin
+474,0x1DA,Flow:400rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 50% load,,303/923/2895,admin
+475,0x1DB,Flow:400rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 60% load,,364/1108/3474,admin
+476,0x1DC,Flow:400rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 70% load,,424/1292/4053,admin
+477,0x1DD,Flow:400rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 80% load,,485/1477/4632,admin
+478,0x1DE,Flow:400rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 90% load,,545/1662/5211,admin
+479,0x1DF,Flow:400rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 400rpm over 100% load,,606/1846/5789,admin
+480,0x1E0,Flow:500rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 10% load,,76/231/724,admin
+481,0x1E1,Flow:500rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 20% load,,152/462/1447,admin
+482,0x1E2,Flow:500rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 30% load,,227/692/2171,admin
+483,0x1E3,Flow:500rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 40% load,,303/923/2895,admin
+484,0x1E4,Flow:500rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 50% load,,379/1154/3618,admin
+485,0x1E5,Flow:500rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 60% load,,455/1385/4342,admin
+486,0x1E6,Flow:500rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 70% load,,530/1615/5066,admin
+487,0x1E7,Flow:500rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 80% load,,606/1846/5789,admin
+488,0x1E8,Flow:500rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 90% load,,682/2077/6513,admin
+489,0x1E9,Flow:500rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 500rpm over 100% load,,758/2308/7237,admin
+490,0x1EA,Flow:600rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 10% load,,91/277/868,admin
+491,0x1EB,Flow:600rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 20% load,,182/554/1737,admin
+492,0x1EC,Flow:600rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 30% load,,273/831/2605,admin
+493,0x1ED,Flow:600rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 40% load,,364/1108/3474,admin
+494,0x1EE,Flow:600rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 50% load,,455/1385/4342,admin
+495,0x1EF,Flow:600rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 60% load,,545/1662/5211,admin
+496,0x1F0,Flow:600rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 70% load,,636/1938/6079,admin
+497,0x1F1,Flow:600rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 80% load,,727/2215/6947,admin
+498,0x1F2,Flow:600rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 90% load,,818/2492/7816,admin
+499,0x1F3,Flow:600rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 600rpm over 100% load,,909/2769/8684,admin
+500,0x1F4,Flow:700rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 10% load,,106/323/1013,admin
+501,0x1F5,Flow:700rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 20% load,,212/646/2026,admin
+502,0x1F6,Flow:700rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 30% load,,318/969/3039,admin
+503,0x1F7,Flow:700rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 40% load,,424/1292/4053,admin
+504,0x1F8,Flow:700rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 50% load,,530/1615/5066,admin
+505,0x1F9,Flow:700rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 60% load,,636/1938/6079,admin
+506,0x1FA,Flow:700rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 70% load,,742/2262/7092,admin
+507,0x1FB,Flow:700rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 80% load,,848/2585/8105,admin
+508,0x1FC,Flow:700rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 90% load,,955/2908/9118,admin
+509,0x1FD,Flow:700rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 700rpm over 100% load,,1061/3231/10132,admin
+510,0x1FE,Flow:800rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 10% load,,121/369/1158,admin
+511,0x1FF,Flow:800rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 20% load,,242/738/2316,admin
+512,0x200,Flow:800rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 30% load,,364/1108/3474,admin
+513,0x201,Flow:800rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 40% load,,485/1477/4632,admin
+514,0x202,Flow:800rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 50% load,,606/1846/5789,admin
+515,0x203,Flow:800rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 60% load,,727/2215/6947,admin
+516,0x204,Flow:800rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 70% load,,848/2585/8105,admin
+517,0x205,Flow:800rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 80% load,,970/2954/9263,admin
+518,0x206,Flow:800rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 90% load,,1091/3323/10421,admin
+519,0x207,Flow:800rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 800rpm over 100% load,,1212/3692/11579,admin
+520,0x208,Flow:1000rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 10% load,,152/462/1447,admin
+521,0x209,Flow:1000rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 20% load,,303/923/2895,admin
+522,0x20A,Flow:1000rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 30% load,,455/1385/4342,admin
+523,0x20B,Flow:1000rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 40% load,,606/1846/5789,admin
+524,0x20C,Flow:1000rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 50% load,,758/2308/7237,admin
+525,0x20D,Flow:1000rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 60% load,,909/2769/8684,admin
+526,0x20E,Flow:1000rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 70% load,,1061/3231/10132,admin
+527,0x20F,Flow:1000rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 80% load,,1212/3692/11579,admin
+528,0x210,Flow:1000rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 90% load,,1364/4154/13026,admin
+529,0x211,Flow:1000rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 1000rpm over 100% load,,1515/4615/14474,admin
+530,0x212,Flow:1200rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 10% load,,182/554/1737,admin
+531,0x213,Flow:1200rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 20% load,,364/1108/3474,admin
+532,0x214,Flow:1200rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 30% load,,545/1662/5211,admin
+533,0x215,Flow:1200rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 40% load,,727/2215/6947,admin
+534,0x216,Flow:1200rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 50% load,,909/2769/8684,admin
+535,0x217,Flow:1200rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 60% load,,1091/3323/10421,admin
+536,0x218,Flow:1200rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 70% load,,1273/3877/12158,admin
+537,0x219,Flow:1200rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 80% load,,1455/4431/13895,admin
+538,0x21A,Flow:1200rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 90% load,,1636/4985/15632,admin
+539,0x21B,Flow:1200rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 1200rpm over 100% load,,1818/5538/17368,admin
+540,0x21C,Flow:1400rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 10% load,,212/646/2026,admin
+541,0x21D,Flow:1400rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 20% load,,424/1292/4053,admin
+542,0x21E,Flow:1400rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 30% load,,636/1938/6079,admin
+543,0x21F,Flow:1400rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 40% load,,848/2585/8105,admin
+544,0x220,Flow:1400rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 50% load,,1061/3231/10132,admin
+545,0x221,Flow:1400rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 60% load,,1273/3877/12158,admin
+546,0x222,Flow:1400rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 70% load,,1485/4523/14184,admin
+547,0x223,Flow:1400rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 80% load,,1697/5169/16211,admin
+548,0x224,Flow:1400rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 90% load,,1909/5815/18237,admin
+549,0x225,Flow:1400rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 1400rpm over 100% load,,2121/6462/20263,admin
+550,0x226,Flow:1600rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 10% load,,242/738/2316,admin
+551,0x227,Flow:1600rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 20% load,,485/1477/4632,admin
+552,0x228,Flow:1600rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 30% load,,727/2215/6947,admin
+553,0x229,Flow:1600rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 40% load,,970/2954/9263,admin
+554,0x22A,Flow:1600rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 50% load,,1212/3692/11579,admin
+555,0x22B,Flow:1600rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 60% load,,1455/4431/13895,admin
+556,0x22C,Flow:1600rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 70% load,,1697/5169/16211,admin
+557,0x22D,Flow:1600rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 80% load,,1939/5908/18526,admin
+558,0x22E,Flow:1600rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 90% load,,2182/6646/20842,admin
+559,0x22F,Flow:1600rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 1600rpm over 100% load,,2424/7385/23158,admin
+560,0x230,Flow:1800rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 10% load,,273/831/2605,admin
+561,0x231,Flow:1800rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 20% load,,545/1662/5211,admin
+562,0x232,Flow:1800rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 30% load,,818/2492/7816,admin
+563,0x233,Flow:1800rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 40% load,,1091/3323/10421,admin
+564,0x234,Flow:1800rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 50% load,,1364/4154/13026,admin
+565,0x235,Flow:1800rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 60% load,,1636/4985/15632,admin
+566,0x236,Flow:1800rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 70% load,,1909/5815/18237,admin
+567,0x237,Flow:1800rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 80% load,,2182/6646/20842,admin
+568,0x238,Flow:1800rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 90% load,,2455/7477/23447,admin
+569,0x239,Flow:1800rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 1800rpm over 100% load,,2727/8308/26053,admin
+570,0x23A,Flow:2000rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 10% load,,303/923/2895,admin
+571,0x23B,Flow:2000rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 20% load,,606/1846/5789,admin
+572,0x23C,Flow:2000rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 30% load,,909/2769/8684,admin
+573,0x23D,Flow:2000rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 40% load,,1212/3692/11579,admin
+574,0x23E,Flow:2000rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 50% load,,1515/4615/14474,admin
+575,0x23F,Flow:2000rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 60% load,,1818/5538/17368,admin
+576,0x240,Flow:2000rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 70% load,,2121/6462/20263,admin
+577,0x241,Flow:2000rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 80% load,,2424/7385/23158,admin
+578,0x242,Flow:2000rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 90% load,,2727/8308/26053,admin
+579,0x243,Flow:2000rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 2000rpm over 100% load,,3030/9231/28947,admin
+580,0x244,Flow:2200rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 10% load,,333/1015/3184,admin
+581,0x245,Flow:2200rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 20% load,,667/2031/6368,admin
+582,0x246,Flow:2200rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 30% load,,1000/3046/9553,admin
+583,0x247,Flow:2200rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 40% load,,1333/4062/12737,admin
+584,0x248,Flow:2200rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 50% load,,1667/5077/15921,admin
+585,0x249,Flow:2200rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 60% load,,2000/6092/19105,admin
+586,0x24A,Flow:2200rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 70% load,,2333/7108/22289,admin
+587,0x24B,Flow:2200rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 80% load,,2667/8123/25474,admin
+588,0x24C,Flow:2200rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 90% load,,3000/9138/28658,admin
+589,0x24D,Flow:2200rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 2200rpm over 100% load,,3333/10154/31842,admin
+590,0x24E,Flow:2400rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 10% load,,364/1108/3474,admin
+591,0x24F,Flow:2400rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 20% load,,727/2215/6947,admin
+592,0x250,Flow:2400rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 30% load,,1091/3323/10421,admin
+593,0x251,Flow:2400rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 40% load,,1455/4431/13895,admin
+594,0x252,Flow:2400rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 50% load,,1818/5538/17368,admin
+595,0x253,Flow:2400rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 60% load,,2182/6646/20842,admin
+596,0x254,Flow:2400rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 70% load,,2545/7754/24316,admin
+597,0x255,Flow:2400rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 80% load,,2909/8862/27789,admin
+598,0x256,Flow:2400rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 90% load,,3273/9969/31263,admin
+599,0x257,Flow:2400rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 2400rpm over 100% load,,3636/11077/34737,admin
+600,0x258,Flow:2600rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 10% load,,394/1200/3763,admin
+601,0x259,Flow:2600rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 20% load,,788/2400/7526,admin
+602,0x25A,Flow:2600rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 30% load,,1182/3600/11289,admin
+603,0x25B,Flow:2600rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 40% load,,1576/4800/15053,admin
+604,0x25C,Flow:2600rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 50% load,,1970/6000/18816,admin
+605,0x25D,Flow:2600rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 60% load,,2364/7200/22579,admin
+606,0x25E,Flow:2600rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 70% load,,2758/8400/26342,admin
+607,0x25F,Flow:2600rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 80% load,,3152/9600/30105,admin
+608,0x260,Flow:2600rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 90% load,,3545/10800/33868,admin
+609,0x261,Flow:2600rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 2600rpm over 100% load,,3939/12000/37632,admin
+610,0x262,Flow:2800rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 10% load,,424/1292/4053,admin
+611,0x263,Flow:2800rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 20% load,,848/2585/8105,admin
+612,0x264,Flow:2800rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 30% load,,1273/3877/12158,admin
+613,0x265,Flow:2800rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 40% load,,1697/5169/16211,admin
+614,0x266,Flow:2800rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 50% load,,2121/6462/20263,admin
+615,0x267,Flow:2800rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 60% load,,2545/7754/24316,admin
+616,0x268,Flow:2800rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 70% load,,2970/9046/28368,admin
+617,0x269,Flow:2800rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 80% load,,3394/10338/32421,admin
+618,0x26A,Flow:2800rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 90% load,,3818/11631/36474,admin
+619,0x26B,Flow:2800rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 2800rpm over 100% load,,4242/12923/40526,admin
+620,0x26C,Flow:3000rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 10% load,,455/1385/4342,admin
+621,0x26D,Flow:3000rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 20% load,,909/2769/8684,admin
+622,0x26E,Flow:3000rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 30% load,,1364/4154/13026,admin
+623,0x26F,Flow:3000rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 40% load,,1818/5538/17368,admin
+624,0x270,Flow:3000rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 50% load,,2273/6923/21711,admin
+625,0x271,Flow:3000rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 60% load,,2727/8308/26053,admin
+626,0x272,Flow:3000rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 70% load,,3182/9692/30395,admin
+627,0x273,Flow:3000rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 80% load,,3636/11077/34737,admin
+628,0x274,Flow:3000rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 90% load,,4091/12462/39079,admin
+629,0x275,Flow:3000rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 3000rpm over 100% load,,4545/13846/43421,admin
+630,0x276,Flow:3200rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 10% load,,485/1477/4632,admin
+631,0x277,Flow:3200rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 20% load,,970/2954/9263,admin
+632,0x278,Flow:3200rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 30% load,,1455/4431/13895,admin
+633,0x279,Flow:3200rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 40% load,,1939/5908/18526,admin
+634,0x27A,Flow:3200rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 50% load,,2424/7385/23158,admin
+635,0x27B,Flow:3200rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 60% load,,2909/8862/27789,admin
+636,0x27C,Flow:3200rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 70% load,,3394/10338/32421,admin
+637,0x27D,Flow:3200rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 80% load,,3879/11815/37053,admin
+638,0x27E,Flow:3200rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 90% load,,4364/13292/41684,admin
+639,0x27F,Flow:3200rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 3200rpm over 100% load,,4848/14769/46316,admin
+640,0x280,Flow:3400rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 10% load,,515/1569/4921,admin
+641,0x281,Flow:3400rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 20% load,,1030/3138/9842,admin
+642,0x282,Flow:3400rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 30% load,,1545/4708/14763,admin
+643,0x283,Flow:3400rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 40% load,,2061/6277/19684,admin
+644,0x284,Flow:3400rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 50% load,,2576/7846/24605,admin
+645,0x285,Flow:3400rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 60% load,,3091/9415/29526,admin
+646,0x286,Flow:3400rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 70% load,,3606/10985/34447,admin
+647,0x287,Flow:3400rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 80% load,,4121/12554/39368,admin
+648,0x288,Flow:3400rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 90% load,,4636/14123/44289,admin
+649,0x289,Flow:3400rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 3400rpm over 100% load,,5152/15692/49211,admin
+650,0x28A,Flow:3600rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 10% load,,545/1662/5211,admin
+651,0x28B,Flow:3600rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 20% load,,1091/3323/10421,admin
+652,0x28C,Flow:3600rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 30% load,,1636/4985/15632,admin
+653,0x28D,Flow:3600rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 40% load,,2182/6646/20842,admin
+654,0x28E,Flow:3600rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 50% load,,2727/8308/26053,admin
+655,0x28F,Flow:3600rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 60% load,,3273/9969/31263,admin
+656,0x290,Flow:3600rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 70% load,,3818/11631/36474,admin
+657,0x291,Flow:3600rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 80% load,,4364/13292/41684,admin
+658,0x292,Flow:3600rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 90% load,,4909/14954/46895,admin
+659,0x293,Flow:3600rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 3600rpm over 100% load,,5455/16615/52105,admin
+660,0x294,Flow:3800rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 10% load,,576/1754/5500,admin
+661,0x295,Flow:3800rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 20% load,,1152/3508/11000,admin
+662,0x296,Flow:3800rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 30% load,,1727/5262/16500,admin
+663,0x297,Flow:3800rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 40% load,,2303/7015/22000,admin
+664,0x298,Flow:3800rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 50% load,,2879/8769/27500,admin
+665,0x299,Flow:3800rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 60% load,,3455/10523/33000,admin
+666,0x29A,Flow:3800rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 70% load,,4030/12277/38500,admin
+667,0x29B,Flow:3800rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 80% load,,4606/14031/44000,admin
+668,0x29C,Flow:3800rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 90% load,,5182/15785/49500,admin
+669,0x29D,Flow:3800rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 3800rpm over 100% load,,5758/17538/55000,admin
+670,0x29E,Flow:4000rpm10pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 10% load,,606/1846/5789,admin
+671,0x29F,Flow:4000rpm20pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 20% load,,1212/3692/11579,admin
+672,0x2A0,Flow:4000rpm30pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 30% load,,1818/5538/17368,admin
+673,0x2A1,Flow:4000rpm40pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 40% load,,2424/7385/23158,admin
+674,0x2A2,Flow:4000rpm50pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 50% load,,3030/9231/28947,admin
+675,0x2A3,Flow:4000rpm60pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 60% load,,3636/11077/34737,admin
+676,0x2A4,Flow:4000rpm70pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 70% load,,4242/12923/40526,admin
+677,0x2A5,Flow:4000rpm80pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 80% load,,4848/14769/46316,admin
+678,0x2A6,Flow:4000rpm90pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 90% load,,5455/16615/52105,admin
+679,0x2A7,Flow:4000rpm100pct,RWs,uint,m³/h,1,0,65535,Flow at 4000rpm over 100% load,,6061/18462/57895,admin

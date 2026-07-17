@@ -12,27 +12,6 @@ function _pollInterval() {
   return Math.max(POLL_MS_FLOOR, ms);
 }
 
-//---------------------------------------------------------- Address parsing
-
-// Parse range expressions like "1-10, 12, 100-110" into a sorted dedup'd
-// list of valid Modbus addresses (1..247).
-function parseAddrRange(str) {
-  const addrs = new Set();
-  for(const part of str.split(",")) {
-    const t = part.trim();
-    const range = t.match(/^(\d+)-(\d+)$/);
-    if(range) {
-      const a = parseInt(range[1]);
-      const b = parseInt(range[2]);
-      for(let i = Math.min(a, b); i <= Math.max(a, b); i++) addrs.add(i);
-    }
-    else if(/^\d+$/.test(t)) addrs.add(parseInt(t));
-  }
-  return [...addrs]
-    .filter(a => a >= 1 && a <= 247)
-    .sort((a, b) => a - b);
-}
-
 //---------------------------------------------------------- Status & cache merge
 
 // Touches only what the payload sets explicitly. `ports` mutates only on
@@ -105,6 +84,26 @@ document.addEventListener("focusout", () => { _userEditing = false; });
 
 function isUserEditing() { return _userEditing; }
 
+//---------------------------------------------------------- Connection edge
+
+// Edge flag so the disconnect toast fires once per outage, not once per tick.
+let _deviceDown = false;
+
+// One reaction to a `S.connected` flip, shared by both background loops:
+// blank cache + toast once per outage, re-arm polling on recovery.
+// Manual connect/disconnect does its own messaging and skips this.
+function connectionEdge(prev) {
+  if(prev === S.connected) return;
+  if(!S.connected) {
+    applyCache(null);
+    if(!_deviceDown) { _deviceDown = true; alert.err("Device disconnected"); }
+  }
+  else {
+    if(_deviceDown) { _deviceDown = false; alert.ok("Device reconnected"); }
+    startPoll();
+  }
+}
+
 //---------------------------------------------------------- Poll loop
 
 let _polling = false;
@@ -120,18 +119,21 @@ async function poll() {
     const params = MonitData.readParams();
     const res = await API.read(params);
     if(!res) return;
+    const prev = S.connected;
     applyStatus(res);
+    connectionEdge(prev);
+    // History rows come from the DB, not the device, so ingest them before the
+    // connected gate: charts keep serving stored data through an outage.
+    if("tier" in res) MonitData.tier = res.tier;
+    if(S.monitor.size) Monitor.update(res.rows);
     if(!S.connected) {
-      stopPoll();
-      applyCache(null);
-      alert.err("Device disconnected");
+      // Keep the timer armed: the backend retries on its own, so polling picks
+      // the device back up as soon as it answers again.
       render();
       return;
     }
     if(!res.data) return;
     const changed = applyCache(res.data);
-    if("tier" in res) MonitData.tier = res.tier;
-    if(S.monitor.size) Monitor.update(res.rows);
     if(!changed || isUserEditing()) return;
     render();
   }
@@ -152,6 +154,7 @@ function stopPoll() {
   if(!_pollTimer) return;
   clearInterval(_pollTimer);
   _pollTimer = null;
+  _deviceDown = false;
 }
 
 // Rebind the tick interval when `S.serial.interval` changes. Cheap (one
@@ -185,12 +188,7 @@ function startPortScan() {
       const prevPorts = S.ports;
       const prev = { connected: S.connected, serial_open: S.serial_open };
       applyStatus(status);
-      // Backend dropped us between ticks - stop polling and blank the
-      // cache so the UI doesn't keep displaying stale numbers.
-      if(prev.connected && !S.connected) {
-        stopPoll();
-        applyCache(null);
-      }
+      connectionEdge(prev.connected);
       if(S.ports !== prevPorts
         || prev.connected !== S.connected
         || prev.serial_open !== S.serial_open) render();

@@ -3,6 +3,7 @@ if exist .\.dist\Modra.exe ^
 
 pyinstaller --onefile ^
   --noconsole ^
+  --noupx ^
   --workpath ./.build ^
   --distpath ./.dist ^
   --name Modra ^

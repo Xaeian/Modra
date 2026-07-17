@@ -12,7 +12,7 @@ import sys, asyncio
 from xaeian import Print, Color as c
 import config
 
-p = Print()
+log = Print()
 
 USAGE = "Usage: py mb_set.py {off|ai|<val>rpm|<val>%|<val>hz}"
 
@@ -27,17 +27,17 @@ def parse_arg(value:str) -> tuple:
 
 async def main():
   if len(sys.argv) < 2:
-    p.wrn(USAGE); return
+    log.wrn(USAGE); return
   mode, setpoint = parse_arg(sys.argv[1])
   if mode is None:
-    p.wrn(USAGE); return
+    log.wrn(USAGE); return
   state = config.load_state()
   mb = config.create_mb(state)
   await mb.write({"Ctrl": {"Mode": mode, "Setpoint": setpoint}})
   if mode in ("off", "ai"):
-    p.inf(f"Motor mode {c.SKY}{mode}{c.END}")
+    log.inf(f"Motor mode {c.SKY}{mode}{c.END}")
   else:
-    p.inf(f"Motor setpoint {c.SKY}{setpoint}{mode}{c.END}")
+    log.inf(f"Motor setpoint {c.SKY}{setpoint}{mode}{c.END}")
 
 if __name__ == "__main__":
   asyncio.run(main())

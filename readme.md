@@ -36,6 +36,7 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 - **`uint`**/**`int`**/**`float`**/**`rule`**: numeric input, accepts `0x..` / `0b..`
 - **`bool`**: HIGH / LOW buttons
 - **`enum`**: one button per label, exclusive
+- **`bits`**: one toggle per labeled bit, multi-select
 - **`hex`**: input formatted as `0xNNNN`
 - **`ver`**: read-only `X.YY.ZZ`
 
@@ -55,9 +56,10 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 
 **Row icons:**
 
+- 🎯 stage the current value for **Send** _(even if unchanged)_
 - 📊 add to chart
 - 🚫 ignore _(stop polling, hide row)_
-- ⚙ open slider tweaker _(editable numerics only)_
+- ⚙ open slider tweaker _(editable scalar numerics only)_
 
 ## Toolbar
 
@@ -71,13 +73,13 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 - 🚫 toggle show-disabled mode
 - ☰ toggle settings panel
 
-Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads **R**/**RW**/**RWs** at the configured interval. Validation runs on both sides: frontend marks out-of-range, backend rejects writes outside `min/max`.
+Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads **R**/**RW**/**RWs** at the configured interval, and keeps retrying after a burst of read errors, so a transient bus glitch recovers on its own. Validation is advisory: the frontend marks out-of-range values and warns on **Send**, but the device is written whatever you typed.
 
 ## Charts
 
 ![PLT](plots-menu.png)
 
-Click **📊** on any row. Registers sharing unit + scale share a panel; bool and enum get their own panels.
+Click **📊** on any row. Registers sharing unit + scale share a panel; `bool`, `enum` and `bits` get their own panels.
 
 - **range buttons**: `2m`/`10m`/`1h`/`6h`/`24h`/`7d`/`30d`/`1y`/`∞` _(all history)_
 - **`S`**/**`M`**/**`L`**: cycle panel size
@@ -136,6 +138,7 @@ Each register is simulated from its own descriptor row alone _(type, rws, min/ma
 - **numeric R**: mean-reverting random walk, edge-biased to stay in range
 - **bool R**: rare random toggle
 - **enum R**: rare advance to neighbour state
+- **bits R**: rare random flip of individual labeled bits
 - **hex / ver**: stable _(firmware-controlled)_
 - **RWs / W**: static, only user writes change them
 

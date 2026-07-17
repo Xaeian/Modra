@@ -28,6 +28,12 @@ TRICKLE_MAX_REGS = 48
 TRICKLE_ERR_LIMIT = 3
 TRICKLE_BACKOFF_TICKS = 5
 
+# A burst of read errors marks the device unreachable but never tears the read
+# loop down: it keeps retrying at RETRY_INTERVAL_S, so a transient bus glitch
+# (EMI, a nudged connector, a slave that missed a frame) recovers on its own.
+READ_ERR_LIMIT = 5
+RETRY_INTERVAL_S = 2.0
+
 class ModbusLink:
 
   def __init__(self):
@@ -64,7 +70,7 @@ class ModbusLink:
     self._thread.start()
     self.run_async(self.store.init())
     # Prune once at boot so an oversized DB is trimmed to the retention window.
-    self.run_async(self.store.prune(self._history_days()))
+    self.run_async(self.store.prune(self.history_days()))
     if self.state:
       log.inf(f"State loaded: {self.state}")
     else:
@@ -73,7 +79,7 @@ class ModbusLink:
 
   #---------------------------------------------------------------------------------- Internals
 
-  def _history_days(self) -> int:
+  def history_days(self) -> int:
     """Retention window in days from state; 14 on missing/garbage value."""
     try:
       return int(self.state.get("history", 14) or 14)
@@ -157,7 +163,9 @@ class ModbusLink:
         log.wrn(f"Initial sync failed: {e}")
         try: await self.mb.reconnect()
         except Exception: pass
-    while self.connected:
+    # Only cancellation (`_stop_reads`) ends this loop. `connected` reports
+    # whether the device answers; it never decides whether to keep trying.
+    while True:
       t0 = Time()
       cache = None
       did_sync = False
@@ -172,17 +180,19 @@ class ModbusLink:
               log.inf(f"Sync done {(Time()-t_read).total_seconds()*1000:.0f}ms")
             else:
               await self.mb.read()
+            if not self.connected:
+              self.connected = True
+              log.ok("Device reachable again")
             errors = 0
           except Exception as e:
             errors += 1
             log.wrn(f"Read error ({errors}): {e}")
             try: await self.mb.reconnect()
             except Exception: pass
-            if errors >= 5:
-              log.err("Too many read errors, disconnecting")
+            if errors >= READ_ERR_LIMIT and self.connected:
+              log.err("Too many read errors, device unreachable")
               self._clear_cache()
               self.connected = False
-              return
         if errors == 0:
           # A full sync already refreshed everything; trickle only on plain polls.
           if not did_sync:
@@ -195,9 +205,11 @@ class ModbusLink:
       # aggregates the minute bucket that just completed - both stay cheap.
       if (Time() - self._last_prune).total_seconds() >= 60:
         self._last_prune = Time()
-        await self.store.prune(self._history_days())
+        await self.store.prune(self.history_days())
         await self.store.roll(self.store_key())
       interval_s = int(self.state.get("interval", 500)) / 1000
+      # While unreachable, slow the retry cadence instead of hammering the port.
+      if not self.connected: interval_s = max(interval_s, RETRY_INTERVAL_S)
       remaining = interval_s - (Time() - t0).total_seconds()
       if remaining > 0:
         try:
@@ -342,43 +354,29 @@ class ModbusLink:
     self._start_reads()
     log.ok(f"Device connected addr:{addr}")
 
-  def reload_mb(self):
-    """Rebuild ModbusMaster after view.ignore changed. Preserves connection."""
-    was_connected = self.connected
-    was_serial = self.serial_open
-    saved_port = self.mb.port if self.mb else None
-    saved_addr = self.mb.addr if self.mb else None
-    log.run("Reload mb: ignore changed")
-    if was_connected:
-      self._stop_reads()
-      self.connected = False
-    if was_serial and self.mb:
-      self.run_async(self.mb.disconnect())
-      self.serial_open = False
-    self._clear_cache()
-    self.regs = config.load_regs(self.state, self.view)
-    self.store.reload(self.regs)
-    if not saved_port:
-      self.mb = None
-      return
-    self._init_mb(saved_port)
-    if not was_serial: return
-    if not self.run_async(self.mb.connect(), timeout=5):
-      log.err(f"Reload: failed to reopen {saved_port}")
-      return
-    self.serial_open = True
-    if not was_connected or saved_addr is None: return
-    self.mb.addr = saved_addr
-    if not self.run_async(self._probe_addr(saved_addr), timeout=2):
-      log.err(f"Reload: no response from addr:{saved_addr}")
-      return
-    self.connected = True
-    self._start_reads()
-    log.ok(f"Reload done addr:{saved_addr}")
+  def apply_ignore(self):
+    """Rewire the read-time poll filter after view.ignore changed. `read()`
+    resolves `ignore_set` on every call, and the register map and DB schema
+    cover every register regardless, so nothing is rebuilt and the port stays
+    open. Applied on the read loop's thread, which owns the trickle plan and
+    the raw cache."""
+    if not self.mb: return
+    new_ignore = set(self.view.get("ignore", []))
+    def _apply():
+      if not self.mb: return
+      self.mb.ignore_set = new_ignore
+      # An ignored register stops being polled, so drop its cached raw: the grid
+      # reads blank like one ignored at boot, and history records a gap instead
+      # of a frozen repeat of the last value.
+      for rid in self.mb.resolved_ignored_ids():
+        self.mb.cache_raw[rid] = None
+      self._trickle_built = False
+      log.inf(f"Poll filter updated: {len(new_ignore)} ignored")
+    self._loop.call_soon_threadsafe(_apply)
 
   def update_view(self, *, monitor=None, ignore=None) -> dict:
-    """Patch + persist the view. Only an ignore-set change rebuilds the
-    ModbusMaster; monitor edits don't affect the poll filter."""
+    """Patch + persist the view. An ignore-set change rewires the poll filter
+    in place; monitor edits don't affect it."""
     changed_filter = False
     if monitor is not None:
       self.view["monitor"] = monitor
@@ -386,7 +384,7 @@ class ModbusLink:
       self.view["ignore"] = list(ignore)
       changed_filter = True
     config.save_view(self.view)
-    if changed_filter: self.reload_mb()
+    if changed_filter: self.apply_ignore()
     return self.view
 
   def set_serial(self, params:dict):

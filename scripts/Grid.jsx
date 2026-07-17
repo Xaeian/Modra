@@ -31,11 +31,12 @@ const Grid = {
     // (no device, rule slot inactive).
     const ro = Reg.ro(reg) || ghosted;
     const oor = Reg.outOfRange(reg, val) || Reg.willWrap(reg, val);
-    const showUnit = !Reg.isEnum(reg) && !Reg.isBool(reg);
+    // enum/bool/bits repurpose `unit` as labels - no unit column.
+    const showUnit = Reg.isScalar(reg) || Reg.isVer(reg);
     // Slider only fits live editable scalar numerics. Pairs (uint32 has 4G
     // steps, float has arbitrary precision) don't map to a range input, and
     // ignored rows are showing historical context.
-    const showMiscBtn = Reg.isNumeric(reg) && !ro && !isIgnored && !reg.rule?.pair;
+    const showMiscBtn = Reg.isScalar(reg) && !ro && !isIgnored && !reg.rule?.pair;
     // Writable + live: explicit send so the current value can be (re)written.
     const showSendBtn = !ro && !isIgnored;
     return (
@@ -49,13 +50,13 @@ const Grid = {
             <button class="rb-icon-btn" onClick={() => sendOne(reg)}
               title="Stage for Send (even if unchanged)">🎯</button>}
           <button class={cls("rb-icon-btn", isMonitored && "active")}
-            onClick={() => monitor(reg)} title="Monitor">📊</button>
+            onClick={() => toggleMonitor(reg)} title="Monitor">📊</button>
           <button class={cls("rb-icon-btn", isIgnored && "active")}
             onClick={() => toggleIgnore(reg)}
             title={isIgnored ? "Unhide" : "Ignore (skip polling, hide)"}>🚫</button>
           {showMiscBtn &&
             <button class={cls("rb-icon-btn", isUtilOpen && "active")}
-              onClick={() => utilOpen(reg)} title="Slider">⚙</button>}
+              onClick={() => toggleUtil(reg)} title="Slider">⚙</button>}
           <span class={Reg.rwsClass(reg)}>{Reg.rws(reg)}</span>
         </div>
         {isUtilOpen && <Misc.Panel reg={reg} value={val} />}

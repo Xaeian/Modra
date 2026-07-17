@@ -117,13 +117,14 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 120,0x78,Thresh:FlybackMin,RWs,uint,V,100,0,50,Flyback undervoltage threshold,,16.0,service
 121,0x79,Thresh:FlybackMax,RWs,uint,V,100,0,50,Flyback overvoltage threshold,,18.0,service
 122,0x7A,Thresh:Ripple,RWs,uint,V,100,0,50,DC-bus ripple RMS threshold,,2.0,service
-123,0x7B,AnalogInput:Mode,RWs,enum,0:speed 1:sens_u16 2:sens_i16 3:flow,-,,,Analog input function (sens_u16/i16 raw type; flow overrides Flow LUT),,speed,user
-124,0x7C,AnalogInput:SensMin,RWs,uint,-,1,,,Raw value at AnalogInput:Min voltage (type per Mode; no scale),,0,user
-125,0x7D,AnalogInput:SensMax,RWs,uint,-,1,,,Raw value at AnalogInput:Max voltage (type per Mode; no scale),,100,user
-126,0x7E,Fault:RetryDelay,RWs,uint,s,1,0,3600,Extra delay after braking before auto-retry (min 1s enforced),,60,service
-127,0x7F,Fault:RetryCount,RWs,uint,-,1,0,10,Auto-restart attempts before permanent fault [0:disabled],,5,service
-128,0x80,Fault:RetryTimeout,RWs,uint,s,1,1,3600,Fault-free time to reset retry counter,,300,service
-129,0x81,Ctrl:BootDelay,RWs,uint,ms,1,0,60000,Stabilization delay after DC bus reaches Thresh:DcBusMin,,5000,service
+123,0x7B,Thresh:StartFreq,RWs,uint,Hz,100,0,200,Correction mechanisms stay off below this frequency,,24.0/20.0/16.0,service
+124,0x7C,AnalogInput:Mode,RWs,enum,0:speed 1:sens_u16 2:sens_i16 3:flow,-,,,Analog input function (sens_u16/i16 raw type; flow overrides Flow LUT),,speed,user
+125,0x7D,AnalogInput:SensMin,RWs,uint,-,1,,,Raw value at AnalogInput:Min voltage (type per Mode; no scale),,0,user
+126,0x7E,AnalogInput:SensMax,RWs,uint,-,1,,,Raw value at AnalogInput:Max voltage (type per Mode; no scale),,100,user
+127,0x7F,Fault:RetryDelay,RWs,uint,s,1,0,3600,Extra delay after braking before auto-retry (min 1s enforced),,60,service
+128,0x80,Fault:RetryCount,RWs,uint,-,1,0,10,Auto-restart attempts before permanent fault [0:disabled],,5,service
+129,0x81,Fault:RetryTimeout,RWs,uint,s,1,1,3600,Fault-free time to reset retry counter,,300,service
+130,0x82,Ctrl:BootDelay,RWs,uint,ms,1,0,60000,Stabilization delay after DC bus reaches Thresh:DcBusMin,,5000,service
 131,0x83,Motor:Invert,RWs,bool,-,-,,,Swap phase sequence UVW to UWV; reverses rotation direction,,false,service
 132,0x84,Motor:Type,RWs,enum,1:1500W 2:4000W 3:7500W,-,,,Motor and PCB power variant,,1500W/4000W/7500W,admin
 133,0x85,Motor:Poles,RWs,uint,-,1,1,20,Pole pair count,,3,admin
@@ -139,7 +140,7 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 143,0x8F,Ramp:FallDeltaStop,RWs,uint,Hz,100,0.01,100,Deceleration slew rate at Adapt:StopFreq,,0.15,admin
 144,0x90,Ramp:FallDeltaBend,RWs,int,-,1,-100,100,Bend for deceleration slew rate curve,,0,admin
 145,0x91,Brake:TimeStart,RWs,uint,s,1,0,60,Coasting time before restart at 0Hz,,2,admin
-146,0x92,Brake:TimeStop,RWs,uint,s,1,0,60,Coasting time before restart at Adapt:StopFreq,,60,admin
+146,0x92,Brake:TimeStop,RWs,uint,s,1,0,60,Coasting time before restart at maximum frequency,,60,admin
 147,0x93,Brake:TimeBend,RWs,int,-,1,-100,100,Bend for coasting time curve,,0,admin
 148,0x94,Brake:StartDelay,RWs,uint,ms,1,0,10000,Static-vector rotor alignment before acceleration begins; PWM holds a frozen phase so the rotor settles at a known angle,,700,admin
 149,0x95,MeasCfg:Window,RWs,uint,-,1,32,256,Current and bus window length in samples; RMS/peak/ripple close once per window,,256,admin
@@ -169,18 +170,17 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 173,0xAD,Trim:PowerScale,RWs,int,%,100,50,200,Estimated power gain correction,,100.0,admin
 174,0xAE,Adapt:StopFreq,RWs,uint,Hz,100,5,400,Reference frequency (x_max) for Ramp/Brake/Adapt curves,,300.0,admin
 175,0xAF,Adapt:Enable,RWs,bits,0:derate 1:fold 2:excite 3:damp,-,,,Adaptation enable bits; every mechanism is off by default,,0,admin
-176,0xB0,Adapt:StartFreq,RWs,uint,Hz,100,0,200,Adaptation mechanisms disabled below this frequency,,24.0/20.0/16.0,service
-177,0xB1,Adapt:CurrLimitStart,RWs,uint,A,1000,0.5,30,Current limit at 0Hz,,4/7.0/11.0,admin
-178,0xB2,Adapt:CurrLimitStop,RWs,uint,A,1000,0.5,30,Current limit at Adapt:StopFreq; must stay below the current at which the hardware peak comparator fires,,8/10.5/17.0,admin
-179,0xB3,Adapt:CurrLimitBend,RWs,int,-,1,-1000,1000,Bend for current limit curve [>0: limit rises to Stop quickly at low freq],,700,admin
-180,0xB4,Adapt:CurrHyst,RWs,uint,A,1000,0.05,5,Current gate release hysteresis below Adapt:CurrLimit,,0.5,admin
-181,0xB5,Adapt:VdcLow,RWs,uint,V,10,300,700,DC-bus voltage below which acceleration ramp is stretched (see Adapt:VdcHigh),,550.0,admin
-182,0xB6,Adapt:VdcHigh,RWs,uint,V,10,300,800,DC-bus voltage above which deceleration ramp is stretched (see Adapt:VdcLow),,640.0,admin
-183,0xB7,Adapt:VdcHyst,RWs,uint,V,10,1,50,Bus gate release hysteresis (both directions),,5.0,admin
-184,0xB8,Adapt:ExciteStart,RWs,uint,A,1000,0,10,Reactive current reference at 0Hz for the excitation trim,,0.0,admin
-185,0xB9,Adapt:ExciteStop,RWs,uint,A,1000,0,10,Reactive current reference at Adapt:StopFreq,,0.0,admin
-186,0xBA,Adapt:ExciteBend,RWs,int,-,1,-1000,1000,Bend for the reactive current reference curve,,0,admin
-187,0xBB,Adapt:DampGain,RWs,uint,%,100,0,500,Hunting damper gain [0:off],,0.0,admin
+176,0xB0,Adapt:CurrLimitStart,RWs,uint,A,1000,0.5,30,Current limit at 0Hz,,4/7.0/11.0,admin
+177,0xB1,Adapt:CurrLimitStop,RWs,uint,A,1000,0.5,30,Current limit at Adapt:StopFreq; must stay below the current at which the hardware peak comparator fires,,8/10.5/17.0,admin
+178,0xB2,Adapt:CurrLimitBend,RWs,int,-,1,-1000,1000,Bend for current limit curve [>0: limit rises to Stop quickly at low freq],,700,admin
+179,0xB3,Adapt:CurrHyst,RWs,uint,A,1000,0.05,5,Current gate release hysteresis below Adapt:CurrLimit,,0.5,admin
+180,0xB4,Adapt:VdcLow,RWs,uint,V,10,300,700,DC-bus voltage below which acceleration ramp is stretched (see Adapt:VdcHigh),,550.0,admin
+181,0xB5,Adapt:VdcHigh,RWs,uint,V,10,300,800,DC-bus voltage above which deceleration ramp is stretched (see Adapt:VdcLow),,640.0,admin
+182,0xB6,Adapt:VdcHyst,RWs,uint,V,10,1,50,Bus gate release hysteresis (both directions),,5.0,admin
+183,0xB7,Adapt:ExciteStart,RWs,uint,A,1000,0,10,Reactive current reference at 0Hz for the excitation trim,,0.0,admin
+184,0xB8,Adapt:ExciteStop,RWs,uint,A,1000,0,10,Reactive current reference at Adapt:StopFreq,,0.0,admin
+185,0xB9,Adapt:ExciteBend,RWs,int,-,1,-1000,1000,Bend for the reactive current reference curve,,0,admin
+186,0xBA,Adapt:DampGain,RWs,uint,%,100,0,500,Hunting damper gain [0:off],,0.0,admin
 196,0xC4,Stall:CurrStart,RWs,uint,A,1000,0,30,Stall current threshold at 0Hz,,4.5/9.5/10.0,service
 197,0xC5,Stall:CurrStop,RWs,uint,A,1000,0,30,Stall current threshold at Stall:StopFreq,,4.0/8.5/9.0,service
 198,0xC6,Stall:StopFreq,RWs,uint,Hz,100,0,200,Locked-rotor detection disabled above this frequency (also bend x_max) [0:off],,15.0,service

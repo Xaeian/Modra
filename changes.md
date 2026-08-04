@@ -2,7 +2,7 @@
 
 ## `1.3.0` Widgets
 
-- Device widgets _(🧩, key `w`)_: per-device panels enabled in `app.ini`
+- Device widgets 🧩: per-device panels enabled in `app.ini`
 - Register map picked at startup: swap or update it without touching files
 - 
 ## `1.2.4` Bits

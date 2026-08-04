@@ -138,6 +138,24 @@ function toggleUtil(reg) {
 
 function toggleChart() { S.showChart = !S.showChart; render(); }
 
+// Widget visibility is a per-machine preference, so it rides in localStorage
+// like the page zoom - the backend knows nothing about widgets.
+const WIDGETS_KEY = "modra.widgets";
+
+function toggleWidgets() {
+  if(!Widgets.any()) return;
+  S.showWidgets = !S.showWidgets;
+  try { localStorage.setItem(WIDGETS_KEY, S.showWidgets ? "1" : "0"); }
+  catch(e) { /* storage disabled - the toggle still works for this session */ }
+  render();
+}
+
+// Boot only, once the catalog is loaded so `Widgets.any()` is meaningful.
+function restoreWidgets() {
+  try { S.showWidgets = Widgets.any() && localStorage.getItem(WIDGETS_KEY) === "1"; }
+  catch(e) { S.showWidgets = false; }
+}
+
 function search(q) { S.query = q; render(); }
 
 function toggleSerial() { S.serialOpen = !S.serialOpen; render(); }
@@ -247,6 +265,23 @@ async function sync() {
   alert.inf("Reading all registers from device");
 }
 
+//---------------------------------------------------------- Widget writes
+
+// Direct device write, bypassing the `S.dirty` staging the grid uses: a widget
+// drives a control loop, not a pending-edit list, so there is nothing for
+// Send/Reset to flush. The returned cache is a read-back, so adopting it leaves
+// `S.values` holding what the device actually stored. Caller renders.
+async function writeNow(patch) {
+  if(!S.connected || !patch || !Object.keys(patch).length) return false;
+  const cache = await API.write(patch);
+  if(!cache || cache.error) {
+    alert.err(cache?.error || "Write failed");
+    return false;
+  }
+  applyCache(cache);
+  return true;
+}
+
 //---------------------------------------------------------- Address scan
 
 async function scanAddrs() {
@@ -299,8 +334,8 @@ async function deleteDatabase() {
 
 //---------------------------------------------------------- Import / Export
 
-// File picker for `importConfig`. Returns the picked File (or null on cancel)
-// without leaking the temporary <input>.
+// Returns the picked File (or null on cancel) without leaking the temporary
+// <input>.
 function _pickFile(accept) {
   return new Promise(resolve => {
     const input = document.createElement("input");
@@ -310,6 +345,28 @@ function _pickFile(accept) {
     input.oncancel = () => resolve(null);
     input.click();
   });
+}
+
+// The whole UI is generated from the register map, so a new one means starting
+// over: reload rather than patch the catalog in place. The one-shot flag keeps
+// the startup prompt from reappearing on the very reload it caused.
+const MAP_PICKED = "modra.mapPicked";
+
+async function pickMap() {
+  const file = await _pickFile(".csv");
+  if(!file) return;
+  const res = await API.set_map(await file.text());
+  if(!res || res.error) { alert.err(res?.error || "Could not read that file"); return; }
+  try { sessionStorage.setItem(MAP_PICKED, "1"); } catch(e) { /* storage disabled */ }
+  location.reload();
+}
+
+// Kept in view.json rather than localStorage: it belongs to this install's
+// device setup, not to the browser. The settings panel keeps a way back in.
+function toggleAskMap() {
+  S.askMap = !S.askMap;
+  API.view_set({ ask_map: S.askMap });
+  render();
 }
 
 // Bulk-load RW/RWs values from .ini or .csv into `S.dirty`. Uses

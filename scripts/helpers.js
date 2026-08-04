@@ -384,7 +384,7 @@ const Reg = (() => {
     unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
-    isNumeric, isEnum, isBool, isVer, isBits, isScalar, isNA,
+    isEnum, isBool, isVer, isBits, isScalar, isNA,
     outOfRange, willWrap, wrapPreview,
     tooltip, filter, visibility, blocks, columns,
   };

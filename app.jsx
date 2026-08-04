@@ -125,11 +125,12 @@ function render() {
 
 //---------------------------------------------------------- Boot
 
-(async () => {
+// `skipPrompt` is the Continue button: the map question was just answered.
+async function boot(skipPrompt = false) {
   // Independent reads run in parallel. Empty shell on failure so the toolbar
   // and alerts stay usable.
-  const [scan, regs, serial] = await Promise.all([
-    API.scan(), API.info(), API.serial(),
+  const [scan, regs, serial, view] = await Promise.all([
+    API.scan(), API.info(), API.serial(), API.view_get(),
   ]);
   if(!scan || !regs) {
     document.body.classList.add("app");
@@ -139,6 +140,23 @@ function render() {
     return;
   }
 
+  S.askMap = view?.ask_map !== false;
+  // Asked on every start so a map can be updated without touching files, and
+  // unconditionally when there is none. A pick reloads the page, so it carries
+  // its own skip across that reload.
+  let skip = skipPrompt;
+  try {
+    if(sessionStorage.getItem(MAP_PICKED)) { sessionStorage.removeItem(MAP_PICKED); skip = true; }
+  } catch(e) { /* storage disabled */ }
+  if(!regs.length || (S.askMap && !skip)) {
+    S.regs = regs;
+    S.mapPrompt = true;
+    document.body.classList.add("app");
+    render();
+    return;
+  }
+  S.mapPrompt = false;
+
   S.regs = regs;
   S.serial = serial;
   regs.forEach(r => { S.values[r.name] = null; });
@@ -147,7 +165,6 @@ function render() {
   // drop silently; ignored names are accepted verbatim - we don't validate
   // against the current catalog so a temporarily-removed register can come
   // back ignored.
-  const view = await API.view_get();
   if(view && typeof view === "object") {
     if(Array.isArray(view.ignore)) {
       for(const n of view.ignore) S.ignore.add(String(n));
@@ -172,6 +189,10 @@ function render() {
     if(S.monitor.size) S.showChart = true;
   }
 
+  // Needs the catalog: a widget only counts as available once its `match()`
+  // has seen the register map.
+  restoreWidgets();
+
   applyStatus(scan);
   // Seed toolbar inputs from whatever the backend reports - values it
   // persisted in serial.ini, or the current live connection.
@@ -191,4 +212,6 @@ function render() {
     Monitor.mount();
     Monitor.refetch();
   }
-})();
+}
+
+boot();

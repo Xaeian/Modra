@@ -374,18 +374,32 @@ class ModbusLink:
       log.inf(f"Poll filter updated: {len(new_ignore)} ignored")
     self._loop.call_soon_threadsafe(_apply)
 
-  def update_view(self, *, monitor=None, ignore=None) -> dict:
+  def update_view(self, *, monitor=None, ignore=None, ask_map=None) -> dict:
     """Patch + persist the view. An ignore-set change rewires the poll filter
     in place; monitor edits don't affect it."""
     changed_filter = False
     if monitor is not None:
       self.view["monitor"] = monitor
+    if ask_map is not None:
+      self.view["ask_map"] = ask_map
     if ignore is not None and set(ignore) != set(self.view.get("ignore", [])):
       self.view["ignore"] = list(ignore)
       changed_filter = True
     config.save_view(self.view)
     if changed_filter: self.apply_ignore()
     return self.view
+
+  def set_map(self, text:str) -> bool:
+    """Adopt a register map. Everything the app shows is derived from it, so the
+    connection and the simulator are dropped and the store schema swapped."""
+    regs = config.save_regs(text)
+    if not regs: return False
+    self.disconnect()
+    self._sim_client = None
+    self.regs = regs
+    self.store.reload(regs)
+    log.ok(f"Register map loaded: {len(regs)} registers")
+    return True
 
   def set_serial(self, params:dict):
     changed = False
@@ -429,7 +443,8 @@ class ModbusLink:
 
   def store_key(self):
     """DB table key: 'sim' isolates simulator history in addr_sim* tables; a
-    real device keys by its Modbus address."""
+    real device keys by its Modbus address. Columns are named after registers,
+    so an updated map slots into the existing table."""
     if self._sim: return "sim"
     return self.mb.addr if (self.mb and self.connected) else self.state.get("addr")
 
@@ -496,7 +511,12 @@ class ModbusLink:
             self.mb.cache_raw[rid] = 0
         for k, v in data.items():
           write_log.info(f"addr:{self.mb.addr} {k} = {v}")
-        self._sync_next = True
+        # Read back exactly what was written, so the caller gets the device's own
+        # values and not an echo of its request. Cheap enough to do on every
+        # write; a failure here says nothing about the write, so it must not
+        # fail it. Use `sync()` for a full re-read of the whole map.
+        try: await self.mb.read_registers(list(self.mb.encode(data, ["W", "RW", "RWs"])))
+        except Exception as e: log.wrn(f"Readback failed: {e}")
         return self.mb.cache
       except Exception as e:
         log.err(f"Write error: {e}")

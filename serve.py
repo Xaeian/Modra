@@ -23,6 +23,7 @@ POST_ROUTES = {
   "/disconnect": api.disconnect,
   "/set_addr": api.set_addr,
   "/set_serial": api.set_serial,
+  "/set_map": api.set_map,
   "/write": api.write,
   "/scan_addrs": api.scan_addrs,
   "/view_set": api.view_set,

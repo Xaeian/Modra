@@ -23,6 +23,22 @@ class Api:
   def info(self) -> list[dict]:
     return link.regs
 
+  def set_map(self, params:dict=None) -> dict:
+    """Take a register map from the frontend. With no map next to the app there
+    is nothing to generate a UI from, so the frontend asks for one and sends it
+    here on first run."""
+    if not isinstance(params, dict):
+      return {"error": "Expected dict"}
+    text = params.get("text")
+    if not isinstance(text, str) or not text.strip():
+      return {"error": "Empty file"}
+    try:
+      if not link.set_map(text):
+        return {"error": "Not a usable register map"}
+      return {"ok": True, "count": len(link.regs)}
+    except Exception as e:
+      return {"error": str(e)}
+
   def serial(self) -> dict:
     return {
       "port": link.state.get("port", ""),
@@ -175,12 +191,15 @@ class Api:
       return {"error": "Expected dict"}
     monitor = data.get("monitor")
     ignore = data.get("ignore")
+    ask_map = data.get("ask_map")
     if monitor is not None and not isinstance(monitor, list):
       return {"error": "monitor must be list"}
     if ignore is not None and not isinstance(ignore, list):
       return {"error": "ignore must be list"}
+    if ask_map is not None and not isinstance(ask_map, bool):
+      return {"error": "ask_map must be bool"}
     try:
-      view = link.update_view(monitor=monitor, ignore=ignore)
+      view = link.update_view(monitor=monitor, ignore=ignore, ask_map=ask_map)
       return {"ok": True, "view": view}
     except Exception as e:
       return {"error": str(e)}

@@ -174,9 +174,7 @@ ModbusMaster(
 | `await sync(grouped=None)`              | Read all registers, return decoded         |
 | `await read(keys, rws_filter, grouped)` | Read specific registers                    |
 | `await write(data)`                     | Write registers _(W, RW, RWs)_             |
-| `await write_sync(data)`                | Write RW/RWs + sync + verify _(W skipped)_ |
 | `get_cache(grouped=None)`               | Get decoded cache                          |
-| `set_cache(data, grouped=None)`         | Set cache from data                        |
 | `decode(raw_data, rws_filter, grouped)` | Decode raw to dict                         |
 | `encode(data, rws_filter, grouped)`     | Encode dict to raw                         |
 | `annotate(data, fields)`                | Add metadata tuples                        |
@@ -207,15 +205,6 @@ mb.annotate(fields=["unit", "min", "max"])  # (val, unit, min, max)
 mb.annotate(data, ["unit", "scale"])   # custom data
 ```
 
-### Write with Verification
-
-```python
-cache, diff = await mb.write_sync({"Ctrl": {"Mode": "rpm", "Speed": 1500}})
-# Writes RW/RWs only, syncs back, returns (cache, diff)
-# diff is None if all match, otherwise dict/list of mismatched keys
-# W-only registers (e.g. Fault:Reset) are skipped - use write() for those
-```
-
 ## Error Handling
 
 `min` / `max` are advisory - out-of-range numeric writes go through.
@@ -232,7 +221,7 @@ await mb.write({"Ctrl": {"Mode": "turbo"}})
 # ValueError: Ctrl:Mode: unknown enum 'turbo' (valid: off, rpm, hz, ...)
 
 # Invalid version format
-mb.set_cache({"Dev": {"Version": "99.99.99"}})
+await mb.write({"Dev": {"Version": "99.99.99"}})
 # ValueError: Dev:Version: version '99.99.99' over uint16 max 6.55.35
 
 # No sync before write with rule registers
@@ -254,11 +243,9 @@ mb.cache_raw[10] = 1234
 
 # Decoded access
 data = mb.cache  # get
-mb.cache = data  # set (auto-detect format)
 
 # Explicit format
 data = mb.get_cache(grouped=False)
-mb.set_cache(data, grouped=True)
 ```
 
 ## Example regmap.csv

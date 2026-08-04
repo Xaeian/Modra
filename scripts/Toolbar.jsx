@@ -56,6 +56,11 @@ const Toolbar = () => {
       <button class={cls("rb-tbtn", S.showChart && "active")}
         onClick={toggleChart}
         title="Toggle charts (p)">📈</button>
+      {/* Only offered when a widget actually matches this device's register map. */}
+      {Widgets.any() &&
+        <button class={cls("rb-tbtn", S.showWidgets && "active")}
+          onClick={toggleWidgets}
+          title="Toggle device widgets (w)">🧩</button>}
       <button class={cls("rb-tbtn", S.showDisabled && "active")}
         onClick={toggleShowDisabled}
         title="Show ignored (i)">🚫</button>

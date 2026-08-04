@@ -5,7 +5,7 @@ to current on-disk state.
 """
 
 from modbus import ModbusMaster
-from xaeian import INI, JSON, Color
+from xaeian import INI, JSON, FILE, PATH, Color
 
 STATE_FILE = "serial.ini"
 REGS_FILE = "regs.csv"
@@ -33,7 +33,12 @@ STATE_DEFAULT = {
   "autosend": False,
 }
 
-VIEW_DEFAULT = {"version": 1, "monitor": [], "ignore": []}
+VIEW_DEFAULT = {"ask_map": True, "monitor": [], "ignore": []}
+
+def regs_path() -> str:
+  """Absolute, so the map is read from and written to the same file: a bundled
+  read would otherwise resolve inside the executable."""
+  return PATH.resolve(REGS_FILE, read=False)
 
 def load_state() -> dict:
   state = INI.load(STATE_FILE)
@@ -65,6 +70,7 @@ def load_view() -> dict:
     data = JSON.load(VIEW_FILE)
     if isinstance(data, dict):
       out = dict(VIEW_DEFAULT)
+      out["ask_map"] = _bool(data.get("ask_map"), True)
       if isinstance(data.get("monitor"), list):
         out["monitor"] = data["monitor"]
       if isinstance(data.get("ignore"), list):
@@ -75,7 +81,7 @@ def load_view() -> dict:
 
 def save_view(view:dict):
   payload = {
-    "version": 1,
+    "ask_map": _bool(view.get("ask_map"), True),
     "monitor": view.get("monitor", []) if isinstance(view.get("monitor"), list) else [],
     "ignore":  [str(x).strip() for x in view.get("ignore", []) if str(x).strip()],
   }
@@ -96,7 +102,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   port = port or str(state.get("port", ""))
   return ModbusMaster(
     port=port,
-    regmap_file=REGS_FILE,
+    regmap_file=regs_path(),
     addr=_int(state.get("addr"), 1),
     baudrate=_int(state.get("baudrate"), 9600),
     parity=str(state.get("parity", "N")),
@@ -172,9 +178,29 @@ def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
   return issues
 
 def load_regs(state:dict=None, view:dict=None) -> list[dict]:
-  """Full register catalog (ignored entries included; frontend hides them)."""
+  """Full register catalog (ignored entries included; frontend hides them).
+  Empty when there is no map yet - the app starts anyway and asks for one."""
   if state is None: state = load_state()
   if view is None: view = load_view()
   regs = create_mb(state, view).regs_info()
   lint_regs(regs)
   return regs
+
+def save_regs(text:str) -> list[dict]|None:
+  """Persist a register map, but only once it loads. A map that fails to parse
+  would leave the app with nothing to show and no way to ask again, so the
+  previous file (or the absence of one) is put back on failure."""
+  path = regs_path()
+  backup = FILE.load(path, binary=True) if FILE.exists(path) else None
+  if text.startswith("﻿"): text = text[1:]   # spreadsheets add a BOM
+  # Bytes with normalised newlines: a text-mode write translates them, so a
+  # CRLF source would land as \r\r\n.
+  FILE.save(path, text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
+  try:
+    regs = load_regs()
+    if regs: return regs
+  except Exception as e:
+    print(f"{Color.RED}Register map rejected: {e}{Color.END}")
+  if backup is None: FILE.remove(path)
+  else: FILE.save(path, backup)
+  return None

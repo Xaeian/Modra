@@ -1,0 +1,129 @@
+/* styles/widgets-ectra.css */
+/* Ectra V/f table tuner. Sorts after widget.css, so the shared chrome is in
+   place before these overrides. */
+
+.ec-empty { padding: 10px; font-size: 12px; color: var(--text-muted); }
+
+.ec-bar { border-bottom: 1px solid var(--border); }
+.ec-meas { border-top: 1px solid var(--border); }
+
+/* status */
+
+/* Only rendered while access is below admin, so it is always a warning. */
+.ec-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #d4a017;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.ec-stat {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ec-moving { color: var(--accent); font-weight: 600; }
+
+/* buttons */
+
+.ec-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ec-btn:hover:not(:disabled) { background: var(--border); }
+.ec-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ec-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ec-btn.ec-warn { border-color: #b02a37; color: #dc3545; }
+.ec-btn.ec-warn:hover:not(:disabled) { background: #dc3545; border-color: #b02a37; color: #fff; }
+
+/* The two controls that carry the whole workflow, so they are the big targets. */
+.ec-big {
+  width: 40px;
+  height: 30px;
+  font-size: 18px;
+  line-height: 1;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.ec-big:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ec-big:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.ec-chips { display: flex; gap: 2px; }
+
+.ec-chip {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: monospace;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ec-chip:hover { background: var(--border); }
+.ec-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* selected point + its value */
+
+.ec-pt { display: flex; align-items: baseline; gap: 5px; min-width: 165px; }
+.ec-pt b { font-family: monospace; font-size: 13px; font-weight: 600; }
+.ec-pt i { font-size: 10px; color: var(--text-muted); font-style: normal; }
+
+.ec-val { display: flex; align-items: baseline; gap: 4px; min-width: 130px; justify-content: center; }
+.ec-val b { font-family: monospace; font-size: 17px; font-weight: 600; }
+/* Where the slew is heading, next to where the device is now. */
+.ec-val i { font-family: monospace; font-size: 12px; color: var(--accent); font-style: normal; }
+.ec-val u { font-size: 10px; color: var(--text-muted); text-decoration: none; }
+
+/* measurements */
+
+.ec-set, .ec-meas-item { display: flex; align-items: baseline; gap: 4px; }
+.ec-set i { font-size: 11px; color: var(--text-muted); font-style: normal; }
+.ec-set b { font-family: monospace; font-size: 13px; min-width: 48px; text-align: right; }
+.ec-set u { font-size: 10px; color: var(--text-muted); text-decoration: none; }
+.ec-meas-item i { font-size: 11px; color: var(--text-muted); font-style: normal; }
+.ec-meas-item b { font-family: monospace; font-size: 13px; }
+.ec-meas-item u { font-size: 10px; color: var(--text-muted); text-decoration: none; }
+
+/* plot */
+
+.ec-plot { padding: 4px 8px; }
+.ec-plot svg { display: block; width: 100%; height: 140px; }
+
+.ec-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+/* Where the motor is running right now. */
+.ec-live {
+  stroke: #dc3545;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+/* Which point the +/- buttons act on. */
+.ec-focus {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.ec-hit { fill: transparent; cursor: pointer; }
+.ec-hit:hover { fill: var(--accent); fill-opacity: 0.12; }

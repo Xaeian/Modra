@@ -21,7 +21,6 @@ from xaeian import CSV
 # they don't appear in NULL_SENTINELS_32.
 NULL_SENTINELS_16 = {"uint": 0xFFFF, "hex": 0xFFFF, "int": 0x8000, "bool": 0xFFFF}
 NULL_SENTINELS_32 = {"uint": 0xFFFFFFFF, "hex": 0xFFFFFFFF, "int": 0x80000000}
-NULLABLE_BASE_TYPES = {"uint", "int", "hex", "float", "bool"}
 
 class ModbusMaster:
 
@@ -129,7 +128,6 @@ class ModbusMaster:
     self.ignore_set: set[str] = set(ignore_set) if ignore_set else set()
     # Transport builder `(mb) -> client`; None → serial client from the params above.
     self.client_factory = client_factory
-    self.groups: dict[str, dict[str, dict]] = {}
     self.id_map: dict[int, dict] = {}
     self.name_map: dict[str, dict] = {}
     self.pairs: dict[str, dict] = {}
@@ -139,8 +137,6 @@ class ModbusMaster:
       group, name = entry["group"], entry["name"]
       self.id_map[reg_id] = entry
       self.name_map[fullname] = entry
-      if group not in self.groups: self.groups[group] = {}
-      self.groups[group][name] = entry
       rule = entry.get("rule")
       if rule:
         for part in ("high", "low"):
@@ -153,9 +149,7 @@ class ModbusMaster:
     # Pair sentinels need the high/low table built first.
     for pair_info in self.pairs.values():
       h = pair_info.get("high")
-      if h:
-        h["null_raw32"] = self._compute_null_raw_32(h)
-        pair_info["null_raw32"] = h["null_raw32"]
+      if h: h["null_raw32"] = self._compute_null_raw_32(h)
     self.cache_raw: dict[int, int|None] = {rid: None for rid in self.id_map}
     self.client: AsyncModbusSerialClient|None = None
 
@@ -601,53 +595,14 @@ class ModbusMaster:
     raw_data = self.encode(data, ["W", "RW", "RWs"])
     return await self.write_registers(raw_data)
 
-  async def write_sync(self, data:dict) -> tuple[dict, dict|list|None]:
-    """Write RW/RWs and read back per block. Returns (cache, diff)."""
-    grouped = self._detect_grouped(data)
-    raw_write = self.encode(data, ["RW", "RWs"])
-    blocks = self._write_blocks(raw_write)
-    if not blocks: return self.get_cache(grouped), None
-    cli = await self.connect()
-    for start, values in blocks:
-      rr = await cli.write_registers(start, values, device_id=self.addr)
-      if rr.isError(): raise RuntimeError(f"Write error R{start}: {rr}")
-      for i, val in enumerate(values):
-        self.cache_raw[start + i] = val
-      rr = await cli.read_holding_registers(start, count=len(values), device_id=self.addr)
-      if rr.isError(): raise RuntimeError(f"Readback error R{start}: {rr}")
-      for i, val in enumerate(rr.registers):
-        self.cache_raw[start + i] = val
-    diff_ids = [rid for rid, exp in raw_write.items() if self.cache_raw.get(rid) != exp]
-    if not diff_ids: return self.get_cache(grouped), None
-    if grouped:
-      diff = {}
-      for rid in diff_ids:
-        entry = self.id_map.get(rid)
-        if entry:
-          g, n = entry["group"], entry["name"]
-          if g not in diff: diff[g] = []
-          diff[g].append(n)
-      return self.get_cache(grouped), diff
-    diff = [self.id_map[rid]["fullname"] for rid in diff_ids if rid in self.id_map]
-    return self.get_cache(grouped), diff
-
   #-------------------------------------------------------------------------------------- Cache
 
   def get_cache(self, grouped:bool=None) -> dict:
     return self._decode_map(self.cache_raw, grouped=grouped, missing_as_none=True)
 
-  def set_cache(self, data:dict, grouped:bool=None):
-    raw_data = self.encode(data, grouped=grouped)
-    for reg_id, raw in raw_data.items():
-      self.cache_raw[reg_id] = raw
-
   @property
   def cache(self) -> dict:
     return self.get_cache()
-
-  @cache.setter
-  def cache(self, data:dict):
-    self.set_cache(data)
 
   #--------------------------------------------------------------------------------------- Info
 
@@ -668,10 +623,8 @@ class ModbusMaster:
     if rule:
       info["rule"] = {}
       if "switch" in rule: info["rule"]["switch"] = rule["switch"]
-      if "high" in rule:
-        info["rule"]["pair"], info["rule"]["pair_name"] = "high", rule["high"]
-      elif "low" in rule:
-        info["rule"]["pair"], info["rule"]["pair_name"] = "low", rule["low"]
+      if "high" in rule: info["rule"]["pair"] = "high"
+      elif "low" in rule: info["rule"]["pair"] = "low"
     return info
 
   def pair_info(self, pair_key:str) -> dict|None:

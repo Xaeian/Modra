@@ -92,6 +92,8 @@ const Serial = () => {
 
       <div class="rb-cfg-sep" />
 
+      {/* The way back in once the startup prompt is switched off. */}
+      <button class="rb-tbtn" onClick={pickMap} title="Load a register map">🗺 Map</button>
       <button class="rb-tbtn" onClick={importConfig}>📂 Import</button>
       <button class="rb-tbtn" onClick={exportConfigCSV}>💾 CSV</button>
       <button class="rb-tbtn" onClick={exportConfigINI}>💾 INI</button>

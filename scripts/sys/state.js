@@ -25,6 +25,9 @@ const S = {
   //---------------------------------------------------------- UI toggles
 
   showChart: false,
+  mapPrompt: false,     // startup map prompt is on screen
+  askMap: true,         // show it on every start (mirrors view.json)
+  showWidgets: false,   // device widget panels visible (restored from localStorage)
   serialOpen: false,    // Serial panel expanded (≠ backend `serial_open`)
   utilOpen: null,       // register name whose Misc panel is open, or null
   query: "",

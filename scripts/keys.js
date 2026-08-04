@@ -16,6 +16,7 @@ const BINDINGS = {
   i: () => toggleShowDisabled(),
   o: () => toggleSerial(),
   p: () => toggleChart(),
+  w: () => toggleWidgets(),
 };
 
 document.addEventListener("keydown", (e) => {

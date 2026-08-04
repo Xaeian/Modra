@@ -22,9 +22,9 @@ py api.py # desktop window
 py serve.py # HTTP server
 ```
 
-Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases), drop next to `regs.csv`, run.
+Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases) and run it. It asks which `regs.csv` to use on startup, so the same binary serves any device - tick _don't ask again_ once you have settled on one.
 
-First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
+First launch creates `serial.ini`, `view.json`, `data.db` next to the binary. History and UI state are keyed by register name, so an updated map keeps them; a genuinely different device wants **🧹 Clear DB**.
 
 ## The grid
 
@@ -120,7 +120,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 
 | File | Role | Edited by |
 |---|---|---|
-| [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you |
+| [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you, or picked on first run |
 | `serial.ini` | connection state | app + you |
 | `view.json` | UI state _(monitor panels, ignored list)_ | app + you |
 | `data.db` | SQLite poll history, one table per addr | app |

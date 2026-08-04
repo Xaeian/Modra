@@ -194,13 +194,6 @@ const Monitor = {
     this._stack._xMax = xMax;
   },
 
-  destroy() {
-    if(this._stack) { this._stack.destroy(); this._stack = null; }
-    MonitData.clear();
-    this._keys = [];
-    if(this._el) { this._el.remove(); this._el = null; }
-  },
-
   exportCSV() {
     chartExportCSV([...S.monitor], MonitData._buf);
   },

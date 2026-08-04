@@ -76,7 +76,6 @@ async function _callHttp(method, params, mute) {
 
 const API = {
   MODE,
-  BASE,
 
   // Generic dispatcher. Prefer the named helpers below; `call()` exists so
   // ad-hoc callers still flow through the logging/error pipeline.
@@ -100,6 +99,7 @@ const API = {
   //---------------------------------------------------------- Data
 
   info:         ()       => API.call("info"),
+  set_map:      (text)   => API.call("set_map",      { text }),
   read:         (params) => API.call("read",         params || null, true),
   sync:         ()       => API.call("sync"),
   write:        (data)   => API.call("write",        data),

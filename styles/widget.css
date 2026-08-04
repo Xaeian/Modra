@@ -1,0 +1,31 @@
+/* styles/widget.css */
+/* Chrome shared by every device widget. Named to sort after main.css, which
+   the bundler emits in plain alphabetical order. */
+
+.wg {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.wg-head {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Rows of controls inside a widget body. */
+.wg-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+/* Pushes everything after it to the right edge. */
+.wg-gap { flex: 1; }

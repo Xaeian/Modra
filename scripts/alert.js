@@ -4,7 +4,7 @@
 // existing toast so poll loops shouting "Connection lost" stay quiet.
 // Capped at MAX; oldest evicted on overflow. Plain DOM because this loads
 // before the JSX runtime.
-// API: `alert.err / wrn / inf / ok (msg, ms?)` and `alert.show(type, msg, ms?)`.
+// API: `alert.err / wrn / inf / ok (msg, ms?)`.
 const alert = (() => {
 
   const OFFSET = 12;   // px from bottom of viewport
@@ -95,7 +95,6 @@ const alert = (() => {
   }
 
   return {
-    show,
     err: (msg, ms = 6000) => show("err", msg, ms),
     wrn: (msg, ms = 5000) => show("wrn", msg, ms),
     inf: (msg, ms = 4000) => show("inf", msg, ms),

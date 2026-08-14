@@ -1,9 +1,9 @@
 """
 CLI: device ↔ config file admin tool.
 
-  mb_ctrl import [file]  device → file (.ini default, .csv supported)
-  mb_ctrl export [file]  file → device
-  mb_ctrl sudo           unlock admin via Auth:SecretKey
+  mb_ctrl import [file] - device → file (.ini default, .csv supported)
+  mb_ctrl export [file] - file → device
+  mb_ctrl sudo - unlock via config.AUTH_KEY (the app does this itself)
 """
 
 import sys, asyncio, os
@@ -11,8 +11,6 @@ from xaeian import INI, CSV, Print, Color as c
 import config
 
 log = Print()
-
-SUDO_KEY = 0x5D8E41B3
 
 async def main():
   if len(sys.argv) < 2:
@@ -58,10 +56,12 @@ async def main():
       log.inf(f"{file} {c.TURQUS}>>{c.END} Motor")
 
     case "sudo" | "su":
+      if config.AUTH_KEY is None:
+        log.wrn("No key: set config.AUTH_KEY"); return
       await mb.connect()
-      await mb.write({"Auth:SecretKey": SUDO_KEY})
+      await mb.write({config.AUTH_KEY_REG: config.AUTH_KEY})
       await mb.disconnect()
-      log.ok(f"You are {c.TURQUS}admin{c.END} now")
+      log.ok(f"You are {c.TURQUS}{config.AUTH_LEVEL}{c.END} now")
 
     case _:
       log.wrn(f"Unknown action: {action}")

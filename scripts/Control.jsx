@@ -1,16 +1,14 @@
 // scripts/Control.jsx
 
 // Type-specialized value controls. `For` dispatches; each variant takes
-// `{reg, value, isDirty, ro}` and commits through `edit()` / `editSilent()`.
+// `{reg, value, isDirty, ro}` and commits through `editSend()` / `editSilent()`.
 
-// Highlight when the candidate matches the current value. `dirty` recolors
-// so a pending pick reads differently from a confirmed one.
+// `dirty` recolors so a pending pick reads differently from a confirmed one.
 const _btnClass = (isActive, isDirty) =>
   cls("rb-btn", isActive && "on", isDirty && isActive && "dirty");
 
-// Inline `null` toggle for writable nullable regs (Bool and Input share it).
-// No focus steal: blurring the row's input would autosend the value this
-// toggle replaces.
+// Shared by Bool and Input. No focus steal: blurring the row's input would
+// autosend the value this toggle replaces.
 const NullCheckbox = ({ reg }) => {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
   return (
@@ -28,15 +26,17 @@ function _valHint(reg, value) {
   const u = Reg.unit(reg);
   const suffix = u ? " " + u : "";
   if(Reg.willWrap(reg, value))
-    return `Too large for the register: the device will store ${Reg.display(reg, Reg.wrapPreview(reg, value))}${suffix}, not ${Reg.display(reg, value)}${suffix}. Lower the value.`;
+    return `Too large for the register: the device will store `
+      + `${Reg.display(reg, Reg.wrapPreview(reg, value))}${suffix}, `
+      + `not ${Reg.display(reg, value)}${suffix}. Lower the value.`;
   if(Reg.outOfRange(reg, value))
-    return `Outside the allowed range ${Reg.min(reg)}..${Reg.max(reg)}${suffix}. It will still be written; the device decides what to do.`;
+    return `Outside the allowed range ${Reg.min(reg)}..${Reg.max(reg)}${suffix}. `
+      + `It will still be written; the device decides what to do.`;
   return undefined;
 }
 
-// Enter commits (blur). Tab / Shift+Tab hops between register fields, skipping
-// the row's action buttons; at the ends it leaves the grid. Blur may rebuild the
-// DOM, so the destination is re-found by name afterward and selected for overtype.
+// Tab hops between register fields, skipping the row's action buttons. Blur may
+// rebuild the DOM, so the destination is re-found by name and selected for overtype.
 function _onValKeyDown(e) {
   if(e.key === "Enter") { e.target.blur(); return; }
   if(e.key !== "Tab") return;
@@ -52,8 +52,7 @@ function _onValKeyDown(e) {
 
 const Control = {
 
-  // Enum picker: one button per label, exclusive. The 0/off/none button
-  // shows cyan when active, apart from the meaningful states.
+  // The 0/off/none button is styled apart from the meaningful states.
   Enum: ({ reg, value, isDirty, ro }) => (
     <div class="rb-btns">
       {Object.entries(reg.enum).map(([k, v]) => (
@@ -81,9 +80,7 @@ const Control = {
     );
   },
 
-  // Bitfield: one toggle per labeled bit, multi-select. A click flips that bit
-  // in the mask. R/O status words show the same buttons disabled with set bits
-  // lit; a confirmed device null renders like the other nullable read-only cells.
+  // Multi-select bit mask; R/O status words reuse the same buttons, disabled.
   Bits: ({ reg, value, isDirty, ro }) => {
     if(ro && Reg.isNA(reg, value)) return <span class="rb-ro na">null</span>;
     const mask = value ?? 0;
@@ -98,20 +95,18 @@ const Control = {
     );
   },
 
-  // Version string from `Reg.display` (X.YY.ZZ). Always read-only.
+  // Always read-only.
   Ver: ({ reg, value }) => (
     <span class="rb-ro">{Reg.display(reg, value) || "-"}</span>
   ),
 
-  // Free-text input for numerics. `editSilent` defers render until blur.
+  // `editSilent` defers render until blur.
   Input: ({ reg, value, isDirty, ro }) => {
     const na = Reg.isNA(reg, value);
-    // Non-nullable blank = discard the edit; nullable blank = commit null.
-    // Blur always renders so the field normalizes without waiting for the
-    // device ack. A mechanical blur (field replaced by a rebuild - fired
-    // while still connected - or arriving already detached) is not the user
-    // leaving: acting on it would autosend a half-typed value and re-enter
-    // render() mid-swap.
+    // Non-nullable blank discards the edit; nullable blank commits null.
+    // The unconditional render normalizes the field without waiting for the ack.
+    // A mechanical blur (rebuild-driven, or already detached) is not the user
+    // leaving: acting on it would autosend a half-typed value and re-enter render().
     const onBlur = (e) => {
       if(isRendering() || !e.target.isConnected) return;
       if(!ro && reg.name in S.dirty && S.dirty[reg.name] === null && !reg.nullable)
@@ -147,11 +142,10 @@ const Control = {
     );
   },
 
-  // Dispatcher: route to the right variant by register type.
   For: (props) => {
     if(Reg.isEnum(props.reg)) return <Control.Enum {...props} />;
     if(Reg.isBool(props.reg)) return <Control.Bool {...props} />;
-    if(Reg.isVer(props.reg))  return <Control.Ver  {...props} />;
+    if(Reg.isVer(props.reg)) return <Control.Ver {...props} />;
     if(Reg.isBits(props.reg)) return <Control.Bits {...props} />;
     return <Control.Input {...props} />;
   },

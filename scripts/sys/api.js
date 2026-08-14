@@ -1,26 +1,24 @@
 // scripts/sys/api.js
 
-// Dual-mode backend client. `webview` bridges via `window.pywebview.api.*`,
-// `http` falls back to plain fetch. `mute=true` (poll-style read/scan)
-// suppresses console + toast noise.
+// Dual-mode backend client: `webview` bridges via `window.pywebview.api.*`, `http`
+// falls back to fetch. `mute` suppresses console + toast noise for poll-style calls.
 
-const MODE = "{{mode}}";       // substituted at build/serve time from app.ini
+const MODE = "{{mode}}";  // substituted at build/serve time from app.ini
 const BASE = "http://localhost:8000";
 const IS_WEBVIEW = MODE === "webview";
 
-//---------------------------------------------------------- Logging
+//----------------------------------------------------------------------------------------- Logging
 
-// Shared format for request/response/error: → request, ← response, ✖ failure.
+// → request, ← response, ✖ failure.
 function _log(label, info, t0, kind, mute) {
   if(mute) return;
   const ms = t0 != null ? Math.round(performance.now() - t0) + "ms" : "";
   console.log("API " + kind, label, ms, info ?? "");
 }
 
-//---------------------------------------------------------- Webview / HTTP backends
+//------------------------------------------------------------------------- Webview / HTTP backends
 
-// Resolves once pywebview injects its js_api bridge. Cached so cold boot
-// only attaches one listener.
+// Resolves once pywebview injects its bridge; cached so cold boot attaches one listener.
 let _readyPromise = null;
 function _waitReady() {
   if(!IS_WEBVIEW) return Promise.resolve();
@@ -72,13 +70,12 @@ async function _callHttp(method, params, mute) {
   }
 }
 
-//---------------------------------------------------------- Public surface
+//---------------------------------------------------------------------------------- Public surface
 
 const API = {
   MODE,
 
-  // Generic dispatcher. Prefer the named helpers below; `call()` exists so
-  // ad-hoc callers still flow through the logging/error pipeline.
+  // Prefer the named helpers; `call()` keeps ad-hoc callers in the logging/error path.
   call: async (method, params = null, mute = false) => {
     await _waitReady();
     return IS_WEBVIEW
@@ -86,30 +83,30 @@ const API = {
       : _callHttp(method, params, mute);
   },
 
-  //---------------------------------------------------------- Connection
+  //------------------------------------------------------------------------------------ Connection
 
-  scan:         ()       => API.call("scan",         null,  true),
-  serial:       ()       => API.call("serial"),
-  connect:      (port)   => API.call("connect",      { port }),
-  disconnect:   ()       => API.call("disconnect",   {}),
-  set_addr:     (addr)   => API.call("set_addr",     { addr }),
-  scan_addrs:   (addrs)  => API.call("scan_addrs",   { addrs }),
-  set_serial:   (params) => API.call("set_serial",   params),
+  scan: () => API.call("scan", null, true),
+  serial: () => API.call("serial"),
+  connect: (port) => API.call("connect", { port }),
+  disconnect: () => API.call("disconnect", {}),
+  set_addr: (addr) => API.call("set_addr", { addr }),
+  scan_addrs: (addrs) => API.call("scan_addrs", { addrs }),
+  set_serial: (params) => API.call("set_serial", params),
 
-  //---------------------------------------------------------- Data
+  //------------------------------------------------------------------------------------------ Data
 
-  info:         ()       => API.call("info"),
-  set_map:      (text)   => API.call("set_map",      { text }),
-  read:         (params) => API.call("read",         params || null, true),
-  sync:         ()       => API.call("sync"),
-  write:        (data)   => API.call("write",        data),
+  info: () => API.call("info"),
+  set_map: (text) => API.call("set_map", { text }),
+  read: (params) => API.call("read", params || null, true),
+  sync: () => API.call("sync"),
+  write: (data) => API.call("write", data),
 
-  //---------------------------------------------------------- View state
+  //------------------------------------------------------------------------------------ View state
 
-  view_get:     ()       => API.call("view_get"),
-  view_set:     (patch)  => API.call("view_set",     patch),
+  view_get: () => API.call("view_get"),
+  view_set: (patch) => API.call("view_set", patch),
 
-  //---------------------------------------------------------- Database
+  //-------------------------------------------------------------------------------------- Database
 
-  delete_database: ()    => API.call("delete_database", {}),
+  delete_database: () => API.call("delete_database", {}),
 };

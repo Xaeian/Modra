@@ -12,8 +12,8 @@ automatically.
 
 ```js
 {
-  id: "ectra",                  // must match the app.ini entry
-  title: "Ectra · V/f table",
+  id: "vftab",                  // must match the app.ini entry
+  title: "Drive · V/f table",
   match(regs),                  // does this catalog carry what we need
   View(),                       // JSX for the panel body
 }

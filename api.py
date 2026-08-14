@@ -53,7 +53,7 @@ class Api:
       "autosend": config._bool(link.state.get("autosend"), False),
     }
 
-  #--------------------------------------------------------------------------------- Connection
+  #------------------------------------------------------------------------------------- Connection
 
   def scan(self) -> dict:
     try:
@@ -120,7 +120,7 @@ class Api:
       return {"error": str(e)}
     return self.serial()
 
-  #--------------------------------------------------------------------------------------- Data
+  #------------------------------------------------------------------------------------------- Data
 
   def scan_addrs(self, params=None) -> dict:
     if isinstance(params, dict): params = params.get("addrs")
@@ -179,7 +179,7 @@ class Api:
     except Exception as e:
       return {"error": str(e)}
 
-  #------------------------------------------------------------------------------ View state
+  #------------------------------------------------------------------------------------- View state
 
   def view_get(self) -> dict:
     return link.view
@@ -204,7 +204,7 @@ class Api:
     except Exception as e:
       return {"error": str(e)}
 
-  #----------------------------------------------------------------------------------- Database
+  #--------------------------------------------------------------------------------------- Database
 
   def delete_database(self, _=None) -> dict:
     """Wipe all stored poll history. Rebuilds an empty DB on next write."""

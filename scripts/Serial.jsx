@@ -1,7 +1,6 @@
 // scripts/Serial.jsx
 
-// Expanded serial config panel (toggled by the ☰ button on Toolbar):
-// baudrate/parity/stop/timeout/interval/retries/history + address scan + config import/export.
+// Serial config panel, toggled by the ☰ button on Toolbar.
 
 const BAUD_OPTS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
 
@@ -15,7 +14,7 @@ const Serial = () => {
     </label>
   );
 
-  // Parses back to number when opts are numeric; otherwise pushes the raw string.
+  // Option type is sniffed from the first entry.
   const Sel = ({ k, opts }) => (
     <select class="rb-cfg-input" value={S.serial[k]}
       onChange={(e) => {
@@ -27,8 +26,8 @@ const Serial = () => {
     </select>
   );
 
-  // Parse on blur (not keypress) so the user can clear and retype without
-  // hitting partial-parse states. `fallback` covers an empty/invalid commit.
+  // Parse on blur, not keypress, so the user can clear and retype without
+  // hitting partial-parse states.
   const Num = ({ k, fallback }) => (
     <input class="rb-cfg-input rb-cfg-num" type="text" value={S.serial[k]}
       onKeyDown={(e) => { if(e.key === "Enter") e.target.blur(); }}
@@ -58,10 +57,14 @@ const Serial = () => {
         auto-send
       </button>
 
+      <button class={cls("rb-tbtn", S.searchHide && "active")}
+        onClick={toggleSearchHide}
+        title="Search hides non-matching rows; off fades them in place">
+        🙈 hide
+      </button>
+
       <div class="rb-cfg-sep" />
 
-      {/* Address scan: range input → button → datalist of found devices
-          (click to connect) or "Nothing found". Needs the serial port open. */}
       <div class="rb-addr-scan">
         <input class="rb-cfg-input rb-addr-scan-input" type="text"
           placeholder="1,2-5,10" value={S.addrScanInput} disabled={!S.serial_open}
@@ -97,6 +100,21 @@ const Serial = () => {
       <button class="rb-tbtn" onClick={importConfig}>📂 Import</button>
       <button class="rb-tbtn" onClick={exportConfigCSV}>💾 CSV</button>
       <button class="rb-tbtn" onClick={exportConfigINI}>💾 INI</button>
+
+      {defaultRegs().length > 0 &&
+        <div class="rb-cfg-field">
+          {variantCount() > 1 &&
+            <select class="rb-cfg-input" value={S.variant}
+              title="Which variant the defaults are taken from"
+              onChange={(e) => setVariant(parseInt(e.target.value))}>
+              {Array.from({ length: variantCount() }, (_, i) =>
+                <option value={i}>{i + 1}</option>)}
+            </select>}
+          <button class="rb-tbtn" onClick={restoreDefaults}
+            title="Stage all defaults as pending edits; review, then Send">
+            🏭 Defaults
+          </button>
+        </div>}
 
       <div class="rb-cfg-sep" />
 

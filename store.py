@@ -2,13 +2,13 @@
 SQLite store for poll-cycle history with resolution tiers.
 
 Raw data (one row per poll cycle) goes to one table per address (`addr_1`,
-`addr_5`, ...; `addr_sim` for the simulator), columns typed from regs.csv (INTEGER/REAL/TEXT). Three coarser
-archive tiers downsample it incrementally - minute (`addr_1_m`), hour
-(`addr_1_h`), day (`addr_1_d`) - each averaging the tier below. A chart query
-reads from whichever tier matches the requested time span, so an overview of a
-year is a 365-row read and a zoom into one minute is full resolution. Numeric
-columns average; bits OR-reduce (any bit set in the window); TEXT (enum/ver)
-take the last value in the bucket.
+`addr_5`, ...; `addr_sim` for the simulator), columns typed from regs.csv
+(INTEGER/REAL/TEXT). Three coarser archive tiers downsample it incrementally -
+minute (`addr_1_m`), hour (`addr_1_h`), day (`addr_1_d`) - each averaging the
+tier below. A chart query reads from whichever tier matches the requested time
+span, so an overview of a year is a 365-row read and a zoom into one minute is
+full resolution. Numeric columns average; bits OR-reduce (any bit set in the
+window); TEXT (enum/ver) take the last value in the bucket.
 
 Schema is created lazily per table on first use and kept in sync with regs.csv
 by adding any missing columns (`ALTER TABLE ADD COLUMN`); column removal or a
@@ -26,7 +26,7 @@ from xaeian import Print, DIR, PATH, Time
 log = Print()
 
 # Archive tiers downsampled off the raw table: (suffix, bucket seconds,
-# retention days). Each tier averages the one above it (raw -> m -> h -> d),
+# retention days). Each tier averages the one above it (raw → m → h → d),
 # so a year only ever costs the day tier 365 rows. `None` retention = forever.
 ARCHIVE_TIERS = [("_m", 60.0, 90), ("_h", 3600.0, 730), ("_d", 86400.0, None)]
 # Nominal raw row spacing (s), used only to pick a tier by zoom level. Real
@@ -40,7 +40,7 @@ class Store:
     # Each entry: {col, type, name, slot_idx}. slot_idx=None for plain regs;
     # rule regs expand to N entries with slot_idx in 0..N-1.
     self._cols:list[dict] = []
-    # name -> {"switch": switch_name, "units": [...]}  for rule regs.
+    # name → {"switch": switch_name, "units": [...]} for rule regs.
     self._rule_meta:dict[str, dict] = {}
     self._tables:set[str] = set()
     self._parse_regs(regs)
@@ -78,7 +78,8 @@ class Store:
         self._rule_meta[r["name"]] = {"switch": switch_name, "units": list(units)}
         base = self._col(r["name"])
         for i in range(len(units)):
-          self._cols.append({"col": f"{base}_{i}", "type": "REAL", "name": r["name"], "slot_idx": i})
+          self._cols.append(
+            {"col": f"{base}_{i}", "type": "REAL", "name": r["name"], "slot_idx": i})
       else:
         self._cols.append({
           "col": self._col(r["name"]), "type": self._type(r), "name": r["name"],
@@ -87,7 +88,7 @@ class Store:
 
   @staticmethod
   def _active_slot(units:list, switch_val) -> int|None:
-    """Map switch register value (enum label) -> slot index in `units`."""
+    """Map switch register value (enum label) → slot index in `units`."""
     if switch_val is None: return None
     sv = str(switch_val).lower()
     for i, u in enumerate(units):
@@ -98,7 +99,7 @@ class Store:
     return f"addr_{addr}{suffix}"
 
   def _vcols(self, names:list[str]) -> list[str]:
-    """Expand register names to DB columns, rule regs -> all slot columns."""
+    """Expand register names to DB columns, rule regs → all slot columns."""
     vcols = []
     for n in names:
       meta = self._rule_meta.get(n)
@@ -109,7 +110,7 @@ class Store:
         vcols.append(self._col(n))
     return vcols
 
-  #--------------------------------------------------------------------------------------- Init
+  #------------------------------------------------------------------------------------------- Init
 
   async def init(self):
     path = PATH.resolve("data.db")
@@ -132,7 +133,7 @@ class Store:
         await self.db.exec(f"ALTER TABLE {ident(table)} ADD COLUMN {c['col']} {c['type']}")
     self._tables.add(table)
 
-  #------------------------------------------------------------------------------------ Resolve
+  #---------------------------------------------------------------------------------------- Resolve
 
   @staticmethod
   def _resolve(data:dict, name:str):
@@ -143,7 +144,7 @@ class Store:
       if isinstance(v, dict): return v.get(n)
     return None
 
-  #------------------------------------------------------------------------------------ Logging
+  #---------------------------------------------------------------------------------------- Logging
 
   async def log(self, cache:dict, addr:int|str):
     if not self._cols or not self.db: return
@@ -160,14 +161,15 @@ class Store:
           continue
         if name not in active:
           meta = self._rule_meta.get(name)
-          active[name] = self._active_slot(meta["units"], self._resolve(cache, meta["switch"])) if meta else None
+          active[name] = self._active_slot(
+            meta["units"], self._resolve(cache, meta["switch"])) if meta else None
         # Only the active slot column gets the value; others stay NULL.
         row[c["col"]] = self._resolve(cache, name) if active[name] == slot_idx else None
       await self.db.insert(self._table(addr), row)
     except Exception as e:
       log.err(f"log: {e}")
 
-  #---------------------------------------------------------------------------------- Downsample
+  #------------------------------------------------------------------------------------- Downsample
 
   async def roll(self, addr:int|str) -> int:
     """Bring every archive tier up to date for `addr`. Cascading: minute reads
@@ -224,7 +226,7 @@ class Store:
     await self.db.exec("INSERT OR REPLACE INTO _roll (tbl, ts) VALUES (?, ?)", (dst, end))
     return n
 
-  #-------------------------------------------------------------------------------------- Query
+  #------------------------------------------------------------------------------------------ Query
 
   def _pick_tier(self, span:float, max_points:int, age:float, raw_days:int) -> str:
     """Finest tier whose native bucket keeps the row count under `max_points`
@@ -278,7 +280,7 @@ class Store:
       log.err(f"query: {e}")
       return []
 
-  #----------------------------------------------------------------------------------- Retention
+  #-------------------------------------------------------------------------------------- Retention
 
   @staticmethod
   def _tier_suffix(table:str) -> str:

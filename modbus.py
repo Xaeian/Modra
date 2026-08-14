@@ -1,14 +1,14 @@
 """
 Async Modbus RTU master with CSV-based register descriptor.
 
-Parses regs.csv → typed map for uint/int/bool/enum/hex/ver/rule, supports
-`switch=` / `high=` / `low=` rules, caches raw 16-bit values. The map is
-always complete - `ignore_set` filters at read time only (pair-aware) so
-the DB schema and `regs_info()` cover every register and the frontend
-can show or hide ignored entries on its own.
+Parses regs.csv into a typed map (uint/int/bool/enum/bits/hex/ver/rule),
+supports `switch=` / `high=` / `low=` rules and caches raw 16-bit words.
+The map is always complete - `ignore_set` filters at read time only
+(pair-aware), so the DB schema and `regs_info()` cover every register
+and the frontend can show or hide ignored entries on its own.
 
-A `?` prefix on `type` marks the register nullable - a reserved raw
-value decodes to `None`. Defaults follow SunSpec; the `null` CSV column
+A `?` prefix on `type` marks a register nullable - a reserved raw value
+decodes to `None`. Defaults follow SunSpec; the `null` CSV column
 overrides per-register. See modbus.md for the full table.
 """
 
@@ -22,83 +22,101 @@ from xaeian import CSV
 NULL_SENTINELS_16 = {"uint": 0xFFFF, "hex": 0xFFFF, "int": 0x8000, "bool": 0xFFFF}
 NULL_SENTINELS_32 = {"uint": 0xFFFFFFFF, "hex": 0xFFFFFFFF, "int": 0x80000000}
 
+# Columns the library reads. Anything else is the project's own (this app adds
+# `auth`) and rides along in `extra`, back out through `reg_info()`.
+COLUMNS = {"id", "hex", "name", "rws", "type", "unit", "scale",
+           "min", "max", "desc", "rule", "default", "null"}
+
+#----------------------------------------------------------------------------------- Regmap parsing
+
+def _float(s, fallback=None):
+  try: return float(s)
+  except ValueError: return fallback
+
+def _num_or_str(s):
+  try: return int(s)
+  except ValueError: return _float(s, s)
+
+def _bool(value) -> bool:
+  """Spelled-out text too - every non-empty string is otherwise truthy."""
+  if isinstance(value, str): return value.strip().lower() not in ("", "0", "false", "no", "off")
+  return bool(value)
+
+def _text(val) -> str|None:
+  s = str(val).strip() if val is not None else ""
+  return s if s not in ("", "-") else None
+
+def _parse_slots(val, conv, empty=None):
+  """CSV cell → value or `/`-separated rule-slot list. Empty / `-` → `empty`;
+  `conv` maps one token and supplies its own fallback on garbage."""
+  s = str(val).strip()
+  if s in ("", "-"): return empty
+  if "/" in s: return [_parse_slots(x, conv, empty) for x in s.split("/")]
+  return conv(s)
+
+def _slot(val, index:int=None, fallback=None):
+  """Value for the active rule slot: lists pick `index` (slot 0 when out of
+  range), scalars pass through, missing → `fallback`."""
+  if isinstance(val, list):
+    if index is not None and 0 <= index < len(val): return val[index]
+    return val[0] if val else fallback
+  return val if val is not None else fallback
+
+def _parse_enum(text:str) -> dict[int, str]:
+  if not text or text == "-": return {}
+  text = text.replace(":", "=")
+  out = {}
+  for tok in text.split():
+    if "=" not in tok: continue
+    k, v = tok.split("=", 1)
+    if k.strip().isdigit(): out[int(k)] = v.strip()
+  return out
+
+def _parse_rule(rule:str) -> dict[str, str]|None:
+  if not rule or rule == "-": return None
+  out = {}
+  for part in rule.split(";"):
+    if "=" in part:
+      k, v = part.split("=", 1)
+      out[k.strip()] = v.strip()
+  return out if out else None
+
+def _parse_null_override(val) -> int|None:
+  """Sentinel from the `null` CSV column. Accepts dec / `0x..` / `0b..`,
+  signed for `int`. Empty / `-` → type default."""
+  if val is None: return None
+  s = str(val).strip()
+  if s == "" or s == "-": return None
+  try: return int(s, 0)
+  except ValueError:
+    try: return int(float(s))
+    except (ValueError, TypeError): return None
+
+def _null_raw_16(typ:str, nullable:bool, override:int|None) -> int|None:
+  if not nullable: return None
+  if override is not None:
+    # Signed CSV input (e.g. -1) wraps into unsigned raw space so it
+    # matches the on-wire word directly.
+    if typ == "int" and override < 0:
+      override = override + 0x10000
+    return override & 0xFFFF
+  return NULL_SENTINELS_16.get(typ)
+
+def _null_raw_32(entry:dict) -> int|None:
+  if not entry.get("nullable"): return None
+  typ = entry["type"]
+  # Float pairs use NaN at decode time, no integer comparison needed.
+  if typ == "float": return None
+  override = entry.get("null_override")
+  if override is not None:
+    if typ == "int" and override < 0:
+      override = override + 0x100000000
+    return override & 0xFFFFFFFF
+  return NULL_SENTINELS_32.get(typ)
+
+#------------------------------------------------------------------------------------------- Master
+
 class ModbusMaster:
-
-  @staticmethod
-  def _parse_slots(val, conv, empty=None):
-    """CSV cell → value or `/`-separated rule-slot list. Empty / `-` → `empty`;
-    `conv` maps one token and supplies its own fallback on garbage."""
-    s = str(val).strip()
-    if s in ("", "-"): return empty
-    if "/" in s: return [ModbusMaster._parse_slots(x, conv, empty) for x in s.split("/")]
-    return conv(s)
-
-  @staticmethod
-  def _float(s, fallback=None):
-    try: return float(s)
-    except ValueError: return fallback
-
-  @staticmethod
-  def _num_or_str(s):
-    try: return int(s)
-    except ValueError: return ModbusMaster._float(s, s)
-
-  @staticmethod
-  def _parse_enum(text:str) -> dict[int, str]:
-    if not text or text == "-": return {}
-    text = text.replace(":", "=")
-    out = {}
-    for tok in text.split():
-      if "=" not in tok: continue
-      k, v = tok.split("=", 1)
-      if k.strip().isdigit(): out[int(k)] = v.strip()
-    return out
-
-  @staticmethod
-  def _parse_rule(rule:str) -> dict[str, str]|None:
-    if not rule or rule == "-": return None
-    out = {}
-    for part in rule.split(";"):
-      if "=" in part:
-        k, v = part.split("=", 1)
-        out[k.strip()] = v.strip()
-    return out if out else None
-
-  @staticmethod
-  def _parse_null_override(val) -> int|None:
-    """Sentinel from the `null` CSV column. Accepts dec / `0x..` / `0b..`,
-    signed for `int`. Empty / `-` → type default."""
-    if val is None: return None
-    s = str(val).strip()
-    if s == "" or s == "-": return None
-    try: return int(s, 0)
-    except ValueError:
-      try: return int(float(s))
-      except (ValueError, TypeError): return None
-
-  @staticmethod
-  def _compute_null_raw_16(type_val:str, nullable:bool, override:int|None) -> int|None:
-    if not nullable: return None
-    if override is not None:
-      # Signed CSV input (e.g. -1) wraps into unsigned raw space so it
-      # matches the on-wire word directly.
-      if type_val == "int" and override < 0:
-        override = override + 0x10000
-      return override & 0xFFFF
-    return NULL_SENTINELS_16.get(type_val)
-
-  @staticmethod
-  def _compute_null_raw_32(h_entry:dict) -> int|None:
-    if not h_entry.get("nullable"): return None
-    typ = h_entry["type"]
-    # Float pairs use NaN at decode time, no integer comparison needed.
-    if typ == "float": return None
-    override = h_entry.get("null_override")
-    if override is not None:
-      if typ == "int" and override < 0:
-        override = override + 0x100000000
-      return override & 0xFFFFFFFF
-    return NULL_SENTINELS_32.get(typ)
 
   def __init__(
     self,
@@ -126,70 +144,69 @@ class ModbusMaster:
     self.max_block = max_block
     # Read-time filter only; the map below stays complete.
     self.ignore_set: set[str] = set(ignore_set) if ignore_set else set()
-    # Transport builder `(mb) -> client`; None → serial client from the params above.
+    # Transport builder `(mb) → client`; None → serial client from the params above.
     self.client_factory = client_factory
     self.id_map: dict[int, dict] = {}
     self.name_map: dict[str, dict] = {}
     self.pairs: dict[str, dict] = {}
-    for reg_row in CSV.load(regmap_file):
-      entry = self._parse_reg_row(reg_row)
-      reg_id, fullname = entry["id"], entry["fullname"]
-      group, name = entry["group"], entry["name"]
-      self.id_map[reg_id] = entry
-      self.name_map[fullname] = entry
+    for row in CSV.load(regmap_file):
+      entry = self._parse_reg_row(row)
+      self.id_map[entry["id"]] = entry
+      self.name_map[entry["fullname"]] = entry
       rule = entry.get("rule")
       if rule:
+        group_name = entry["group"]
         for part in ("high", "low"):
           if part in rule:
             pair_name = rule[part]
-            pair_key = f"{group}:{pair_name}" if group else pair_name
-            if pair_key not in self.pairs:
-              self.pairs[pair_key] = {"group": group, "name": pair_name}
-            self.pairs[pair_key][part] = entry
+            pair_key = f"{group_name}:{pair_name}" if group_name else pair_name
+            pair = self.pairs.setdefault(pair_key, {"group": group_name, "name": pair_name})
+            pair[part] = entry
     # Pair sentinels need the high/low table built first.
-    for pair_info in self.pairs.values():
-      h = pair_info.get("high")
-      if h: h["null_raw32"] = self._compute_null_raw_32(h)
+    for pair in self.pairs.values():
+      high = pair.get("high")
+      if high: high["null_raw32"] = _null_raw_32(high)
     self.cache_raw: dict[int, int|None] = {rid: None for rid in self.id_map}
     self.client: AsyncModbusSerialClient|None = None
 
   def _parse_reg_row(self, row:dict) -> dict:
     reg_id = int(row["id"])
-    name_full = row["name"].strip()
-    group, name = name_full.split(":", 1) if ":" in name_full else (None, name_full)
+    fullname = row["name"].strip()
+    group, name = fullname.split(":", 1) if ":" in fullname else (None, fullname)
     hex_str = str(row["hex"]).strip()
     try: hex_val = int(hex_str, 0)
     except ValueError: hex_val = reg_id
     if hex_val != reg_id: hex_str = f"0x{reg_id:02X}"
     rws_map = {"R": "R", "RW": "RW", "RWS": "RWs", "W": "W"}
-    rws_val = rws_map.get(str(row.get("rws", "R")).strip().upper(), "R")
+    rws = rws_map.get(str(row.get("rws", "R")).strip().upper(), "R")
     # `?` prefix → nullable. Strip so downstream sees the plain type.
-    type_raw = str(row.get("type", "uint")).strip().lower()
-    nullable = type_raw.startswith("?")
-    type_val = type_raw[1:].strip() if nullable else type_raw
-    null_override = self._parse_null_override(row.get("null"))
+    typ = str(row.get("type", "uint")).strip().lower()
+    nullable = typ.startswith("?")
+    if nullable: typ = typ[1:].strip()
+    null_override = _parse_null_override(row.get("null"))
     entry = {
-      "id": reg_id, "hex": hex_str, "group": group, "name": name, "fullname": name_full,
-      "rws": rws_val, "type": type_val,
+      "id": reg_id, "hex": hex_str, "group": group, "name": name, "fullname": fullname,
+      "rws": rws, "type": typ,
       "nullable": nullable,
       "null_override": null_override,
-      "null_raw": self._compute_null_raw_16(type_val, nullable, null_override),
-      "unit": self._parse_slots(row.get("unit", ""), lambda s: s),
-      "scale": self._parse_slots(row.get("scale", "1"), lambda s: self._float(s, 1.0), 1.0),
-      "min": self._parse_slots(row.get("min", ""), self._float),
-      "max": self._parse_slots(row.get("max", ""), self._float),
-      "desc": row.get("desc") if row.get("desc") not in ("", "-") else None,
-      "rule": self._parse_rule(row.get("rule", "")),
-      "default": self._parse_slots(row.get("default", ""), self._num_or_str),
+      "null_raw": _null_raw_16(typ, nullable, null_override),
+      "unit": _parse_slots(row.get("unit", ""), lambda s: s),
+      "scale": _parse_slots(row.get("scale", "1"), lambda s: _float(s, 1.0), 1.0),
+      "min": _parse_slots(row.get("min", ""), _float),
+      "max": _parse_slots(row.get("max", ""), _float),
+      "desc": _text(row.get("desc")),
+      "rule": _parse_rule(row.get("rule", "")),
+      "default": _parse_slots(row.get("default", ""), _bool if typ == "bool" else _num_or_str),
+      "extra": {k: _text(v) for k, v in row.items() if k not in COLUMNS},
     }
-    if type_val == "enum": entry["enum"] = self._parse_enum(row.get("unit", ""))
-    # The unit column holds the bit->label map (like enum), not a real unit.
-    if type_val == "bits":
-      entry["bits"] = self._parse_enum(row.get("unit", ""))
+    if typ == "enum": entry["enum"] = _parse_enum(row.get("unit", ""))
+    # For bits the unit column holds the bit→label map, not a real unit.
+    if typ == "bits":
+      entry["bits"] = _parse_enum(row.get("unit", ""))
       entry["unit"] = None
     return entry
 
-  #--------------------------------------------------------------------------------- Connection
+  #------------------------------------------------------------------------------------- Connection
 
   async def connect(self) -> AsyncModbusSerialClient:
     if self.client and self.client.connected: return self.client
@@ -216,75 +233,73 @@ class ModbusMaster:
     await asyncio.sleep(0.1)
     await self.connect()
 
-  #---------------------------------------------------------------------------------- Low-level
+  #-------------------------------------------------------------------------------------- Transport
 
-  def _get_blocks(self, ids:list[int]) -> list[tuple[int, int]]:
+  def _contiguous_blocks(self, ids:list[int]) -> list[tuple[int, int]]:
+    """Sorted unique ids → `(start, count)` runs capped at `max_block`."""
     ids = sorted(set(ids))
     if not ids: return []
     blocks = []
     start = prev = ids[0]
-    for a in ids[1:]:
-      if a == prev + 1 and (a - start + 1) <= self.max_block: prev = a
+    for rid in ids[1:]:
+      if rid == prev + 1 and (rid - start + 1) <= self.max_block: prev = rid
       else:
         blocks.append((start, prev - start + 1))
-        start = prev = a
+        start = prev = rid
     blocks.append((start, prev - start + 1))
     return blocks
 
   def _write_blocks(self, raw_data:dict[int, int]) -> list[tuple[int, list[int]]]:
     # A block is a contiguous run, so every id in its range is a key.
     return [(start, [raw_data[i] & 0xFFFF for i in range(start, start + count)])
-            for start, count in self._get_blocks(list(raw_data.keys()))]
+            for start, count in self._contiguous_blocks(list(raw_data.keys()))]
+
+  async def _retry(self, op):
+    """Run `op` up to `retries` times, raising the last failure."""
+    last_err = None
+    for _ in range(self.retries):
+      try: return await op()
+      except Exception as e: last_err = e
+    raise last_err
 
   async def read_registers(self, reg_ids:list[int]) -> dict[int, int]:
-    blocks = self._get_blocks(reg_ids)
+    blocks = self._contiguous_blocks(reg_ids)
     if not blocks: return {}
+    client = await self.connect()
     raw_data = {}
-    cli = await self.connect()
     for start, count in blocks:
-      last_err = None
-      for _ in range(self.retries):
-        try:
-          rr = await cli.read_holding_registers(start, count=count, device_id=self.addr)
-          if rr.isError(): raise RuntimeError(f"Read error R{start}: {rr}")
-          for i, val in enumerate(rr.registers):
-            raw_data[start + i] = val
-            self.cache_raw[start + i] = val
-          last_err = None
-          break
-        except Exception as e:
-          last_err = e
-      if last_err: raise last_err
+      async def op(start=start, count=count):
+        resp = await client.read_holding_registers(start, count=count, device_id=self.addr)
+        if resp.isError(): raise RuntimeError(f"Read error R{start}: {resp}")
+        return resp
+      resp = await self._retry(op)
+      for i, val in enumerate(resp.registers):
+        raw_data[start + i] = val
+        self.cache_raw[start + i] = val
     return raw_data
 
   async def write_registers(self, raw_data:dict[int, int]) -> int:
     blocks = self._write_blocks(raw_data)
     if not blocks: return 0
-    cli = await self.connect()
+    client = await self.connect()
     written = 0
     for start, values in blocks:
-      last_err = None
-      for _ in range(self.retries):
-        try:
-          rr = await cli.write_registers(start, values, device_id=self.addr)
-          if rr.isError(): raise RuntimeError(f"Write error R{start}: {rr}")
-          for i, val in enumerate(values):
-            self.cache_raw[start + i] = val
-          written += len(values)
-          last_err = None
-          break
-        except Exception as e:
-          last_err = e
-      if last_err: raise last_err
+      async def op(start=start, values=values):
+        resp = await client.write_registers(start, values, device_id=self.addr)
+        if resp.isError(): raise RuntimeError(f"Write error R{start}: {resp}")
+      await self._retry(op)
+      for i, val in enumerate(values):
+        self.cache_raw[start + i] = val
+      written += len(values)
     return written
 
-  #------------------------------------------------------------------------------------ Helpers
+  #---------------------------------------------------------------------------- Pair & rule helpers
 
   @staticmethod
-  def _pair_decode(raw32:int, ptype:str, null_raw32:int|None=None):
+  def _pair_decode(raw32:int, pair_type:str, null_raw32:int|None=None):
     """32-bit word → value. Float pairs decode as IEEE-754 big-endian
     (NaN → `None`); integer pairs match `null_raw32` → `None`."""
-    if ptype == "float":
+    if pair_type == "float":
       val = struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
       return None if math.isnan(val) else val
     if null_raw32 is not None and raw32 == null_raw32:
@@ -292,36 +307,35 @@ class ModbusMaster:
     return raw32
 
   @staticmethod
-  def _pair_encode(val, ptype:str, null_raw32:int|None=None) -> int|None:
+  def _pair_encode(val, pair_type:str, null_raw32:int|None=None) -> int|None:
     """Inverse of `_pair_decode`. `None` returns the sentinel (NaN for
     float, `null_raw32` for int) or `None` if the pair isn't nullable -
     the caller drops the write in that case."""
     if val is None:
-      if ptype == "float":
+      if pair_type == "float":
         return int.from_bytes(struct.pack(">f", float("nan")), "big")
       return null_raw32
-    if ptype == "float":
+    if pair_type == "float":
       return int.from_bytes(struct.pack(">f", float(val)), "big")
     if isinstance(val, str): return int(val, 0) & 0xFFFFFFFF
     return int(val) & 0xFFFFFFFF
 
   def _get_pair_maps(self) -> tuple[dict[int, str], dict[int, list[str]]]:
     pair_part, pair_anchor = {}, {}
-    for pair_key, info in self.pairs.items():
-      h, l = info.get("high"), info.get("low")
-      if not h or not l: continue
-      hid, lid = h["id"], l["id"]
-      anchor = min(hid, lid)
-      pair_part[hid] = pair_key
-      pair_part[lid] = pair_key
+    for pair_key, pair in self.pairs.items():
+      high, low = pair.get("high"), pair.get("low")
+      if not high or not low: continue
+      anchor = min(high["id"], low["id"])
+      pair_part[high["id"]] = pair_key
+      pair_part[low["id"]] = pair_key
       pair_anchor.setdefault(anchor, []).append(pair_key)
     return pair_part, pair_anchor
 
   def _get_pair_ids(self) -> set[int]:
     ids = set()
-    for info in self.pairs.values():
-      if info.get("high"): ids.add(info["high"]["id"])
-      if info.get("low"): ids.add(info["low"]["id"])
+    for pair in self.pairs.values():
+      if pair.get("high"): ids.add(pair["high"]["id"])
+      if pair.get("low"): ids.add(pair["low"]["id"])
     return ids
 
   def _keys_to_ids(self, keys:list[str]|dict) -> list[int]:
@@ -333,13 +347,13 @@ class ModbusMaster:
         else: key_list.append(k)
     else: key_list = keys
     reg_ids = []
-    for k in key_list:
-      if k in self.pairs:
-        info = self.pairs[k]
-        if info.get("high"): reg_ids.append(info["high"]["id"])
-        if info.get("low"): reg_ids.append(info["low"]["id"])
-      elif (e := self.name_map.get(k)):
-        reg_ids.append(e["id"])
+    for key in key_list:
+      if key in self.pairs:
+        pair = self.pairs[key]
+        if pair.get("high"): reg_ids.append(pair["high"]["id"])
+        if pair.get("low"): reg_ids.append(pair["low"]["id"])
+      elif (entry := self.name_map.get(key)):
+        reg_ids.append(entry["id"])
     return reg_ids
 
   def _detect_grouped(self, data:dict) -> bool:
@@ -363,29 +377,20 @@ class ModbusMaster:
     unit = entry.get("unit")
     if not isinstance(unit, list): return None
     switch_label = switch_entry.get("enum", {}).get(switch_raw, "").lower()
-    for i, u in enumerate(unit):
-      if u.lower() == switch_label: return i
+    for i, label in enumerate(unit):
+      if label.lower() == switch_label: return i
     return None
 
-  @staticmethod
-  def _slot(val, index:int=None, fallback=None):
-    """Value for the active rule slot: lists pick `index` (slot 0 when out of
-    range), scalars pass through, missing → `fallback`."""
-    if isinstance(val, list):
-      if index is not None and 0 <= index < len(val): return val[index]
-      return val[0] if val else fallback
-    return val if val is not None else fallback
-
   def _get_scale(self, entry:dict, index:int=None) -> float:
-    return self._slot(entry.get("scale"), index, 1.0) or 1.0
+    return _slot(entry.get("scale"), index, 1.0) or 1.0
 
   def _get_unit(self, entry:dict, index:int=None) -> str|None:
-    return self._slot(entry.get("unit"), index)
+    return _slot(entry.get("unit"), index)
 
   def _get_minmax(self, entry:dict, index:int=None) -> tuple[float|None, float|None]:
-    return (self._slot(entry.get("min"), index), self._slot(entry.get("max"), index))
+    return (_slot(entry.get("min"), index), _slot(entry.get("max"), index))
 
-  #------------------------------------------------------------------------------ Encode/decode
+  #---------------------------------------------------------------------------------- Encode/decode
 
   def _decode_raw(self, reg_id:int, raw:int):
     entry = self.id_map.get(reg_id)
@@ -405,7 +410,7 @@ class ModbusMaster:
     if typ == "bool": return bool(raw & 1)
     if typ == "int": return (raw if raw < 0x8000 else raw - 0x10000) / scale
     if typ in ("hex", "uint", "rule"): return raw / scale
-    if typ == "bits": return int(raw)   # raw bitmask, never scaled
+    if typ == "bits": return int(raw)  # raw bitmask, never scaled
     return int(raw)
 
   def _encode_value(
@@ -414,8 +419,8 @@ class ModbusMaster:
   ) -> int|None:
     """Engineering value → 16-bit raw. `None` returns the sentinel on
     nullable regs, or `None` on non-nullable ones (caller drops the
-    write). min/max are advisory - OOR writes go through; the frontend
-    marks them red but the firmware decides what to do."""
+    write). min/max are advisory - out-of-range writes go through and
+    the firmware decides what to do."""
     entry = self.id_map.get(reg_id)
     if not entry:
       return None if value is None else int(value) & 0xFFFF
@@ -424,7 +429,7 @@ class ModbusMaster:
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry, pending_raw) if typ == "rule" else None
     scale = self._get_scale(entry, rule_idx)
-    if typ == "bool": return 1 if value else 0
+    if typ == "bool": return 1 if _bool(value) else 0
     elif typ == "enum":
       enum_map = entry.get("enum", {})
       rev = {v: k for k, v in enum_map.items()}
@@ -472,18 +477,19 @@ class ModbusMaster:
     for reg_id in ids:
       for pair_key in pair_anchor.get(reg_id, []):
         if pair_key in emitted: continue
-        info = self.pairs[pair_key]
-        h, l = info.get("high"), info.get("low")
-        if not h or not l: continue
-        if rws_filter and h["rws"] not in rws_filter: continue
-        hr, lr = raw_data.get(h["id"]), raw_data.get(l["id"])
-        if hr is None or lr is None:
+        pair = self.pairs[pair_key]
+        high, low = pair.get("high"), pair.get("low")
+        if not high or not low: continue
+        if rws_filter and high["rws"] not in rws_filter: continue
+        high_raw, low_raw = raw_data.get(high["id"]), raw_data.get(low["id"])
+        if high_raw is None or low_raw is None:
           if not missing_as_none: continue
           val = None
         else:
-          val = self._pair_decode((hr << 16) | lr, h.get("type", "uint"), h.get("null_raw32"))
+          val = self._pair_decode(
+            (high_raw << 16) | low_raw, high.get("type", "uint"), high.get("null_raw32"))
         emitted.add(pair_key)
-        self._put(data, grouped, info.get("group"), info.get("name"), pair_key, val)
+        self._put(data, grouped, pair.get("group"), pair.get("name"), pair_key, val)
       if reg_id in pair_part: continue
       entry = self.id_map.get(reg_id)
       if not entry: continue
@@ -506,12 +512,12 @@ class ModbusMaster:
 
   def encode(self, data:dict, rws_filter:list[str]=None, grouped:bool=None) -> dict[int, int]:
     if grouped is None: grouped = self._detect_grouped(data)
-    raw = {}
+    raw_data = {}
     pair_ids = self._get_pair_ids()
     # Key-presence (not val-truthiness) gates pair emission so `None`
     # reaches `_pair_encode` and emits the sentinel for nullable pairs.
-    for pair_key, pair_info in self.pairs.items():
-      group, name = pair_info.get("group"), pair_info.get("name")
+    for pair_key, pair in self.pairs.items():
+      group, name = pair.get("group"), pair.get("name")
       if grouped:
         block = data.get(group)
         if not isinstance(block, dict) or name not in block: continue
@@ -520,15 +526,15 @@ class ModbusMaster:
         if pair_key not in data: continue
         val = data[pair_key]
       if isinstance(val, tuple): val = val[0]
-      h, l = pair_info.get("high"), pair_info.get("low")
-      ptype = h.get("type", "uint") if h else "uint"
-      val32 = self._pair_encode(val, ptype, h.get("null_raw32") if h else None)
+      high, low = pair.get("high"), pair.get("low")
+      pair_type = high.get("type", "uint") if high else "uint"
+      val32 = self._pair_encode(val, pair_type, high.get("null_raw32") if high else None)
       if val32 is None: continue
-      if h and (rws_filter is None or h["rws"] in rws_filter):
-        raw[h["id"]] = (val32 >> 16) & 0xFFFF
-      if l and (rws_filter is None or l["rws"] in rws_filter):
-        raw[l["id"]] = val32 & 0xFFFF
-    # Flatten data
+      if high and (rws_filter is None or high["rws"] in rws_filter):
+        raw_data[high["id"]] = (val32 >> 16) & 0xFFFF
+      if low and (rws_filter is None or low["rws"] in rws_filter):
+        raw_data[low["id"]] = val32 & 0xFFFF
+    # Flatten grouped input, pairs already handled above.
     flat = {}
     if grouped:
       for k, v in data.items():
@@ -539,7 +545,8 @@ class ModbusMaster:
     else:
       for k, v in data.items():
         if k not in self.pairs: flat[k] = v
-    # Pass 1: non-rule
+    # Non-rule regs go first so rule regs can resolve their switch from
+    # the pending raw values.
     rule_entries = []
     for fullname, val in flat.items():
       entry = self.name_map.get(fullname)
@@ -549,30 +556,29 @@ class ModbusMaster:
       if entry["type"] == "rule":
         rule_entries.append((entry, val))
       else:
-        rv = self._encode_value(entry["id"], val)
-        if rv is not None: raw[entry["id"]] = rv
-    # Pass 2: rule with pending
+        raw_val = self._encode_value(entry["id"], val)
+        if raw_val is not None: raw_data[entry["id"]] = raw_val
     for entry, val in rule_entries:
-      if self._resolve_rule_index(entry, raw) is None: continue
-      rv = self._encode_value(entry["id"], val, raw)
-      if rv is not None: raw[entry["id"]] = rv
-    return raw
+      if self._resolve_rule_index(entry, raw_data) is None: continue
+      raw_val = self._encode_value(entry["id"], val, raw_data)
+      if raw_val is not None: raw_data[entry["id"]] = raw_val
+    return raw_data
 
-  #--------------------------------------------------------------------------------- Public API
+  #------------------------------------------------------------------------------------- Public API
 
   async def sync(self, grouped:bool=None) -> dict:
     await self.read_registers(list(self.id_map.keys()))
     return self.get_cache(grouped)
 
   def resolved_ignored_ids(self) -> set[int]:
-    # Resolve `ignore_set` to ids. pair_keys (e.g. "Auth:SecretKey") expand to
-    # both halves so ignoring a 32-bit composite drops the whole pair.
-    ids = {rid for rid, e in self.id_map.items() if e["fullname"] in self.ignore_set}
+    # Pair keys (e.g. "Auth:SecretKey") expand to both halves so ignoring
+    # a 32-bit composite drops the whole pair.
+    ids = {rid for rid, entry in self.id_map.items() if entry["fullname"] in self.ignore_set}
     for pair_key in self.ignore_set:
-      p = self.pairs.get(pair_key)
-      if p:
-        if p.get("high"): ids.add(p["high"]["id"])
-        if p.get("low"):  ids.add(p["low"]["id"])
+      pair = self.pairs.get(pair_key)
+      if pair:
+        if pair.get("high"): ids.add(pair["high"]["id"])
+        if pair.get("low"): ids.add(pair["low"]["id"])
     return ids
 
   async def read(self, keys:list[str]|dict=None,
@@ -582,8 +588,8 @@ class ModbusMaster:
     else:
       if rws_filter is None: rws_filter = ["R"]
       ignored_ids = self.resolved_ignored_ids()
-      reg_ids = [rid for rid, e in self.id_map.items()
-                 if e["rws"] in rws_filter and rid not in ignored_ids]
+      reg_ids = [rid for rid, entry in self.id_map.items()
+                 if entry["rws"] in rws_filter and rid not in ignored_ids]
     if not reg_ids: return {}
     await self.read_registers(reg_ids)
     return self.decode(
@@ -595,7 +601,7 @@ class ModbusMaster:
     raw_data = self.encode(data, ["W", "RW", "RWs"])
     return await self.write_registers(raw_data)
 
-  #-------------------------------------------------------------------------------------- Cache
+  #------------------------------------------------------------------------------------------ Cache
 
   def get_cache(self, grouped:bool=None) -> dict:
     return self._decode_map(self.cache_raw, grouped=grouped, missing_as_none=True)
@@ -604,12 +610,13 @@ class ModbusMaster:
   def cache(self) -> dict:
     return self.get_cache()
 
-  #--------------------------------------------------------------------------------------- Info
+  #------------------------------------------------------------------------------------------- Info
 
   def reg_info(self, reg_id:int) -> dict|None:
     entry = self.id_map.get(reg_id)
     if not entry: return None
     info = {
+      **entry["extra"],
       "id": reg_id, "hex": entry["hex"], "name": entry["fullname"],
       "group": entry["group"], "type": entry["type"], "rws": entry["rws"],
       "nullable": entry.get("nullable", False),
@@ -630,24 +637,24 @@ class ModbusMaster:
   def pair_info(self, pair_key:str) -> dict|None:
     pair = self.pairs.get(pair_key)
     if not pair: return None
-    h, l = pair.get("high"), pair.get("low")
-    if not h or not l: return None
-    ptype = h.get("type", "uint")
-    # Float pairs carry engineering metadata (unit/scale/min/max) from
-    # the high half and are implicitly nullable via NaN. uint32 pairs
-    # default to the full 32-bit range and need `?` for nullability.
-    is_float = ptype == "float"
-    nullable = is_float or bool(h.get("nullable"))
+    high, low = pair.get("high"), pair.get("low")
+    if not high or not low: return None
+    pair_type = high.get("type", "uint")
+    # Float pairs take engineering metadata from the high half and are nullable
+    # via NaN; integer pairs span the full range and need `?` to be nullable.
+    is_float = pair_type == "float"
+    nullable = is_float or bool(high.get("nullable"))
     return {
-      "id": [h["id"], l["id"]], "hex": [h["hex"], l["hex"]],
-      "name": pair_key, "group": pair.get("group"), "type": ptype,
-      "rws": h["rws"],
+      **high["extra"],
+      "id": [high["id"], low["id"]], "hex": [high["hex"], low["hex"]],
+      "name": pair_key, "group": pair.get("group"), "type": pair_type,
+      "rws": high["rws"],
       "nullable": nullable,
-      "unit":  h.get("unit")        if is_float else None,
-      "scale": h.get("scale", 1.0)  if is_float else 1.0,
-      "min":   h.get("min")         if is_float else 0,
-      "max":   h.get("max")         if is_float else 0xFFFFFFFF,
-      "desc": h.get("desc"), "rule": {"pair": [h["id"], l["id"]], "type": ptype},
+      "unit": high.get("unit") if is_float else None,
+      "scale": high.get("scale", 1.0) if is_float else 1.0,
+      "min": high.get("min") if is_float else 0,
+      "max": high.get("max") if is_float else 0xFFFFFFFF,
+      "desc": high.get("desc"), "rule": {"pair": [high["id"], low["id"]], "type": pair_type},
     }
 
   def regs_info(self) -> list[dict]:
@@ -661,8 +668,8 @@ class ModbusMaster:
         pair_key = f"{entry['group']}:{pair_name}" if entry["group"] else pair_name
         if pair_key not in seen_pairs:
           seen_pairs.add(pair_key)
-          pinfo = self.pair_info(pair_key)
-          if pinfo: result.append(pinfo)
+          info = self.pair_info(pair_key)
+          if info: result.append(info)
         continue
       result.append(self.reg_info(rid))
     return result
@@ -685,12 +692,12 @@ class ModbusMaster:
         try: rule_idx = self._resolve_rule_index(entry)
         except Exception: pass
       result = []
-      for f in fields:
-        if f == "unit": result.append(self._get_unit(entry, rule_idx))
-        elif f == "min": result.append(self._get_minmax(entry, rule_idx)[0])
-        elif f == "max": result.append(self._get_minmax(entry, rule_idx)[1])
-        elif f == "scale": result.append(self._get_scale(entry, rule_idx))
-        elif f in entry: result.append(entry[f])
+      for field in fields:
+        if field == "unit": result.append(self._get_unit(entry, rule_idx))
+        elif field == "min": result.append(self._get_minmax(entry, rule_idx)[0])
+        elif field == "max": result.append(self._get_minmax(entry, rule_idx)[1])
+        elif field == "scale": result.append(self._get_scale(entry, rule_idx))
+        elif field in entry: result.append(entry[field])
         else: result.append(None)
       return tuple(result)
     if grouped:

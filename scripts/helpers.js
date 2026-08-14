@@ -1,13 +1,11 @@
 // scripts/helpers.js
 
-// Pure helpers shared by the UI. `cls()` joins class strings, `Reg.*` wraps
-// register-shaped data. Reads `S.dirty` / `S.values` for rule resolution but
-// never writes back.
+// Pure helpers shared by the UI. Reads `S.dirty` / `S.values` for rule
+// resolution but never writes back.
 
-//---------------------------------------------------------- DOM helpers
+//------------------------------------------------------------------------------------- DOM helpers
 
-// Falsy mods drop out, so callers can write `cls("btn", on && "on")` without
-// polluting the output with literal "false" tokens.
+// Falsy mods drop out, so callers can write `cls("btn", on && "on")`.
 function cls(base, ...mods) {
   let out = base;
   for(const m of mods) if(m) out += " " + m;
@@ -18,9 +16,8 @@ function cls(base, ...mods) {
 const valInput = (name) =>
   document.querySelector(`input.rb-val[data-reg="${CSS.escape(name)}"]`);
 
-// Labels of the bits set in `mask`, unlabeled ones as `bN` so a stray flag still
-// shows; "-" when none. `labels` is the index->name map (reg.bits); shared by the
-// grid display and the chart formatter.
+// Labels of the bits set in `mask`; unlabeled ones as `bN` so a stray flag
+// still shows, "-" when none. `labels` is the index->name map (reg.bits).
 function bitsText(labels, mask) {
   const out = [];
   for(let i = 0; i < 16; i++) if((mask >> i) & 1) out.push(labels[i] ?? ("b" + i));
@@ -30,8 +27,7 @@ function bitsText(labels, mask) {
 // "2026-07-17" - date stamp for exported file names.
 const fileStamp = () => new Date().toISOString().slice(0, 10);
 
-// Parse range expressions like "1-10, 12, 100-110" into a sorted dedup'd
-// list of valid Modbus addresses (1..247).
+// "1-10, 12, 100-110" → sorted, dedup'd Modbus addresses (1..247).
 function parseAddrRange(str) {
   const addrs = new Set();
   for(const part of str.split(",")) {
@@ -49,14 +45,13 @@ function parseAddrRange(str) {
     .sort((a, b) => a - b);
 }
 
-//---------------------------------------------------------- Register helpers
+//-------------------------------------------------------------------------------- Register helpers
 
 const Reg = (() => {
 
-  //---------------------------------------------------------- Internal
+  //-------------------------------------------------------------------------------------- Internal
 
-  // Pick the slot indexed by the active rule index for per-slot props
-  // (unit/scale/min/max). Non-array → as-is; OOB → first slot.
+  // Per-slot props (unit/scale/min/max): non-array → as-is, OOB → first slot.
   function _pickSlot(val, ri, fallback) {
     if(!Array.isArray(val)) return val ?? fallback;
     if(ri != null && ri >= 0 && ri < val.length) return val[ri];
@@ -68,14 +63,13 @@ const Reg = (() => {
     return s < 1 ? Math.ceil(-Math.log10(s)) : 0;
   }
 
-  //---------------------------------------------------------- Identity
+  //-------------------------------------------------------------------------------------- Identity
 
   // Pair registers store `id` as `[hi, lo]`; collapse to the two extremes.
   const lo = (reg) => Array.isArray(reg.id) ? Math.min(...reg.id) : reg.id;
   const hi = (reg) => Array.isArray(reg.id) ? Math.max(...reg.id) : reg.id;
 
-  // name → reg from the catalog, or null. Map cached on the catalog
-  // reference (loaded once at boot).
+  // name → reg, or null. Map cached on the catalog reference.
   let _byName = null, _byNameSrc = null;
   function byName(name) {
     if(_byNameSrc !== S.regs) {
@@ -91,15 +85,13 @@ const Reg = (() => {
     return a === b ? String(a) : `${a}-${b}`;
   }
 
-  //---------------------------------------------------------- Rule resolution
+  //------------------------------------------------------------------------------- Rule resolution
 
-  // Slot index for a `type=rule` register: case-insensitive lookup of the
-  // switch register's current value against `reg.unit` labels. Returns null
-  // when not a rule, switch unpolled, or no matching label (inactive slot).
+  // Slot index for a `type=rule` register: case-insensitive match of the
+  // switch value against `reg.unit` labels; null when no slot is active.
   //
-  // `confirmed=true` ignores pending edits and reads only `S.values` so chart
-  // panels wait for device feedback before regrouping. Offline (no feedback
-  // source) falls back to the dirty-aware behavior.
+  // `confirmed=true` reads only `S.values` so chart panels wait for device
+  // feedback before regrouping; offline there is no feedback to wait for.
   function ruleIndex(reg, confirmed = false) {
     if(reg.type !== "rule" || !reg.rule?.switch) return null;
     const switchName = reg.rule.switch;
@@ -120,7 +112,7 @@ const Reg = (() => {
   // Rule register whose switch resolves to no slot - control is disabled.
   const isInactive = (reg) => reg.type === "rule" && ruleIndex(reg) === null;
 
-  //---------------------------------------------------------- Per-slot accessors
+  //---------------------------------------------------------------------------- Per-slot accessors
 
   function unit(reg, confirmed = false) {
     const ri = ruleIndex(reg, confirmed);
@@ -132,36 +124,31 @@ const Reg = (() => {
   const min = (reg) => _pickSlot(reg.min, ruleIndex(reg), 0);
   const max = (reg) => _pickSlot(reg.max, ruleIndex(reg), 65535);
 
-  // Currently active scale - rule-aware so chart panels regroup when the
-  // switch flips (e.g. Ctrl:Setpoint rpm → Hz remaps unit AND scale).
+  // Rule-aware: Ctrl:Setpoint rpm → Hz remaps unit AND scale, so panels regroup.
   const scale = (reg, confirmed = false) => _pickSlot(reg.scale, ruleIndex(reg, confirmed), 1);
 
-  // Smallest meaningful increment. scale=1000 → 0.001 etc. Pair registers
-  // fix step at 1 (they're 32-bit ints or floats - sliders skip them anyway).
+  // scale=1000 → step 0.001. Pairs fix step at 1: they hold 32-bit ints or
+  // floats, and sliders skip them anyway.
   function step(reg) {
     if(reg.rule?.pair) return 1;
     const s = _pickSlot(reg.scale, ruleIndex(reg), 1);
     return (s && s > 0) ? 1 / s : 1;
   }
 
-  //---------------------------------------------------------- Access mode
+  //----------------------------------------------------------------------------------- Access mode
 
   const rws = (reg) => reg.rws || "R";
   const ro = (reg) => rws(reg) === "R";
 
-  // Each access mode gets its own badge color so RWs (persisted) reads
-  // visually distinct from RW (volatile).
+  // Own badge color per mode: RWs (persisted) vs RW (volatile).
   const rwsClass = (reg) => `rb-rws rws-${rws(reg).toLowerCase()}`;
 
-  //---------------------------------------------------------- Display / parse
+  //------------------------------------------------------------------------------- Display / parse
 
-  // Float pairs → magnitude-aware decimal. Uint pairs / hex → fixed-width
-  // uppercase hex. Plain numerics → decimals derived from `scale`.
   function display(reg, value) {
     if(value == null) return "";
     if(reg.rule?.pair) {
-      // IEEE 754 has no fixed scale - pick precision by magnitude so both
-      // very small and very large values stay readable.
+      // IEEE 754 has no fixed scale - pick precision by magnitude.
       if(reg.type === "float") {
         const a = Math.abs(value);
         if(a === 0) return "0";
@@ -179,8 +166,7 @@ const Reg = (() => {
     return String(value);
   }
 
-  // Decimal places the register's scale implies. Shared by `display` and the
-  // chart CSV export so both round numbers the same way.
+  // Shared with the chart CSV export so it rounds like `display`.
   const decimals = (reg) => _decimals(step(reg));
 
   // Numerics accept `0x..` / `0b..` prefixes. Enum/bool/ver keep the raw
@@ -197,9 +183,8 @@ const Reg = (() => {
       return isNaN(v) ? null : v;
     }
     if(isNumeric(reg)) {
-      // A decimal comma (PL/DE locale) is a lone separator between digits;
-      // normalize to a dot so parseFloat keeps the fraction. Mirrors the
-      // import-path rule in actions.js; grouped thousands are left alone.
+      // Decimal comma (PL/DE locale) → dot so parseFloat keeps the fraction;
+      // grouped thousands are left alone. Mirrors the import path in actions.js.
       const v = parseFloat(str.replace(/^(-?\d+),(\d+)$/, "$1.$2"));
       return isNaN(v) ? null : v;
     }
@@ -213,20 +198,19 @@ const Reg = (() => {
     return a == null && b == null;
   }
 
-  // Snap to the smallest representable value at the register's scale.
-  function snap(value, step) {
-    if(step >= 1) return Math.round(value);
-    return parseFloat(value.toFixed(_decimals(step)));
+  // Round to the precision `stepSize` allows.
+  function snap(value, stepSize) {
+    if(stepSize >= 1) return Math.round(value);
+    return parseFloat(value.toFixed(_decimals(stepSize)));
   }
 
-  //---------------------------------------------------------- Predicates
+  //------------------------------------------------------------------------------------ Predicates
 
-  // Value is a JS number (uint / int / rule / hex / bits) - drives parse,
-  // willWrap and import. Render dispatch is `isScalar` / Control.For.
+  // A JS number (uint / int / rule / hex / bits); render dispatch is `isScalar`.
   const isNumeric = (reg) => !["enum", "bool", "ver"].includes(reg.type);
   const isEnum = (reg) => reg.type === "enum" && reg.enum;
   const isBool = (reg) => reg.type === "bool";
-  const isVer  = (reg) => reg.type === "ver";
+  const isVer = (reg) => reg.type === "ver";
   const isBits = (reg) => reg.type === "bits" && reg.bits;
 
   // Renders the free-text Input control (Control.For's fallthrough).
@@ -241,13 +225,16 @@ const Reg = (() => {
     if(isInactive(reg)) return false;
     // Only against declared bounds; an undeclared side has no advisory limit.
     const ri = ruleIndex(reg);
-    const lo = _pickSlot(reg.min, ri, null);
-    const hi = _pickSlot(reg.max, ri, null);
-    return (lo != null && value < lo) || (hi != null && value > hi);
+    const loBound = _pickSlot(reg.min, ri, null);
+    const hiBound = _pickSlot(reg.max, ri, null);
+    return (loBound != null && value < loBound) || (hiBound != null && value > hiBound);
   }
 
   // 16-bit register span per type; types absent here don't scale-encode.
-  const _RAW_RANGE = { uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], bits: [0, 0xFFFF], int: [-0x8000, 0x7FFF] };
+  const _RAW_RANGE = {
+    uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], bits: [0, 0xFFFF],
+    int: [-0x8000, 0x7FFF],
+  };
 
   // round(value*scale) overflows the register and wraps to a different number.
   function willWrap(reg, value) {
@@ -269,7 +256,7 @@ const Reg = (() => {
     return raw / s;
   }
 
-  //---------------------------------------------------------- Tooltip / list ops
+  //---------------------------------------------------------------------------- Tooltip / list ops
 
   // Multi-line title attribute; browser renders \n as a soft break.
   function tooltip(reg) {
@@ -286,8 +273,7 @@ const Reg = (() => {
     ].filter(Boolean).join("\n");
   }
 
-  // Built once on first use; name weighted higher than desc so an exact
-  // name hit beats a description match. Diacritic-insensitive (PL letters).
+  // Name outweighs desc so exact name hits win; diacritic-insensitive (PL letters).
   let _fuzzy = null;
   function _getFuzzy() {
     if(!_fuzzy) _fuzzy = createFuzzy({
@@ -299,13 +285,30 @@ const Reg = (() => {
     return _fuzzy;
   }
 
-  // Empty query → return as-is (no ranking, no copy). The result is usually
-  // piped through `blocks()` which re-sorts by id, so fuzzy order doesn't
-  // survive in the grid - intentional, address topology reads better than
-  // a raw score dump when several registers match.
+  // Thins the list only in `S.searchHide` mode; the default marks instead
+  // (see `match`) so the grid never reflows. `blocks()` then re-sorts by id,
+  // dropping fuzzy order on purpose - address topology reads better.
   function filter(regs, query) {
-    if(!query) return regs;
+    if(!query || !S.searchHide) return regs;
     return _getFuzzy().rank(query, regs);
+  }
+
+  // Matching names, memoized on (catalog, query) - `match` asks once per row.
+  let _hits = null, _hitsSrc = null, _hitsQuery = null;
+  function _hitSet() {
+    if(_hitsSrc !== S.regs || _hitsQuery !== S.query) {
+      _hitsSrc = S.regs;
+      _hitsQuery = S.query;
+      _hits = new Set(_getFuzzy().rank(S.query, S.regs).map(r => r.name));
+    }
+    return _hits;
+  }
+
+  // "hit" / "miss" for the current query; null when there is nothing to mark -
+  // no query, or hide mode, where everything left standing is a hit anyway.
+  function match(reg) {
+    if(!S.query || S.searchHide) return null;
+    return _hitSet().has(reg.name) ? "hit" : "miss";
   }
 
   // Default view hides ignored regs; `S.showDisabled` reveals them inline
@@ -338,10 +341,8 @@ const Reg = (() => {
     return _edges;
   }
 
-  // Group registers into blocks along the canonical boundaries. Grouping is
-  // fixed by the full catalog, so search/ignore hiding registers thins a
-  // block out instead of splitting it at every hole. Drives the visual gaps
-  // in the grid.
+  // Boundaries come from the full catalog, so hiding registers thins a block
+  // out instead of splitting it at every hole. Drives the grid's visual gaps.
   function blocks(regs) {
     if(!regs.length) return [];
     const s = [...regs].sort((a, b) => lo(a) - lo(b));
@@ -356,9 +357,8 @@ const Reg = (() => {
     return out;
   }
 
-  // Lay id-ordered regs into `k` balanced columns: a contiguous block stays
-  // whole unless it alone exceeds a column's share, then it spills across
-  // columns. Each column is re-grouped by `blocks` for rendering.
+  // `k` balanced columns: a block stays whole unless it alone exceeds a
+  // column's share, then it spills. Columns are re-grouped by `blocks`.
   function columns(regs, k) {
     if(k <= 1 || !regs.length) return [regs];
     const colSize = regs.length / k;
@@ -370,7 +370,7 @@ const Reg = (() => {
         cols[Math.min(k - 1, Math.floor((cum + b.length / 2) / colSize))].push(...b);
         cum += b.length;
       }
-      else for(const r of b) {                // oversized block spills by row
+      else for(const r of b) {  // oversized block spills by row
         cols[Math.min(k - 1, Math.floor(cum / colSize))].push(r);
         cum++;
       }
@@ -386,11 +386,10 @@ const Reg = (() => {
     display, decimals, parse, same, snap,
     isEnum, isBool, isVer, isBits, isScalar, isNA,
     outOfRange, willWrap, wrapPreview,
-    tooltip, filter, visibility, blocks, columns,
+    tooltip, filter, match, visibility, blocks, columns,
   };
 })();
 
-// Grid column count from width and reg count (capped): narrow stays single-column.
 const GRID_COL_W = 460, GRID_COL_MAX = 6, GRID_COL_ROWS = 8;
 function gridColumnCount(regCount) {
   const w = document.querySelector(".rb-grid")?.clientWidth || (window.innerWidth - 32) || 1200;

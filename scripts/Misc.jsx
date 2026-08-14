@@ -2,20 +2,18 @@
 
 const Misc = {
 
-  // Per-register tweaker drawer (⚙ on a numeric row): step-, slider, step+.
-  // Mouse wheel scrubs by `Reg.step(reg)`. `cur` falls back to `min` when the
-  // cache is empty so the thumb isn't parked at 0.
+  // Per-register tweaker drawer (⚙ on a numeric row). `cur` falls back to `min`
+  // when the cache is empty so the thumb isn't parked at 0.
   Panel: ({ reg, value }) => {
     const step = Reg.step(reg);
     const mn = Reg.min(reg);
     const mx = Reg.max(reg);
-    const cur = (value != null && typeof value === "number") ? value : mn;
-    // Show the step magnitude on +/- only for fractional steps; bare +/-
-    // reads cleaner for integers.
+    const cur = typeof value === "number" ? value : mn;
+    // Step magnitude on +/- only for fractional steps; bare +/- reads cleaner.
     const stepLabel = step < 1 ? step : "";
     // Non-passive wheel listener so preventDefault can stop page scroll.
     const wheelHandler = (e) => {
-      if(e.ctrlKey) return;   // let Ctrl+wheel fall through to page zoom
+      if(e.ctrlKey) return;  // let Ctrl+wheel fall through to page zoom
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       const nv = Reg.snap(cur + dir * step, step);

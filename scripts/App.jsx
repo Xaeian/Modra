@@ -1,11 +1,8 @@
 // scripts/App.jsx
 
-// Root component. Toolbar (+ optional Serial row), optional chart bar, optional
-// widget panels, grid, footer. The whole tree is rebuilt on every render() - no
-// reactive layer.
+// Root component. The whole tree is rebuilt on every render() - no reactive layer.
 
-// Shared chrome around a device widget, so widgets only supply their content.
-// `View()` runs inside the normal render pass and must tolerate being rebuilt
+// `View()` runs inside the normal render pass and must tolerate a rebuild
 // twice a second - see scripts/widgets/readme.md.
 const WidgetPanel = ({ widget }) => (
   <section class="wg">
@@ -42,23 +39,23 @@ const App = () => {
   if(S.mapPrompt) return <MapPicker />;
   const regs = Reg.filter(Reg.visibility(S.regs), S.query);
   return (
-  <div class="rb-panel">
-    <div class="rb-header">
-      <Toolbar />
-      {S.serialOpen && <Serial />}
+    <div class="rb-panel">
+      <div class="rb-header">
+        <Toolbar />
+        {S.serialOpen && <Serial />}
+      </div>
+      {S.showChart && <Monitor.Bar />}
+      {S.showWidgets && Widgets.active().map(w => <WidgetPanel widget={w} />)}
+      <div class="rb-grid">
+        {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
+          <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>
+        )}
+      </div>
+      <footer class="rb-footer">
+        <span>Modra © {{ver}}</span>
+        <span>Design by <a href="https://github.com/Xaeian" target="_blank">Xaeian</a></span>
+        <span>{{foot}} with <a href="https://tonkajsx.com" target="_blank">TonkaJSX</a></span>
+      </footer>
     </div>
-    {S.showChart && <Monitor.Bar />}
-    {S.showWidgets && Widgets.active().map(w => <WidgetPanel widget={w} />)}
-    <div class="rb-grid">
-      {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
-        <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>
-      )}
-    </div>
-    <footer class="rb-footer">
-      <span>Modra © {{ver}}</span>
-      <span>Design by <a href="https://github.com/Xaeian" target="_blank">Xaeian</a></span>
-      <span>{{foot}} with <a href="https://tonkajsx.com" target="_blank">TonkaJSX</a></span>
-    </footer>
-  </div>
   );
 };

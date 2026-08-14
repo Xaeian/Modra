@@ -1,49 +1,42 @@
 // scripts/monitor.js
 
-// Chart config, time-series buffer, CSV export. `MonitData` holds the ring
-// buffer; `chart*` helpers are consumed by Monitor.jsx and chart.js.
+// Chart config, time-series buffer, CSV export. Consumed by Monitor.jsx and chart.js.
 
-//---------------------------------------------------------- Chart constants
+//--------------------------------------------------------------------------------- Chart constants
 
 // Live-window presets. Long ranges and `∞` (all history) are cheap: the backend
 // serves them from the hour/day tiers, so a year is a few hundred points.
 const CHART_RANGE_PRESETS = [
-  { label: "2m",  s: 120 },
+  { label: "2m", s: 120 },
   { label: "10m", s: 600 },
-  { label: "1h",  s: 3600 },
-  { label: "6h",  s: 21600 },
+  { label: "1h", s: 3600 },
+  { label: "6h", s: 21600 },
   { label: "24h", s: 86400 },
-  { label: "7d",  s: 604800 },
+  { label: "7d", s: 604800 },
   { label: "30d", s: 2592000 },
-  { label: "1y",  s: 31536000 },
-  { label: "∞",   s: Infinity },
+  { label: "1y", s: 31536000 },
+  { label: "∞", s: Infinity },
 ];
 
-// Point budget that picks the resolution tier (see `store.query`). 5000 keeps
-// short ranges on raw - 1h stays full detail (~7200 pts at a 0.5s poll) - while
-// 6h/24h fall to minute, 7d/30d to hour, 1y/∞ to day. Higher = finer tiers but
-// heavier fetches.
+// Point budget that picks the resolution tier (see `store.query`). Short ranges
+// stay on raw; higher = finer tiers but heavier fetches.
 const CHART_TARGET_POINTS = 5000;
 
-// Min gap between live refetches (ms). The window slides every poll, but
-// re-pulling a full raw window that often is wasteful, so the fetch is
-// throttled while the chart keeps sliding on the buffer it already has.
+// Min gap between live refetches (ms). Re-pulling a full window every poll is
+// wasteful; the chart keeps sliding on the buffer it already has.
 const CHART_LIVE_MS = 1000;
 
-// A drag-zoom whose right edge lands within CHART_EDGE_SEC of "now" counts as
-// live-edge: on the raw tier it keeps topping up. Enough to absorb drag and
-// refresh lag; a window ending further back is a deliberate historical view.
+// A zoom ending this close to "now" counts as live-edge and keeps topping up.
+// Absorbs drag and refresh lag; further back is a deliberate historical view.
 const CHART_EDGE_SEC = 15;
 
-// Range buttons: full fixed set. Tiers cover any span, so the list is not
-// filtered by available history.
+// Not filtered by available history: tiers cover any span.
 function chartRanges() {
   return CHART_RANGE_PRESETS;
 }
 
-// One palette per panel index. Series within a panel rotate through the
-// same palette so multi-trace panels stay visually distinct. 10 hues each;
-// panels with >10 series wrap.
+// One palette per panel index; series rotate within it so multi-trace panels
+// stay distinct.
 const CHART_COLORS = [
   // Ocean: blue, teal, indigo + orange, emerald, pink
   ["#1D4ED8", "#0EA5E9", "#0D9488", "#0369A1", "#6366F1",
@@ -78,14 +71,12 @@ const CHART_SIZES = { S: 100, M: 200, L: 300 };
 const CHART_SIZE_CYCLE = ["S", "M", "L"];
 const CHART_SIZE_DEFAULT = "M";
 
-// Gap-rendering floor. A hole longer than `GAP_TICKS * interval` (or
-// GAP_MIN_SEC, whichever is larger) breaks the line instead of interpolating.
-// 15 ticks at the 500ms default ≈ 7.5s - longer than read jitter, shorter than
-// a real disconnect.
+// Gap floor: a longer hole breaks the line instead of interpolating. 15 ticks
+// at the 500ms default ≈ 7.5s - past read jitter, short of a real disconnect.
 const GAP_TICKS = 15;
 const GAP_MIN_SEC = 5;
 
-//---------------------------------------------------------- Time formatting
+//--------------------------------------------------------------------------------- Time formatting
 
 const _pad2 = (n) => String(n).padStart(2, "0");
 
@@ -98,7 +89,8 @@ function chartFmtTime(ts) {
 // "26-05-12" - 2-digit year keeps axis labels narrow at the cost of post-2099 wrap.
 function chartFmtDate(ts) {
   const d = new Date(ts * 1000);
-  return String(d.getFullYear()).slice(2) + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate());
+  return String(d.getFullYear()).slice(2)
+    + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate());
 }
 
 const chartFmtFull = (ts) => chartFmtDate(ts) + " " + chartFmtTime(ts);
@@ -113,22 +105,23 @@ function chartFmtCSV(ts) {
     + " " + _pad2(d.getHours()) + ":" + _pad2(d.getMinutes()) + ":" + _pad2(d.getSeconds());
 }
 
-//---------------------------------------------------------- Color / grouping
+//-------------------------------------------------------------------------------- Color / grouping
 
-// Color for series `si` inside panel `gi`. Both indices wrap.
-const chartColor = (gi, si) => CHART_COLORS[gi % CHART_COLORS.length][si % CHART_COLORS[0].length];
+const chartColor = (gi, si) => {
+  const palette = CHART_COLORS[gi % CHART_COLORS.length];
+  return palette[si % palette.length];
+};
 
-// Stepped lines for series that don't interpolate cleanly: non-read-only
-// (write-side jumps between samples) and bool/enum/bits/hex (discrete).
+// Stepped where interpolation would lie: writable values jump between samples,
+// discrete types have no in-between.
 function chartIsStepped(reg) {
-  return reg.rws !== "R" || reg.type === "bool" || reg.type === "enum" || reg.type === "bits" || reg.type === "hex";
+  return reg.rws !== "R"
+    || ["bool", "enum", "bits", "hex"].includes(reg.type);
 }
 
-// Group key = unit + scale fingerprint. Two registers share a panel iff
-// their engineering unit and scale match. bool/enum/bits get their own panel
-// each (different y-axis semantics). Rule registers use the *confirmed* (device-
-// acknowledged) slot so the chart only regroups after the device reports the
-// new mode - clicking Hz on Ctrl:mode doesn't relabel until the write is ack'd.
+// Two registers share a panel iff unit and scale match; bool/enum/bits get one
+// each (different y-axis semantics). The `true` arg picks the device-confirmed
+// slot, so a rule reg regroups only once the write is ack'd.
 function chartGroupKey(reg) {
   if(reg.type === "bool") return "bool|" + reg.name;
   if(reg.type === "enum") return "enum|" + reg.name;
@@ -167,11 +160,10 @@ function chartToNum(reg, value) {
   return isNaN(n) ? null : n;
 }
 
-//---------------------------------------------------------- CSV export
+//-------------------------------------------------------------------------------------- CSV export
 
-// Export `names` from `buf` as a single CSV. Aligns on the union of
-// timestamps - missing samples are blank cells. Decimals per column come from
-// `Reg.decimals` so values match what the Grid shows.
+// Rows align on the union of timestamps - missing samples are blank. Decimals
+// come from `Reg.decimals` so values match the Grid.
 function chartExportCSV(names, buf) {
   const allTs = new Set();
   for(const n of names) {
@@ -198,69 +190,61 @@ function chartExportCSV(names, buf) {
   CSV.save(`monitor@${fileStamp()}.csv`, rows, ["time", ...names]);
 }
 
-//---------------------------------------------------------- MonitData (time-series buffer)
+//------------------------------------------------------------------ MonitData (time-series buffer)
 
-// Time-series buffer for monitored registers. Holds the currently visible
-// window only: each fetch returns the whole [from, to] at the right tier and
-// REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}].
+// Visible window only: each fetch returns the whole [from, to] at the right tier
+// and REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}].
 const MonitData = {
 
-  range: 600,      // live window length (seconds)
-  live: true,      // following "now" vs a frozen [from, to] from zoom/picker
-  from: 0,         // frozen window start (used when !live)
-  to: 0,           // frozen window stop
+  range: 600,     // live window length (seconds)
+  live: true,     // following "now" vs a frozen [from, to] from zoom/picker
+  from: 0,        // frozen window start (used when !live)
+  to: 0,          // frozen window stop
   _buf: {},
-  tier: "raw",     // resolution tier serving the current window (for the UI)
-  _nextFetch: 0,   // earliest ms epoch the live refetch may run again
-  _edge: false,    // frozen zoom sits at the live edge -> top up on raw tier
+  tier: "raw",    // resolution tier serving the current window (for the UI)
+  _nextFetch: 0,  // earliest ms epoch the live refetch may run again
+  _edge: false,   // frozen zoom sits at the live edge -> top up on raw tier
 
-  //---------------------------------------------------------- Window
+  //---------------------------------------------------------------------------------------- Window
 
-  // [from, to] of the visible window. Live -> sliding [now - range, now];
-  // frozen (after a zoom or date pick) -> the fixed window the user chose.
   window() {
     if(this.live) {
       const now = Date.now() / 1000;
       // `∞` -> from epoch start: all history, served from the day tier.
       return [this.range === Infinity ? 0 : now - this.range, now];
     }
-    // A raw-tier zoom pinned at the live edge keeps its left anchor but follows
-    // "now" on the right, so new samples fill in instead of the view freezing.
+    // Left anchor stays put, right edge follows "now", so new samples fill in.
     if(this._edge && this.tier === "raw") return [this.from, Date.now() / 1000];
     return [this.from, this.to];
   },
 
-  //---------------------------------------------------------- Poll params
+  //----------------------------------------------------------------------------------- Poll params
 
-  // Minimum gap (seconds) before a hole breaks the line. The real threshold is
-  // derived per-fetch from the data's own spacing (see `prepare`), since the
-  // tier - and so the bucket width - varies with zoom; this is just the floor.
+  // Floor only: `prepare` derives the real threshold from the data's own
+  // spacing, since bucket width varies with the tier.
   gapMin() {
     const ms = parseInt(S.serial?.interval) || 500;
     return Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
   },
 
-  // Backend query for the current window: a time range + a point budget, no
-  // tier logic here. `fetchParams` is the explicit fetch (range button, zoom,
-  // date pick); `readParams` is the poll fetch - null while frozen so a zoomed
-  // window stays static instead of being refetched every tick.
+  // Time range + point budget; tier selection lives in the backend. `fetchParams`
+  // is the explicit fetch (range button, zoom, date pick); `readParams` polls and
+  // returns null while frozen, so a zoomed window is not refetched every tick.
   fetchParams() {
     if(!S.monitor.size) return null;
     const [from, to] = this.window();
     return { from, to, names: [...S.monitor], max_points: CHART_TARGET_POINTS };
   },
   readParams() {
-    // Frozen window stays static, unless it's a raw-tier zoom at the live edge,
-    // which keeps topping up with new samples.
     if(!this.live && !(this._edge && this.tier === "raw")) return null;
     const now = Date.now();
     if(now < this._nextFetch) return null;
     this._nextFetch = now + CHART_LIVE_MS;
-    if(!this.live) this.to = now / 1000;   // persist the followed edge
+    if(!this.live) this.to = now / 1000;  // persist the followed edge
     return this.fetchParams();
   },
 
-  //---------------------------------------------------------- Ingest
+  //---------------------------------------------------------------------------------------- Ingest
 
   // DB column for the reg's active slot, or null when no slot resolves
   // (rule reg with switch=off, unpolled, etc). Callers gate on this.
@@ -272,14 +256,12 @@ const MonitData = {
     return idx !== null ? `${base}_${idx}` : null;
   },
 
-  // Replace the buffer from a freshly fetched window. The backend already
-  // downsampled to the right tier, so we just project each row's active-slot
-  // column. A non-array payload (cache-only poll) is ignored so a frozen chart
-  // is never blanked.
+  // A non-array payload (cache-only poll) is ignored so a frozen chart is never
+  // blanked. Rows arrive downsampled; only the active-slot column is projected.
   ingest(rows) {
     if(!Array.isArray(rows)) return;
     const next = {};
-    const traces = [];   // [name, reg, col] per name with a resolvable column
+    const traces = [];  // [name, reg, col] per name with a resolvable column
     for(const name of S.monitor) {
       next[name] = [];
       const reg = Reg.byName(name);
@@ -289,20 +271,18 @@ const MonitData = {
     for(const row of rows) {
       for(const [name, reg, col] of traces) {
         const raw = row[col];
-        if(raw == null) continue;   // gap: inactive slot / no data this bucket
+        if(raw == null) continue;  // gap: inactive slot / no data this bucket
         next[name].push({ ts: row.ts, v: typeof raw === "number" ? raw : chartToNum(reg, raw) });
       }
     }
     this._buf = next;
   },
 
-  //---------------------------------------------------------- Range / membership sync
+  //----------------------------------------------------------------------- Range / membership sync
 
-  // Live window of length `s` (seconds), following "now".
   setRange(s) { this.range = s; this.live = true; this._edge = false; },
 
-  // Frozen window from a drag-zoom or date picker. A zoom whose right edge sits
-  // at the live edge keeps topping up on the raw tier (see `window`).
+  // Frozen window from a drag-zoom or date picker.
   setWindow(from, to) {
     this.from = from; this.to = to; this.live = false;
     this._edge = (Date.now() / 1000 - to) <= CHART_EDGE_SEC;
@@ -313,11 +293,10 @@ const MonitData = {
     for(const n of Object.keys(this._buf)) if(!S.monitor.has(n)) delete this._buf[n];
   },
 
-  //---------------------------------------------------------- Grouping
+  //-------------------------------------------------------------------------------------- Grouping
 
-  // Bucket monitored registers into panels sharing unit + scale (or by name
-  // for bool/enum). Rule regs without an active slot are gated out - no
-  // sample can land, so a panel would stay perpetually empty.
+  // Rule regs without an active slot are gated out: no sample can land, so the
+  // panel would stay perpetually empty.
   groups() {
     const out = {};
     let idx = 0;
@@ -341,12 +320,10 @@ const MonitData = {
     return out;
   },
 
-  //---------------------------------------------------------- Prepare data for chart
+  //------------------------------------------------------------------------ Prepare data for chart
 
-  // Turn the buffer into uPlot-shaped `[xs, ...series]`. Holes wider than the
-  // sample spacing are bracketed with null markers so the renderer breaks the
-  // line instead of interpolating. Edges padded with empties so a fresh chart
-  // still spans the full requested window.
+  // Buffer -> uPlot `[xs, ...series]`. Edges are padded with empties so a fresh
+  // chart still spans the full requested window.
   prepare(names) {
     const [xMin, xMax] = this.window();
     const maps = {};
@@ -360,7 +337,7 @@ const MonitData = {
     }
     const times = [...tsSet].sort((a, b) => a - b);
     const ts = [], vals = names.map(() => []);
-    // Break holes wider than ~3x the sample spacing, floored by gapMin (tolerates
+    // Break holes wider than ~3x the median spacing, floored by gapMin (tolerates
     // jitter, breaks even a lone pair across a real hole). Stepped enum/bool too:
     // a held value is sampled every poll, so a true hole has no samples to bridge.
     let gap = this.gapMin();
@@ -389,6 +366,6 @@ const MonitData = {
     return [ts, ...vals];
   },
 
-  // Wipe the buffer. Called on disconnect so the next session starts fresh.
+  // Called on disconnect so the next session starts fresh.
   clear() { this._buf = {}; },
 };

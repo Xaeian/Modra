@@ -1,56 +1,58 @@
 // scripts/sys/state.js
 
-// Global mutable app state. Every mutation outside `applyStatus`/`applyCache`
-// must be followed by `render()` - there is no reactive layer here.
+// No reactive layer: every mutation outside `applyStatus`/`applyCache` must call `render()`.
 
 const S = {
 
-  //---------------------------------------------------------- Connection (backend mirror)
+  //------------------------------------------------------------------- Connection (backend mirror)
 
   ports: [],
   port: null,
   addr: null,
   connected: false,
   serial_open: false,
-  serial: { baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000, retries: 3, interval: 500, history: 14, autosend: false },
+  serial: {
+    baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000,
+    retries: 3, interval: 500, history: 14, autosend: false,
+  },
 
-  //---------------------------------------------------------- Connection (UI inputs)
+  //------------------------------------------------------------------------ Connection (UI inputs)
 
-  // What the user typed before pressing Connect; copied to `port`/`addr`
-  // once the backend confirms the connection.
+  // What the user typed; copied to `port`/`addr` once the backend confirms.
   portInput: "",
   addrInput: "",
   busy: false,
 
-  //---------------------------------------------------------- UI toggles
+  //------------------------------------------------------------------------------------ UI toggles
 
   showChart: false,
-  mapPrompt: false,     // startup map prompt is on screen
-  askMap: true,         // show it on every start (mirrors view.json)
-  showWidgets: false,   // device widget panels visible (restored from localStorage)
-  serialOpen: false,    // Serial panel expanded (≠ backend `serial_open`)
-  utilOpen: null,       // register name whose Misc panel is open, or null
+  mapPrompt: false,    // startup map prompt is on screen
+  askMap: true,        // re-prompt on every start (mirrors view.json)
+  showWidgets: false,  // device widget panels visible (restored from localStorage)
+  serialOpen: false,   // Serial panel expanded (≠ backend `serial_open`)
+  utilOpen: null,      // register name whose Misc panel is open, or null
   query: "",
+  searchHide: false,   // search drops the misses instead of fading them
 
-  //---------------------------------------------------------- Data
+  //------------------------------------------------------------------------------------------ Data
 
   regs: [],
   values: {},
   dirty: {},
+  variant: 0,  // which `default` slot a restore stages from
 
-  //---------------------------------------------------------- Monitor
+  //--------------------------------------------------------------------------------------- Monitor
 
-  monitor: new Set(),   // register names currently charted
-  chartSizes: {},       // group key → "S"|"M"|"L"
+  monitor: new Set(),  // register names currently charted
+  chartSizes: {},      // group key → "S"|"M"|"L"
 
-  //---------------------------------------------------------- Ignore (server-mirrored)
+  //---------------------------------------------------------------------- Ignore (server-mirrored)
 
-  // Backend skips polling these; frontend hides rows unless `showDisabled`
-  // is on. Mirror of `view.ignore` on disk.
+  // Backend skips polling these. Mirror of `view.ignore` on disk.
   ignore: new Set(),
   showDisabled: false,  // reveal ignored rows inline with the active ones
 
-  //---------------------------------------------------------- Address scan
+  //---------------------------------------------------------------------------------- Address scan
 
   addrScanInput: "",
   addrScanResults: null,

@@ -19,6 +19,14 @@
    name signals "currently disabled, click ghost to re-enable". */
 .rb-reg.rb-ignored { opacity: 0.55; }
 .rb-reg.rb-ignored .rb-name { text-decoration: line-through; color: var(--text-muted); }
+/* Search marks instead of hiding: an accent edge on the hit, the miss faded
+   but in place, so the grid never reflows under the query. The edge is drawn
+   inside, so it composes with the dirty/oor tints and shifts nothing. Last,
+   so a miss stays faded whatever else the row is. Hover reads it back. */
+.rb-reg.rb-hit { box-shadow: inset 3px 0 0 var(--accent); }
+.rb-reg.rb-hit .rb-name { font-weight: 600; }
+.rb-reg.rb-miss { opacity: 0.25; }
+.rb-reg.rb-miss:hover { opacity: 1; }
 .rb-row-wrap { display: contents; }
 
 [data-theme="dark"] .rb-reg.rb-dirty { background: #3a3520; }

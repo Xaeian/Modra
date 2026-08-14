@@ -1,10 +1,15 @@
 # Changes `modra`
 
+## `1.3.1` Search, Defs
+
+- Search fades misses instead of hiding them 🙈
+- 🏭 Defaults stages factory values from `regs.csv`, per device variant
+
 ## `1.3.0` Widgets
 
 - Device widgets 🧩: per-device panels enabled in `app.ini`
 - Register map picked at startup: swap or update it without touching files
-- 
+
 ## `1.2.4` Bits
 
 - `bits` register type: a toggle per labeled bit, own chart panel

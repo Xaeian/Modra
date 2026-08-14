@@ -1,9 +1,8 @@
 // scripts/poll.js
 
-// Frontend polls backend at the same interval the backend uses to read the
-// device - one source of truth in `serial.ini` / `S.serial.interval`. Floor
-// keeps the UI sane if the user sets an interval near zero. Port enumeration
-// runs slower and stays hardcoded (it's about hot-plug, not data freshness).
+// Poll at the same interval the backend reads the device - one source of
+// truth in `serial.ini`. Floor guards a near-zero setting. Port enumeration
+// is about hot-plug, not freshness, so it stays hardcoded.
 const POLL_MS_FLOOR = 50;
 const PORT_SCAN_MS = 1000;
 
@@ -12,7 +11,7 @@ function _pollInterval() {
   return Math.max(POLL_MS_FLOOR, ms);
 }
 
-//---------------------------------------------------------- Status & cache merge
+//---------------------------------------------------------------------------- Status & cache merge
 
 // Touches only what the payload sets explicitly. `ports` mutates only on
 // actual change so the Toolbar select doesn't wiggle on every tick.
@@ -29,18 +28,17 @@ function applyStatus(s) {
   S.connected = s.connected || false;
   S.serial_open = s.serial_open || false;
   if(S.serial_open) {
-    if("port" in s && s.port) S.port = s.port;
+    if(s.port) S.port = s.port;
   }
   else S.port = null;
   if(S.connected) {
-    if("addr" in s && s.addr) S.addr = s.addr;
+    if(s.addr) S.addr = s.addr;
   }
   else if(!S.serial_open) S.addr = null;
 }
 
 // Merge a decoded cache (grouped `{Group: {Name: val}}` or flat) into
-// `S.values`. Returns true if any value changed so callers can skip
-// no-op renders.
+// `S.values`. The change flag lets callers skip no-op renders.
 function applyCache(cache) {
   if(!cache) {
     for(const k in S.values) S.values[k] = null;
@@ -65,7 +63,7 @@ function applyCache(cache) {
   return changed;
 }
 
-//---------------------------------------------------------- User editing guard
+//------------------------------------------------------------------------------ User editing guard
 
 // Resolves at focus time (not on every poll), so the poll loop can skip
 // re-renders that would steal focus or blow away half-typed values.
@@ -84,13 +82,12 @@ document.addEventListener("focusout", () => { _userEditing = false; });
 
 function isUserEditing() { return _userEditing; }
 
-//---------------------------------------------------------- Connection edge
+//--------------------------------------------------------------------------------- Connection edge
 
 // Edge flag so the disconnect toast fires once per outage, not once per tick.
 let _deviceDown = false;
 
-// One reaction to a `S.connected` flip, shared by both background loops:
-// blank cache + toast once per outage, re-arm polling on recovery.
+// One reaction to a `S.connected` flip, shared by both background loops.
 // Manual connect/disconnect does its own messaging and skips this.
 function connectionEdge(prev) {
   if(prev === S.connected) return;
@@ -104,14 +101,13 @@ function connectionEdge(prev) {
   }
 }
 
-//---------------------------------------------------------- Poll loop
+//--------------------------------------------------------------------------------------- Poll loop
 
 let _polling = false;
 let _pollTimer = null;
 
-// One iteration: pull cache (+ monitor rows since last ts), reconcile S,
-// push chart data, render unless the user is editing. `_polling` guards
-// re-entrancy; the next tick picks up if a call stretches past POLL_MS.
+// `_polling` guards re-entrancy: a call stretching past the interval is
+// picked up by the next tick.
 async function poll() {
   if(_polling) return;
   _polling = true;
@@ -127,8 +123,7 @@ async function poll() {
     if("tier" in res) MonitData.tier = res.tier;
     if(S.monitor.size) Monitor.update(res.rows);
     if(!S.connected) {
-      // Keep the timer armed: the backend retries on its own, so polling picks
-      // the device back up as soon as it answers again.
+      // Keep the timer armed: the backend retries, so polling recovers on its own.
       render();
       return;
     }
@@ -157,9 +152,8 @@ function stopPoll() {
   _deviceDown = false;
 }
 
-// Rebind the tick interval when `S.serial.interval` changes. Cheap (one
-// clear + one setInterval), called from `setSerial` after the backend
-// confirms the new value.
+// Rebind the tick when `S.serial.interval` changes; called from `setSerial`
+// once the backend confirms the new value.
 function restartPoll() {
   if(!_pollTimer) return;
   clearInterval(_pollTimer);
@@ -172,7 +166,7 @@ document.addEventListener("visibilitychange", () => {
   if(!document.hidden && _pollTimer) poll();
 });
 
-//---------------------------------------------------------- Port scanner
+//------------------------------------------------------------------------------------ Port scanner
 
 let _portTimer = null;
 let _portScanning = false;
@@ -189,6 +183,7 @@ function startPortScan() {
       const prev = { connected: S.connected, serial_open: S.serial_open };
       applyStatus(status);
       connectionEdge(prev.connected);
+      // applyStatus swaps the array only on real change, so identity is enough.
       if(S.ports !== prevPorts
         || prev.connected !== S.connected
         || prev.serial_open !== S.serial_open) render();

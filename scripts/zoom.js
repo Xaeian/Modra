@@ -1,8 +1,7 @@
 // scripts/zoom.js
 
 // Page zoom for the desktop (webview) build, where the browser's own Ctrl +/-
-// is unavailable. Scales the whole UI via `body.style.zoom`, persisted across
-// launches. No-op under HTTP - the browser handles zoom there.
+// is unavailable. No-op under HTTP - the browser handles zoom there.
 const ZOOM = (() => {
   const KEY = "modra.zoom";
   const MIN = 0.5, MAX = 2.5, STEP = 0.1;
@@ -16,7 +15,7 @@ const ZOOM = (() => {
 
   const enabled = API.MODE === "webview";
   if(enabled) {
-    set(z);   // clamp+apply a possibly stale/corrupt stored value
+    set(z);  // clamp+apply a possibly stale/corrupt stored value
     document.addEventListener("keydown", (e) => {
       if(!e.ctrlKey) return;
       if(e.key === "=" || e.key === "+") { set(z + STEP); e.preventDefault(); }

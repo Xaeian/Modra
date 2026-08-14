@@ -1,17 +1,15 @@
 // scripts/actions.js
 
-// User-triggered side effects: edit, connect, send, sync, scan, serial,
-// import/export. Public actions end with `render()` so the DOM reflects S.
+// User-triggered side effects. Public actions end with `render()` so the DOM reflects S.
 
-//---------------------------------------------------------- Helpers
+//----------------------------------------------------------------------------------------- Helpers
 
 const VIEW_SAVE_DEBOUNCE_MS = 500;
 const MIN_ADDR = 1;
 const MAX_ADDR = 247;
 
-// Debounced batched persist for view.json. Collects partial patches and
-// flushes them in a single POST so monitor + ignore edits land race-free
-// when multiple actions hit the same 500ms window.
+// Batches partial view.json patches into one POST, so monitor and ignore
+// edits in the same window don't clobber each other.
 const _viewSaver = (() => {
   let timer = null;
   let pending = {};
@@ -20,7 +18,10 @@ const _viewSaver = (() => {
     if(!Object.keys(patch).length) return;
     API.view_set(patch);
   };
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(flush, VIEW_SAVE_DEBOUNCE_MS); };
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(flush, VIEW_SAVE_DEBOUNCE_MS);
+  };
   return {
     monitor() {
       const groups = MonitData.groups();
@@ -34,16 +35,14 @@ const _viewSaver = (() => {
   };
 })();
 
-// Stable alias for the debounced monitor saver.
 const saveMonitor = () => _viewSaver.monitor();
 
-//---------------------------------------------------------- Edit / dirty
+//------------------------------------------------------------------------------------ Edit / dirty
 
-// Equal-to-cache means "user clicked back to the original" - drop the dirty
-// entry instead of recording a no-op write.
 function edit(reg, val) { editSilent(reg, val); render(); }
 
 // Merge a pending edit without rendering (bulk import, per-keystroke typing).
+// Back to the cached value means no edit at all - drop the entry.
 function editSilent(reg, val) {
   if(Reg.same(S.values[reg.name], val)) delete S.dirty[reg.name];
   else S.dirty[reg.name] = val;
@@ -58,32 +57,28 @@ function reset() {
   render();
 }
 
-// Toggle a pending device-null between set and reverted. Setting it counts
-// as a pick, so autosend writes it immediately - same contract as an enum click.
+// Setting a null counts as a pick, so autosend writes it - like an enum click.
 function toggleNull(reg) {
   const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
-  cur == null ? resetOne(reg) : editSend(reg, null);
+  if(cur == null) resetOne(reg); else editSend(reg, null);
 }
 
-//---------------------------------------------------------- Send single register
+//---------------------------------------------------------------------------- Send single register
 
-// Autosend fires for an editable reg with a pending value while connected.
 const shouldAutosend = (reg) => S.serial?.autosend && S.connected && reg.name in S.dirty;
 
 // Value already on the wire per register - collapses a blur autosend and an
 // immediate 🎯 on the same field into a single write.
 const _sending = new Map();
 
-// Write one register and adopt the device-confirmed cache; drops its pending edit.
 async function _writeOne(reg, val) {
   const cache = await API.write({ [reg.name]: val });
   if(cache && !cache.error) { applyCache(cache); delete S.dirty[reg.name]; }
   else alert.err(cache?.error || "Write failed");
 }
 
-// Per-row 🎯: stage the current value (pending edit, else live) into the Send
-// batch even if it equals the cache, so an unchanged value can be re-sent.
-// Autosend flushes it at once; otherwise it waits for Send.
+// Per-row 🎯: stages the value even when it equals the cache, so an unchanged
+// value can be re-sent.
 function sendOne(reg) {
   if(!S.connected) return;
   S.dirty[reg.name] = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
@@ -91,12 +86,12 @@ function sendOne(reg) {
   render();
 }
 
-// Autosend a single reg: flush its pending value, then adopt the device cache.
 async function autosendOne(reg) {
   const val = S.dirty[reg.name];
   // Don't autosend a wrapping value; leave it staged for the explicit Send.
   if(Reg.willWrap(reg, val)) {
-    alert.wrn(`${reg.name} would be stored as ${Reg.display(reg, Reg.wrapPreview(reg, val))} on the device - not sent`);
+    alert.wrn(`${reg.name} would be stored as `
+      + `${Reg.display(reg, Reg.wrapPreview(reg, val))} on the device - not sent`);
     render();
     return;
   }
@@ -107,27 +102,24 @@ async function autosendOne(reg) {
   render();
 }
 
-// Enum/bool pick: set the value, and in autosend mode write it on the spot.
 function editSend(reg, val) {
   edit(reg, val);
   if(shouldAutosend(reg)) autosendOne(reg);
 }
 
-//---------------------------------------------------------- UI toggles
+//-------------------------------------------------------------------------------------- UI toggles
 
 function toggleMonitor(reg) {
   const adding = !S.monitor.has(reg.name);
   if(adding) S.monitor.add(reg.name);
   else S.monitor.delete(reg.name);
   render();
-  // Two mount calls bracket refresh: first ensures the chart host exists in
-  // the rendered DOM, second reattaches after ChartStack rebuilds panels.
+  // First mount creates the chart host, the second reattaches after ChartStack rebuilds.
   Monitor.mount();
   Monitor.refresh();
   Monitor.mount();
   saveMonitor();
-  // Backfill the new trace from the store right away: lands with no device
-  // connected, inside a frozen (zoomed) window, and skips the live throttle.
+  // Backfill the new trace: works offline, inside a frozen window, and skips the throttle.
   if(adding) Monitor.refetch();
 }
 
@@ -138,8 +130,7 @@ function toggleUtil(reg) {
 
 function toggleChart() { S.showChart = !S.showChart; render(); }
 
-// Widget visibility is a per-machine preference, so it rides in localStorage
-// like the page zoom - the backend knows nothing about widgets.
+// Per-machine preference, so it lives in localStorage like the page zoom.
 const WIDGETS_KEY = "modra.widgets";
 
 function toggleWidgets() {
@@ -158,10 +149,12 @@ function restoreWidgets() {
 
 function search(q) { S.query = q; render(); }
 
+// Fading misses (the default) holds the grid still while the query narrows.
+function toggleSearchHide() { S.searchHide = !S.searchHide; render(); }
+
 function toggleSerial() { S.serialOpen = !S.serialOpen; render(); }
 
-// Adding to ignore tidies derivative state: drops pending edits (would
-// never poll back) and removes any chart trace (no new samples coming).
+// Ignored regs stop polling, so a pending edit never confirms and a trace never grows.
 function toggleIgnore(reg) {
   if(S.ignore.has(reg.name)) {
     S.ignore.delete(reg.name);
@@ -182,7 +175,7 @@ function toggleIgnore(reg) {
 
 function toggleShowDisabled() { S.showDisabled = !S.showDisabled; render(); }
 
-//---------------------------------------------------------- Connection
+//-------------------------------------------------------------------------------------- Connection
 
 // One button covers connect (open port → probe addr) and disconnect.
 // Stage failures roll back the relevant slice without flushing the rest of S.
@@ -199,7 +192,6 @@ async function toggleConnection() {
     }
     const port = S.portInput;
     if(!port) return;
-    // Reopen if the port is closed or the user picked a different one.
     if(!S.serial_open || S.port !== port) {
       if(S.serial_open) {
         applyStatus(await API.disconnect());
@@ -212,15 +204,15 @@ async function toggleConnection() {
         return;
       }
     }
-    const a = S.portInput === "SIM" ? 1 : parseInt(S.addrInput);
-    if(a >= MIN_ADDR && a <= MAX_ADDR) {
-      const s = await API.set_addr(a);
+    const addr = S.portInput === "SIM" ? 1 : parseInt(S.addrInput);
+    if(addr >= MIN_ADDR && addr <= MAX_ADDR) {
+      const s = await API.set_addr(addr);
       applyStatus(s);
       if(S.connected) {
         startPoll();
-        alert.ok(S.portInput === "SIM" ? "Simulator connected" : `Connected to addr ${a}`);
+        alert.ok(S.portInput === "SIM" ? "Simulator connected" : `Connected to addr ${addr}`);
       }
-      else alert.wrn(s?.error || `No response addr:${a}`);
+      else alert.wrn(s?.error || `No response addr:${addr}`);
     }
   }
   finally {
@@ -229,22 +221,22 @@ async function toggleConnection() {
   }
 }
 
-//---------------------------------------------------------- Write / Sync
+//------------------------------------------------------------------------------------ Write / Sync
 
-// Confirm before sending values that overflow their register (they wrap to a
-// different number). False only when the user cancels.
+// Overflowing values wrap to a different number. False only when the user cancels.
 function _confirmWraps(batch) {
   const bad = Object.entries(batch)
     .map(([name, val]) => [Reg.byName(name), val])
     .filter(([reg, val]) => reg && Reg.willWrap(reg, val));
   if(!bad.length || typeof confirm !== "function") return true;
   const lines = bad.map(([reg, val]) =>
-    `  ${reg.name}: ${Reg.display(reg, val)} → ${Reg.display(reg, Reg.wrapPreview(reg, val))}`).join("\n");
-  return confirm(`${bad.length} value(s) are too large for their register and will be stored as a different number on the device:\n\n${lines}\n\nSend anyway?`);
+    `  ${reg.name}: ${Reg.display(reg, val)} → `
+    + `${Reg.display(reg, Reg.wrapPreview(reg, val))}`).join("\n");
+  return confirm(`${bad.length} value(s) are too large for their register and will be `
+    + `stored as a different number on the device:\n\n${lines}\n\nSend anyway?`);
 }
 
-// Replaces `S.values` with the returned cache rather than merging our
-// pending edits - the backend may have clamped or rejected values.
+// Adopt the returned cache instead of our edits - the backend may clamp or reject.
 async function send() {
   if(!S.connected || !Object.keys(S.dirty).length) return;
   if(!_confirmWraps(S.dirty)) return;
@@ -265,12 +257,10 @@ async function sync() {
   alert.inf("Reading all registers from device");
 }
 
-//---------------------------------------------------------- Widget writes
+//----------------------------------------------------------------------------------- Widget writes
 
-// Direct device write, bypassing the `S.dirty` staging the grid uses: a widget
-// drives a control loop, not a pending-edit list, so there is nothing for
-// Send/Reset to flush. The returned cache is a read-back, so adopting it leaves
-// `S.values` holding what the device actually stored. Caller renders.
+// Direct write, bypassing `S.dirty`: a widget drives a control loop, not a
+// pending-edit list, so there is nothing for Send/Reset to flush. Caller renders.
 async function writeNow(patch) {
   if(!S.connected || !patch || !Object.keys(patch).length) return false;
   const cache = await API.write(patch);
@@ -282,7 +272,7 @@ async function writeNow(patch) {
   return true;
 }
 
-//---------------------------------------------------------- Address scan
+//------------------------------------------------------------------------------------ Address scan
 
 async function scanAddrs() {
   if(!S.serial_open || S.addrScanning) return;
@@ -296,10 +286,9 @@ async function scanAddrs() {
   render();
 }
 
-//---------------------------------------------------------- Serial config
+//----------------------------------------------------------------------------------- Serial config
 
-// A change to a wire-level field (baudrate/parity/stopbits/timeout)
-// invalidates the open port. Force a UI disconnect and tell the user.
+// A wire-level change invalidates the open port, so force a UI disconnect.
 async function setSerial(params) {
   const prev = { ...S.serial };
   S.serial = await API.set_serial(params);
@@ -316,10 +305,9 @@ async function setSerial(params) {
   render();
 }
 
-//---------------------------------------------------------- Database
+//---------------------------------------------------------------------------------------- Database
 
-// Wipe stored poll history. Confirms first (irreversible), then clears the
-// live chart buffer so the panels don't show pre-delete samples that no
+// Clear the live buffer too, or the panels keep showing samples that no
 // longer exist on disk.
 async function deleteDatabase() {
   if(typeof confirm === "function"
@@ -332,10 +320,34 @@ async function deleteDatabase() {
   render();
 }
 
-//---------------------------------------------------------- Import / Export
+//---------------------------------------------------------------------------------------- Defaults
 
-// Returns the picked File (or null on cancel) without leaking the temporary
-// <input>.
+// Ignored regs are excluded: they hold no pending edits by design (see `toggleIgnore`).
+const defaultRegs = () => S.regs.filter(r =>
+  r.default != null && (r.rws === "RW" || r.rws === "RWs") && !S.ignore.has(r.name));
+
+// A `/`-list in `default` holds one value per device variant.
+const variantCount = () => Math.max(1, ...S.regs.map(r =>
+  Array.isArray(r.default) ? r.default.length : 1));
+
+// Stage rather than write, so Send applies the same guards as a hand edit.
+// `editSilent` drops what the device already holds, leaving the real diff.
+function restoreDefaults() {
+  const before = Object.keys(S.dirty).length;
+  for(const reg of defaultRegs()) {
+    const d = reg.default;
+    editSilent(reg, Array.isArray(d) ? (d[S.variant] ?? d[0]) : d);
+  }
+  const n = Object.keys(S.dirty).length - before;
+  if(n) alert.inf(`Staged ${n} default${n === 1 ? "" : "s"} - review, then Send`);
+  else alert.ok("Already at defaults");
+  render();
+}
+
+function setVariant(i) { S.variant = i; render(); }
+
+//--------------------------------------------------------------------------------- Import / Export
+
 function _pickFile(accept) {
   return new Promise(resolve => {
     const input = document.createElement("input");
@@ -347,9 +359,8 @@ function _pickFile(accept) {
   });
 }
 
-// The whole UI is generated from the register map, so a new one means starting
-// over: reload rather than patch the catalog in place. The one-shot flag keeps
-// the startup prompt from reappearing on the very reload it caused.
+// The whole UI is generated from the register map, so a new map means a reload.
+// The flag keeps the startup prompt from returning on the reload it caused.
 const MAP_PICKED = "modra.mapPicked";
 
 async function pickMap() {
@@ -361,16 +372,14 @@ async function pickMap() {
   location.reload();
 }
 
-// Kept in view.json rather than localStorage: it belongs to this install's
-// device setup, not to the browser. The settings panel keeps a way back in.
+// Kept in view.json, not localStorage - it belongs to the install, not the browser.
 function toggleAskMap() {
   S.askMap = !S.askMap;
   API.view_set({ ask_map: S.askMap });
   render();
 }
 
-// Bulk-load RW/RWs values from .ini or .csv into `S.dirty`. Uses
-// `editSilent` to skip per-row renders; one final `render()` at the end.
+// Bulk-load RW/RWs values from .ini or .csv into `S.dirty`.
 async function importConfig() {
   const file = await _pickFile(".ini,.csv");
   if(!file) return;
@@ -407,11 +416,8 @@ async function importConfig() {
   }
   else if(ext === "csv") {
     let text = await file.text();
-    // A PL/DE regional locale sets the list separator to ';' and the decimal
-    // to ',', so a cfg CSV saved under it (commonly via Excel) comes back ';'
-    // separated with "1,5" not "1.5", often with a UTF-8 BOM. Detect and
-    // normalize here, at the app layer - the CSV lib stays a plain comma
-    // parser. More ';' than ',' in the header is the tell.
+    // Excel under a PL/DE locale writes ';' separators, "1,5" decimals and a
+    // UTF-8 BOM. Normalize here so the CSV lib stays a plain comma parser.
     if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     const head = text.split(/\r?\n/).find(l => l.trim()) || "";
     const localeCsv = (head.split(";").length - 1) > (head.split(",").length - 1);
@@ -433,8 +439,7 @@ async function importConfig() {
   render();
 }
 
-// One row per RWs register. R / W are skipped - they don't carry
-// user-configurable state.
+// One row per RWs register - R/W hold no user-configurable state.
 function exportConfigCSV() {
   const rows = [];
   for(const reg of S.regs) {
@@ -451,8 +456,7 @@ function exportConfigCSV() {
   alert.ok(`Exported ${rows.length} register${rows.length === 1 ? "" : "s"} to ${name}`);
 }
 
-// Groups → [sections], leaf RWs → section keys. Unit (e.g. "rpm") is attached
-// as a trailing inline comment via `commentField`.
+// Groups → [sections], leaf RWs → keys; unit rides as a trailing comment.
 function exportConfigINI() {
   const data = {}, commentField = {};
   for(const reg of S.regs) {

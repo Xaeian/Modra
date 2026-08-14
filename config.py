@@ -19,6 +19,15 @@ READBACK_W = True
 # auto-sized to the poll interval). Off leaves them refreshed only on a sync.
 TRICKLE = True
 
+# Auto-unlock: with AUTH_KEY_REG in the map, AUTH_KEY goes out on connect,
+# and again whenever the level drops below AUTH_LEVEL (it boots to guest).
+# The key is a firmware constant: ectra SECRET_KEY_ADMIN in iv-ifc/reg.h.
+# `AUTH_KEY = None`, or a map without that register, leaves access untouched.
+AUTH_KEY = 0x5D8E41B3
+AUTH_KEY_REG = "Auth:SecretKey"  # 32-bit `high=`/`low=` pair or a single reg
+AUTH_LEVEL_REG = "Auth:Access"   # enum reporting the level; optional
+AUTH_LEVEL = "admin"             # label from that enum to hold
+
 # Seeds serial.ini on first launch.
 STATE_DEFAULT = {
   "port": "COM3",
@@ -62,7 +71,7 @@ def _bool(val, default:bool=False) -> bool:
   if s in ("false", "no", "0", "off", ""): return False
   return default
 
-#------------------------------------------------------------------------------ View (UI state)
+#---------------------------------------------------------------------------------- View (UI state)
 
 def load_view() -> dict:
   """Lenient: missing keys default to empty so a partial file still boots."""
@@ -83,11 +92,11 @@ def save_view(view:dict):
   payload = {
     "ask_map": _bool(view.get("ask_map"), True),
     "monitor": view.get("monitor", []) if isinstance(view.get("monitor"), list) else [],
-    "ignore":  [str(x).strip() for x in view.get("ignore", []) if str(x).strip()],
+    "ignore": [str(x).strip() for x in view.get("ignore", []) if str(x).strip()],
   }
   JSON.save_smart(VIEW_FILE, payload)
 
-#---------------------------------------------------------------------------- ModbusMaster wire
+#-------------------------------------------------------------------------------- ModbusMaster wire
 
 def _sim_factory(mb:ModbusMaster):
   from sim import SimulatedClient
@@ -113,7 +122,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     client_factory=_sim_factory if port == "SIM" else None,
   )
 
-#-------------------------------------------------------------------------- Map lint
+#----------------------------------------------------------------------------------------- Map lint
 
 # 16-bit register span per type; the encoder masks round(value*scale) with
 # & 0xFFFF, so a bound/default that overflows wraps instead of being rejected.

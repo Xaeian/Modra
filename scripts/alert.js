@@ -1,23 +1,20 @@
 // scripts/alert.js
 
-// Bottom-center toast stack. Deduped by message - repeats just rearm the
-// existing toast so poll loops shouting "Connection lost" stay quiet.
-// Capped at MAX; oldest evicted on overflow. Plain DOM because this loads
-// before the JSX runtime.
+// Bottom-center toast stack, deduped by message - a repeat rearms the existing toast, so
+// poll loops shouting "Connection lost" stay quiet. Plain DOM: loads before the JSX runtime.
 // API: `alert.err / wrn / inf / ok (msg, ms?)`.
 const alert = (() => {
 
-  const OFFSET = 12;   // px from bottom of viewport
-  const GAP = 6;       // px between stacked toasts
-  const MAX = 5;       // hard cap on visible toasts
+  const OFFSET = 12;  // px from bottom of viewport
+  const GAP = 6;      // px between stacked toasts
+  const MAX = 5;      // hard cap on visible toasts
   const ICONS = { err: "🚨", wrn: "⚠️", inf: "ℹ️", ok: "✅" };
 
   // Map preserves insertion order so _evict() drops the oldest naturally.
   const _map = new Map();
 
-  //---------------------------------------------------------- Layout
+  //---------------------------------------------------------------------------------------- Layout
 
-  // Re-stack bottom-up. Called on add/remove so heights compose cleanly.
   function _reflow() {
     let y = OFFSET;
     for(const { el } of _map.values()) {
@@ -26,7 +23,7 @@ const alert = (() => {
     }
   }
 
-  //---------------------------------------------------------- Lifecycle
+  //------------------------------------------------------------------------------------- Lifecycle
 
   // 200ms must match the CSS transition duration in alert.css.
   function _close(msg) {
@@ -53,7 +50,7 @@ const alert = (() => {
     }
   }
 
-  //---------------------------------------------------------- DOM
+  //------------------------------------------------------------------------------------------- DOM
 
   function _build(type, msg) {
     const el = document.createElement("div");
@@ -74,7 +71,7 @@ const alert = (() => {
     return el;
   }
 
-  //---------------------------------------------------------- Public API
+  //------------------------------------------------------------------------------------ Public API
 
   // ms=0 → sticky (manual dismiss only).
   function show(type, msg, ms = 3000) {
@@ -85,8 +82,7 @@ const alert = (() => {
     }
     const el = _build(type, msg);
     document.body.appendChild(el);
-    // Force layout so the slide-in starts from the off-screen position set
-    // in CSS instead of snapping into place.
+    // Force layout so the slide-in starts off-screen instead of snapping into place.
     void el.offsetHeight;
     _map.set(msg, { el, timer: null });
     _arm(msg, ms);
@@ -98,6 +94,6 @@ const alert = (() => {
     err: (msg, ms = 6000) => show("err", msg, ms),
     wrn: (msg, ms = 5000) => show("wrn", msg, ms),
     inf: (msg, ms = 4000) => show("inf", msg, ms),
-    ok:  (msg, ms = 4000) => show("ok",  msg, ms),
+    ok: (msg, ms = 4000) => show("ok", msg, ms),
   };
 })();

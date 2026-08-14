@@ -1,7 +1,8 @@
 """
 Thread+async wrapper around ModbusMaster. Owns the read loop, port scan,
-write queue, SQLite store. Bridges sync Api callers (HTTP/webview) into
-the async pymodbus client. `update_view()` rewires the poll filter on
+write queue, SQLite store, and the auto-unlock that holds the device at
+`config.AUTH_LEVEL`. Bridges sync Api callers (HTTP/webview) into the
+async pymodbus client. `update_view()` rewires the poll filter on
 ignore-set changes without dropping the connection.
 """
 
@@ -34,6 +35,11 @@ TRICKLE_BACKOFF_TICKS = 5
 READ_ERR_LIMIT = 5
 RETRY_INTERVAL_S = 2.0
 
+# Auto-unlock cadence (see `_auth`): at most one key write per interval, and a
+# stop after this many failures in a row, so a stale key is not a write storm.
+AUTH_RETRY_S = 5.0
+AUTH_FAIL_LIMIT = 3
+
 class ModbusLink:
 
   def __init__(self):
@@ -65,6 +71,10 @@ class ModbusLink:
     self._trickle_pos = 0
     self._trickle_errors = 0
     self._trickle_backoff = 0
+    # Auto-unlock state (see _auth).
+    self._auth_at = None
+    self._auth_tried = False
+    self._auth_fails = 0
     self._last_prune = Time()
     self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
     self._thread.start()
@@ -77,7 +87,7 @@ class ModbusLink:
       log.wrn("No state file, starting fresh")
     self.scan(False)
 
-  #---------------------------------------------------------------------------------- Internals
+  #-------------------------------------------------------------------------------------- Internals
 
   def history_days(self) -> int:
     """Retention window in days from state; 14 on missing/garbage value."""
@@ -136,11 +146,12 @@ class ModbusLink:
     if self.mb:
       self.mb.cache_raw = {rid: None for rid in self.mb.id_map}
 
-  #---------------------------------------------------------------------------------- Read Loop
+  #-------------------------------------------------------------------------------------- Read Loop
 
   def _start_reads(self):
     if self._read_task and not self._read_task.done(): return
     self._sync_next = False
+    self._auth_reset()
     self._read_task = asyncio.run_coroutine_threadsafe(
       self._read_loop(), self._loop,
     )
@@ -194,6 +205,7 @@ class ModbusLink:
               self._clear_cache()
               self.connected = False
         if errors == 0:
+          await self._auth()
           # A full sync already refreshed everything; trickle only on plain polls.
           if not did_sync:
             await self._trickle()
@@ -217,7 +229,7 @@ class ModbusLink:
         except asyncio.CancelledError:
           return
 
-  #------------------------------------------------------------------------------------ Trickle
+  #---------------------------------------------------------------------------------------- Trickle
 
   def _build_trickle(self):
     """Split non-ignored writable registers into the volatile hot set (RW, read
@@ -280,7 +292,70 @@ class ModbusLink:
         self._trickle_errors = 0
         log.wrn("Trickle: backing off after read errors")
 
-  #--------------------------------------------------------------------------------- Connection
+  #----------------------------------------------------------------------------------------- Unlock
+
+  def _auth_reset(self):
+    """Fresh unlock budget, per connection: a device that comes back after a
+    reboot is unlocked again even if the previous attempt gave up."""
+    self._auth_at = None
+    self._auth_tried = False
+    self._auth_fails = 0
+
+  def _auth_key(self) -> str|None:
+    """Name to write the key under - a 32-bit `high=`/`low=` pair or a plain
+    register - or None when auto-unlock is off, the map carries no such
+    register, or the port is the simulator (which has no access control)."""
+    if config.AUTH_KEY is None or not self.mb or self._sim: return None
+    name = config.AUTH_KEY_REG
+    return name if (name in self.mb.pairs or name in self.mb.name_map) else None
+
+  async def _auth(self):
+    """Hold the device at `config.AUTH_LEVEL`, so nothing above has to think
+    about access. Runs after every successful poll, which makes it self-healing:
+    a drive that reboots back to guest is unlocked again on the next poll.
+    That needs the level register polled; ignored, it gets one blind unlock.
+    Best-effort - one write per AUTH_RETRY_S, and it gives up entirely after
+    AUTH_FAIL_LIMIT failures, so a stale key never becomes a write storm."""
+    name = self._auth_key()
+    if not name or not self.connected or self._sync_next or self._write_pending: return
+    if self._auth_fails >= AUTH_FAIL_LIMIT: return
+    level = self.mb.name_map.get(config.AUTH_LEVEL_REG)
+    enum = level.get("enum", {}) if level else {}
+    # Enum codes ascend with privilege (guest < user < service < admin), so a
+    # code below the wanted one means "not unlocked".
+    want = next((k for k, v in enum.items() if v == config.AUTH_LEVEL), None)
+    now = self.mb.cache_raw.get(level["id"]) if level else None
+    if now is not None and want is not None:
+      if now >= want: return
+    elif self._auth_tried:
+      return   # nothing to watch: the blind unlock already went out
+    if self._auth_at and (Time() - self._auth_at).total_seconds() < AUTH_RETRY_S: return
+    self._auth_at = Time()
+    self._auth_tried = True
+    try:
+      async with self._mb_lock:
+        await self.mb.write({name: config.AUTH_KEY})
+        # The write reads back the key halves, not the level register; refresh
+        # it here so the next poll sees the new level instead of re-arming.
+        if level: await self.mb.read_registers([level["id"]])
+    except Exception as e:
+      self._auth_fails += 1
+      log.wrn(f"Unlock failed ({self._auth_fails}): {e}")
+      return
+    if want is None:
+      log.inf(f"Unlock key sent to {name}")
+      return
+    now = self.mb.cache_raw.get(level["id"])
+    if now is not None and now >= want:
+      self._auth_fails = 0
+      log.ok(f"Access level: {enum.get(now, now)}")
+    else:
+      self._auth_fails += 1
+      log.wrn(f"Unlock refused ({self._auth_fails}), level: {enum.get(now, now)}")
+      if self._auth_fails >= AUTH_FAIL_LIMIT:
+        log.err("Unlock given up - check config.AUTH_KEY")
+
+  #------------------------------------------------------------------------------------- Connection
 
   def scan(self, mute:bool=True) -> list[str]:
     if not mute: log.run("Scanning ports")
@@ -403,7 +478,8 @@ class ModbusLink:
 
   def set_serial(self, params:dict):
     changed = False
-    for k in ("baudrate", "parity", "stopbits", "timeout", "retries", "interval", "history", "autosend"):
+    for k in ("baudrate", "parity", "stopbits", "timeout",
+              "retries", "interval", "history", "autosend"):
       if k in params:
         self.state[k] = params[k]
         if k in ("baudrate", "parity", "stopbits", "timeout"):
@@ -439,7 +515,7 @@ class ModbusLink:
     if ok: log.ok("Database reset")
     return ok
 
-  #--------------------------------------------------------------------------------------- Data
+  #------------------------------------------------------------------------------------------- Data
 
   def store_key(self):
     """DB table key: 'sim' isolates simulator history in addr_sim* tables; a

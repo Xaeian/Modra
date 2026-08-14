@@ -1,23 +1,22 @@
 // scripts/Grid.jsx
 
-// Dirty takes precedence over the live cache; disconnected or rule-inactive
-// collapse to null so the control renders blank.
+// Inactive or disconnected collapse to null so the control renders blank.
 function _resolveValue(reg, inactive, disconnected) {
   if(inactive || disconnected) return null;
   return reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
 }
 
-const _rowClass = (isDirty, ghosted, oor, isIgnored) =>
+const _rowClass = (isDirty, ghosted, oor, isIgnored, match) =>
   cls("rb-reg",
     isDirty && "rb-dirty",
     ghosted && "rb-inactive",
     oor && "rb-oor",
-    isIgnored && "rb-ignored");
+    isIgnored && "rb-ignored",
+    match && ("rb-" + match));
 
 const Grid = {
 
-  // `Misc.Panel` renders as a sibling (not child) so its dropdown layout
-  // flows naturally beneath the row.
+  // `Misc.Panel` is a sibling, not a child, so it flows beneath the row.
   Row: ({ reg }) => {
     const inactive = Reg.isInactive(reg);
     const disconnected = !S.connected;
@@ -27,21 +26,18 @@ const Grid = {
     const isMonitored = S.monitor.has(reg.name);
     const isIgnored = S.ignore.has(reg.name);
     const isUtilOpen = !ghosted && S.utilOpen === reg.name;
-    // R/O when the register is read-only OR not editable right now
-    // (no device, rule slot inactive).
     const ro = Reg.ro(reg) || ghosted;
     const oor = Reg.outOfRange(reg, val) || Reg.willWrap(reg, val);
     // enum/bool/bits repurpose `unit` as labels - no unit column.
     const showUnit = Reg.isScalar(reg) || Reg.isVer(reg);
-    // Slider only fits live editable scalar numerics. Pairs (uint32 has 4G
-    // steps, float has arbitrary precision) don't map to a range input, and
-    // ignored rows are showing historical context.
+    // Pairs don't map to a range input (uint32 has 4G steps, float arbitrary
+    // precision); ignored rows are historical context, not live.
     const showMiscBtn = Reg.isScalar(reg) && !ro && !isIgnored && !reg.rule?.pair;
-    // Writable + live: explicit send so the current value can be (re)written.
     const showSendBtn = !ro && !isIgnored;
     return (
       <div class="rb-row-wrap">
-        <div class={_rowClass(isDirty, ghosted, oor, isIgnored)} title={Reg.tooltip(reg)}>
+        <div class={_rowClass(isDirty, ghosted, oor, isIgnored, Reg.match(reg))}
+          title={Reg.tooltip(reg)}>
           <span class="rb-id">{Reg.label(reg)}</span>
           <span class="rb-name">{reg.name}</span>
           <Control.For reg={reg} value={val} isDirty={isDirty} ro={ro} />
@@ -64,7 +60,6 @@ const Grid = {
     );
   },
 
-  // Visual group: header (id range + count) followed by rows.
   Block: ({ regs }) => (
     <div class="rb-block">
       <div class="rb-head">

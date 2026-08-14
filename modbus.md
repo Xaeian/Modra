@@ -2,10 +2,14 @@
 
 Async Modbus RTU master with CSV-based register map, automatic encoding/decoding, and caching.
 
+The module has two layers: module-level regmap parsing (CSV cell → typed value)
+and the `ModbusMaster` class (connection, block transport, codec, public API).
+
 ## Requirements
 
 ```
 pymodbus
+xaeian
 ```
 
 ## Quick Start
@@ -15,7 +19,7 @@ from modbus import ModbusMaster
 
 mb = ModbusMaster("/dev/ttyUSB0", "regmap.csv", addr=1, baudrate=9600)
 
-# Always sync first
+# Sync first - fills the cache, and rule registers need their switch read
 data = await mb.sync()
 
 # Read specific registers
@@ -42,8 +46,11 @@ await mb.disconnect()
 | `max`     | Maximum value                             | `10000`                    |
 | `desc`    | Description                               | `Motor speed`              |
 | `rule`    | Special rules                             | `switch=Ctrl:Mode`         |
-| `default` | Factory value (RWs); `/`-list per variant | `1500` or `3700/2600/1500` |
+| `default` | Factory value; `/`-list per device variant       | `1500` or `3700/2600/1500` |
 | `null`    | Sentinel override for nullable types      | `0xFFFF` / `0` / `-1`      |
+
+Any other column is the project's own: carried through untouched and returned
+by `reg_info()`. This app adds `auth`.
 
 ### Access Modes (rws)
 
@@ -53,14 +60,6 @@ await mb.disconnect()
 | `W`   | Write-only                                 |
 | `RW`  | Read/write                                 |
 | `RWs` | Read/write, persisted to storage on device |
-
-### Runtime exclusions
-
-`ignore_set` (`__init__` param) provides *user-level* register filtering outside the
-descriptor. Names in the set are excluded from the `read()` polling cycle but stay in
-the map (so the SQLite schema and `regs_info()` catalog cover every register). Still
-readable explicitly via `read(keys=[...])` and `sync()` (full read for admin tools).
-Pair_keys (e.g. `Auth:SecretKey`) expand to both underlying halves when matched.
 
 ### Types
 
@@ -75,6 +74,9 @@ Pair_keys (e.g. `Auth:SecretKey`) expand to both underlying halves when matched.
 | `ver`   | Version X.YY.ZZ (max 6.55.35)                             |
 | `rule`  | Dynamic scale/unit based on switch                        |
 | `float` | IEEE 754 single, used in `high`/`low` pair (32-bit)       |
+
+`bool` accepts spelled-out text - `false` / `no` / `off` / `0` are 0, anything
+else 1. Without that every non-empty string would be truthy.
 
 ### Nullable registers
 
@@ -115,6 +117,16 @@ non-nullable register - or a nullable type with no spare encoding
 decoded as None, so the history column reads as a gap rather than a
 sentinel-valued spike.
 
+### Defaults
+
+`default` is the factory value, reported by `reg_info()` parsed to the
+register's own type. A `/`-list holds one value per device variant, so one map
+can describe a family that shares a register layout but not its tuning.
+
+```csv
+120,0x78,Speed:Max,RWs,uint,rpm,1,0,3000,Maximum speed,,1650/1300/760
+```
+
 ### Rules
 
 **32-bit pairs** - combine two adjacent registers into one value. The pair's
@@ -135,7 +147,8 @@ Result: `{"Calib": {"Gain": 1.234}}` (decoded via IEEE 754, big-endian).
 For float pairs, `unit`/`scale`/`min`/`max` are taken from the high half so
 the pair carries real engineering metadata.
 
-**Switch-based scaling** - dynamic unit/scale based on another register (case-insensitive matching):
+**Switch-based scaling** - dynamic unit/scale based on another register
+(case-insensitive matching):
 
 ```csv
 10,0x0A,Ctrl:Mode,RW,enum,0=off 1=rpm 2=hz,-,-,-,-
@@ -152,35 +165,60 @@ When `Mode=off`: Speed returns `None`, write skips
 
 ```python
 ModbusMaster(
-  port: str, # Serial port
-  regmap_file: str, # CSV path
-  addr: int = 1, # Modbus address
+  port: str,                     # serial port, e.g. "COM3" / "/dev/ttyUSB0"
+  regmap_file: str,              # register map CSV path
+  addr: int = 1,                 # Modbus device address
   baudrate: int = 9600,
   parity: "N"|"O"|"E" = "N",
   stopbits: 1|2 = 1,
-  timeout: float = 1, # Response timeout (s)
-  retries: int = 3, # Per-block retry budget
-  group: bool = True, # Default output format
-  max_block: int = 64,  # Max registers per read
-  ignore_set: set[str] = None,  # Names excluded from read() polling (pair-aware)
-  client_factory = None, # (mb) -> client; swaps the transport (sim, tests), None = serial
+  timeout: float = 1,            # response timeout (s)
+  retries: int = 3,              # per-block retry budget
+  group: bool = True,            # default output format (grouped/flat)
+  max_block: int = 64,           # max registers per read/write block
+  ignore_set: set[str] = None,   # names excluded from read() polling (pair-aware)
+  client_factory = None,         # (mb) -> client; swaps transport (sim, tests)
 )
 ```
 
 ### Methods
 
-| Method                                  | Description                                |
-| --------------------------------------- | ------------------------------------------ |
-| `await sync(grouped=None)`              | Read all registers, return decoded         |
-| `await read(keys, rws_filter, grouped)` | Read specific registers                    |
-| `await write(data)`                     | Write registers _(W, RW, RWs)_             |
-| `get_cache(grouped=None)`               | Get decoded cache                          |
-| `decode(raw_data, rws_filter, grouped)` | Decode raw to dict                         |
-| `encode(data, rws_filter, grouped)`     | Encode dict to raw                         |
-| `annotate(data, fields)`                | Add metadata tuples                        |
-| `reg_info(reg_id)`                      | Get register metadata                      |
-| `pair_info(pair_key)`                   | Get pair register metadata                 |
-| `regs_info()`                           | Get all registers metadata                 |
+High-level (decoded values):
+
+| Method                                  | Description                                 |
+| --------------------------------------- | ------------------------------------------- |
+| `await sync(grouped=None)`              | Read all registers, return decoded cache    |
+| `await read(keys, rws_filter, grouped)` | Read selected registers _(default: `R` polling minus `ignore_set`)_ |
+| `await write(data)`                     | Encode and write _(W, RW, RWs)_             |
+| `get_cache(grouped=None)` / `cache`     | Decoded cache _(unpolled → `None`)_         |
+| `annotate(data, fields)`                | Wrap values with metadata tuples            |
+
+Codec and metadata (no I/O):
+
+| Method                                  | Description                                 |
+| --------------------------------------- | ------------------------------------------- |
+| `decode(raw_data, rws_filter, grouped)` | Raw words → engineering values              |
+| `encode(data, rws_filter, grouped)`     | Engineering values → raw words              |
+| `reg_info(reg_id)`                      | Single register metadata                    |
+| `pair_info(pair_key)`                   | 32-bit pair metadata                        |
+| `regs_info()`                           | Full catalog _(pairs emitted once)_         |
+
+Connection and transport (raw words):
+
+| Method                            | Description                                       |
+| --------------------------------- | ------------------------------------------------- |
+| `await connect() / disconnect()`  | Open / close the client                           |
+| `await reconnect()`               | Close + reopen, resets framer after stalled frame |
+| `await read_registers(reg_ids)`   | Block-grouped raw read, updates cache             |
+| `await write_registers(raw_data)` | Block-grouped raw write, returns word count       |
+| `resolved_ignored_ids()`          | `ignore_set` resolved to register ids             |
+
+### Runtime exclusions
+
+`ignore_set` provides *user-level* register filtering outside the descriptor.
+Names in the set are excluded from the `read()` polling cycle but stay in the
+map, so the DB schema and `regs_info()` catalog cover every register. Still
+readable explicitly via `read(keys=[...])` and `sync()` (full read for admin
+tools). Pair keys (e.g. `Auth:SecretKey`) expand to both underlying halves.
 
 ### Data Formats
 
@@ -200,9 +238,9 @@ ModbusMaster(
 
 Add metadata to values:
 ```python
-mb.annotate(fields=["unit"])           # (val, unit)
+mb.annotate(fields=["unit"])                # (val, unit)
 mb.annotate(fields=["unit", "min", "max"])  # (val, unit, min, max)
-mb.annotate(data, ["unit", "scale"])   # custom data
+mb.annotate(data, ["unit", "scale"])        # custom data
 ```
 
 ## Error Handling
@@ -249,6 +287,8 @@ data = mb.get_cache(grouped=False)
 ```
 
 ## Example regmap.csv
+
+Trailing `default` / `null` columns are optional.
 
 ```csv
 id,hex,name,rws,type,unit,scale,min,max,desc,rule

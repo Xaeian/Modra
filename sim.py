@@ -7,12 +7,12 @@ at min (both Gaussian-shaped). Near an edge the asymmetric range pulls
 values back toward the middle - the result looks like real instrument
 traces rather than a clean sinusoid or pure noise.
 
-  numeric R  → mean-reverting random walk, clamped to min/max
-  bool R     → toggles with small per-tick probability
-  enum R     → advances one slot with small per-tick probability
-  bits R     → flips individual labeled bits with small per-tick probability
-  hex/ver    → stable (firmware-controlled)
-  RW/RWs/W   → never drifts (user-controlled)
+  numeric R → mean-reverting random walk, clamped to min/max
+  bool R → toggles with small per-tick probability
+  enum R → advances one slot with small per-tick probability
+  bits R → flips individual labeled bits with small per-tick probability
+  hex/ver → stable (firmware-controlled)
+  RW/RWs/W → never drifts (user-controlled)
 
 Each register is simulated from its own descriptor row alone (type, rws,
 min/max) - no cross-register logic, no mode/setpoint dependencies.
@@ -23,7 +23,7 @@ adjacent channels stay uncorrelated but deterministic per tick.
 
 import asyncio, math, random, time
 
-#---------------------------------------------------------- Tuning constants
+#--------------------------------------------------------------------------------- Tuning constants
 
 # `sigma`: width of the edge-bias Gaussians (fraction of span).
 # `gain`: max single-tick step (fraction of span), varied per register so
@@ -40,7 +40,7 @@ ENUM_CHANCE_MAX = 0.03
 
 VER_FALLBACK = "0.1.0"
 
-#---------------------------------------------------------- Modbus response shims
+#---------------------------------------------------------------------------- Modbus response shims
 
 class _RR:
   def __init__(self, registers): self.registers = registers
@@ -49,7 +49,7 @@ class _RR:
 class _WR:
   def isError(self): return False
 
-#---------------------------------------------------------- Simulated client
+#--------------------------------------------------------------------------------- Simulated client
 
 class SimulatedClient:
   """Mock AsyncModbusSerialClient. Holds per-id uint16 state, evolves it
@@ -76,7 +76,7 @@ class SimulatedClient:
       if rid not in self.values:
         self.values[rid] = self._initial(entry)
 
-  #---------------------------------------------------------- Helpers
+  #---------------------------------------------------------------------------------------- Helpers
 
   @staticmethod
   def _first(v):
@@ -117,7 +117,7 @@ class SimulatedClient:
       if mx is None: mx = hi
     return (mn, mx)
 
-  #---------------------------------------------------------- Value coding
+  #----------------------------------------------------------------------------------- Value coding
 
   @staticmethod
   def _to_raw(entry:dict, val) -> int:
@@ -191,7 +191,7 @@ class SimulatedClient:
       return keys[0] if keys else 0
     return 0
 
-  #---------------------------------------------------------- Tick
+  #------------------------------------------------------------------------------------------- Tick
 
   def _tick_one(self, rid:int):
     entry = self.id_map.get(rid)
@@ -253,7 +253,7 @@ class SimulatedClient:
     # `up` peaks at mn (min attracts → push toward larger values).
     # Near an edge the asymmetric step range pulls the value back to centre.
     down = gain * math.exp(-((mx - eng) ** 2) / (2 * sigma ** 2))
-    up   = gain * math.exp(-((eng - mn) ** 2) / (2 * sigma ** 2))
+    up = gain * math.exp(-((eng - mn) ** 2) / (2 * sigma ** 2))
     step = random.uniform(-down, up)
 
     eng = max(mn, min(mx, eng + step))
@@ -267,7 +267,7 @@ class SimulatedClient:
     self._last_tick = now
     for rid in self.id_map: self._tick_one(rid)
 
-  #---------------------------------------------------------- Client interface
+  #------------------------------------------------------------------------------- Client interface
 
   async def connect(self):
     await asyncio.sleep(0.01)

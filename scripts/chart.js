@@ -1,9 +1,8 @@
 // scripts/chart.js
 
-// ChartStack: synchronized multi-panel uPlot wrapper. Each panel is its own
-// uPlot instance; cursor and x-zoom are shared via uPlot's sync key so
-// dragging on any panel zooms all of them. Bottom panel owns the x-axis
-// label; the rest hide their tick labels for a continuous look.
+// ChartStack: multi-panel uPlot wrapper. One uPlot per panel; cursor and
+// x-zoom are shared through uPlot's sync key, so a drag on any panel zooms
+// all of them.
 //
 // Usage:
 //   const stack = new ChartStack(container, { formatX, formatXValue });
@@ -11,25 +10,25 @@
 //   stack.build();
 //   stack.setData(0, [tsArr, ...seriesArrs]);
 
-//---------------------------------------------------------- Defaults
+//---------------------------------------------------------------------------------------- Defaults
 
 const CS_DEFAULTS = {
   height: 160,
-  xSize: 36,           // x-axis label gutter height (px)
-  ySize: 50,           // y-axis label gutter width (px)
-  yPad: 0.1,           // 10% headroom above/below auto-range
+  xSize: 36,               // x-axis gutter (px)
+  ySize: 50,               // y-axis gutter (px)
+  yPad: 0.1,               // headroom above/below auto-range
   lineWidth: 1.5,
-  padding: [12, 8, 4, 0],   // uPlot canvas padding: [top, right, bottom, left]
+  padding: [12, 8, 4, 0],  // [top, right, bottom, left]
   font: "10px Roboto, sans-serif",
   axisStroke: "#999",
   gridStroke: "#eee",
   tickStroke: "#ccc",
 };
 
-//---------------------------------------------------------- Value formatter
+//--------------------------------------------------------------------------------- Value formatter
 
-// Adaptive-precision number formatter sized for narrow y-axis labels while
-// keeping significance for small values. Null/undefined → "-".
+// Fewer digits as magnitude grows: y-axis labels are narrow, but small
+// values must keep their significance.
 function csFmtVal(v) {
   if(v == null) return "-";
   const a = Math.abs(v);
@@ -43,23 +42,21 @@ function csFmtVal(v) {
   return v.toFixed(6);
 }
 
-//---------------------------------------------------------- Color helper
+//------------------------------------------------------------------------------------ Color helper
 
-// Darken a hex color by N% lightness - used for the y-axis stroke so it
-// reads as "owned by" the first series without matching it exactly.
 function csDarken(hex, pct) {
   let c = hex.replace("#", "");
   if(c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
   const n = parseInt(c, 16);
   const f = 1 - pct / 100;
   const r = Math.round(((n >> 16) & 0xFF) * f);
-  const g = Math.round(((n >>  8) & 0xFF) * f);
-  const b = Math.round(( n        & 0xFF) * f);
+  const g = Math.round(((n >> 8) & 0xFF) * f);
+  const b = Math.round((n & 0xFF) * f);
   return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
 
-// Binary search for the nearest index in a sorted timestamp array. Used
-// to align tooltip readouts across panels with different sample rates.
+// Requires sorted input. Aligns tooltip readouts across panels whose
+// sample rates differ.
 function csClosestIdx(data0, ts) {
   if(!data0?.length) return null;
   let lo = 0, hi = data0.length - 1;
@@ -72,11 +69,10 @@ function csClosestIdx(data0, ts) {
   return lo;
 }
 
-//---------------------------------------------------------- Tooltip plugin
+//---------------------------------------------------------------------------------- Tooltip plugin
 
-// "legendAsTooltip" pattern: hijack uPlot's built-in legend as a floating
-// tooltip that follows the cursor. Styled inline because uPlot creates the
-// legend at init time and we'd rather not depend on the stylesheet.
+// Hijacks uPlot's built-in legend as a floating tooltip. Styled inline so
+// the plugin carries no stylesheet dependency.
 function csTipPlugin(stack) {
   let legend, over, isHovered = false;
   return {
@@ -120,9 +116,8 @@ function csTipPlugin(stack) {
         const lh = legend.offsetHeight || 40;
         const ow = over.clientWidth;
         const oh = over.clientHeight;
-        // Place the tooltip to the right of the cursor unless it would
-        // overflow the plot; in that case flip to the left.
-        const x = left + 16 + lw > ow ? left - lw - 8 : left + 16;
+        const flipLeft = left + 16 + lw > ow;
+        const x = flipLeft ? left - lw - 8 : left + 16;
         const y = Math.max(4, Math.min(top - 10, oh - lh - 4));
         legend.style.transform = "translate(" + x + "px," + y + "px)";
       },
@@ -130,10 +125,9 @@ function csTipPlugin(stack) {
   };
 }
 
-//---------------------------------------------------------- Bottom border plugin
+//---------------------------------------------------------------------------- Bottom border plugin
 
-// 1px line along the bottom of the plot area. uPlot's default axes don't
-// draw one, so panels look detached without it.
+// uPlot's default axes leave the plot bottom open - panels look detached without it.
 function csBottomLine(cfg) {
   return {
     hooks: {
@@ -153,37 +147,36 @@ function csBottomLine(cfg) {
   };
 }
 
-//---------------------------------------------------------- ChartStack
+//-------------------------------------------------------------------------------------- ChartStack
 
 class ChartStack {
 
   // opts (over CS_DEFAULTS):
-  //   syncKey       - shared cursor/zoom key (auto-generated if omitted)
-  //   formatX       - uPlot x-axis values formatter (bottom panel only)
-  //   formatXValue  - tooltip header formatter (full timestamp)
+  //   syncKey - cursor/zoom sync key (auto-generated if omitted)
+  //   formatX - x-axis tick formatter (bottom panel only)
+  //   formatXValue - tooltip header formatter (full timestamp)
+  //   onZoom - (min, max) on drag-zoom, (null, null) on dblclick reset
   constructor(container, opts = {}) {
     this._el = container;
     this._cfg = { ...CS_DEFAULTS, ...opts };
     this._cfg.syncKey = opts.syncKey || ("cs_" + Math.random().toString(36).slice(2, 6));
     this._formatX = opts.formatX || null;
     this._formatXValue = opts.formatXValue || null;
-    // Called on a user drag-zoom (min, max) and on dblclick reset (null, null)
-    // so the owner can refetch the new window at a finer resolution tier.
     this._onZoom = opts.onZoom || null;
-    // Auto-scroll tracks the latest data on the right edge. A user drag
-    // freezes the window at `_zoomMin/_zoomMax` until dblclick resets.
     this._xMin = null;
     this._xMax = null;
     this._panels = [];
     this._entries = [];
     this._syncing = false;
     this._resetting = false;
+    // Auto-scroll tracks the live right edge; a drag freezes the window at
+    // `_zoomMin`/`_zoomMax` until dblclick resets.
     this._autoScroll = true;
     this._zoomMin = null;
     this._zoomMax = null;
   }
 
-  //---------------------------------------------------------- Public API
+  //------------------------------------------------------------------------------------ Public API
 
   // Queue a panel config. Call before `build()`; ignored after.
   addPanel(cfg) {
@@ -197,7 +190,7 @@ class ChartStack {
     });
   }
 
-  // Materialize all queued panels. Idempotent: destroys + rebuilds on re-call.
+  // Idempotent: destroys and rebuilds every panel on re-call.
   build() {
     this._destroyAll();
     this._el.innerHTML = "";
@@ -218,8 +211,7 @@ class ChartStack {
     this._syncing = false;
   }
 
-  // `[[min, max], [null, null], ...]` = "axis defined, series empty". Lets
-  // empty panels render with a visible axis before real data arrives.
+  // Gives empty panels a visible axis before real data arrives.
   seedRange(min, max) {
     for(let i = 0; i < this._entries.length; i++) {
       if(this._entries[i]?.plot?.data[0]?.length > 0) continue;
@@ -229,7 +221,7 @@ class ChartStack {
     }
   }
 
-  // Override x-window on every panel atomically. Used to follow live data.
+  // Used to follow live data on the right edge.
   setXRange(min, max) {
     this._xMin = min;
     this._xMax = max;
@@ -240,14 +232,13 @@ class ChartStack {
     this._syncing = false;
   }
 
-  // uPlot caches the pointer-origin rect and refreshes it only on resize,
-  // scroll or mouseenter. The chart element is re-parented on every render, so
-  // drop the cache and let it re-read at the next pointer event.
+  // uPlot caches the pointer-origin rect, refreshing only on resize, scroll
+  // or mouseenter; the chart element is re-parented on every render.
   syncRect() {
     for(const e of this._entries) e?.plot?.syncRect?.(true);
   }
 
-  // Drop user zoom, return to auto-scroll. Triggered by dblclick on a plot.
+  // Wired to dblclick on any plot.
   resetZoom() {
     this._autoScroll = true;
     this._zoomMin = null;
@@ -256,7 +247,7 @@ class ChartStack {
     if(this._xMin != null) this.setXRange(this._xMin, this._xMax);
     // Clear on next frame so the setScale hook ignores our synthetic call.
     requestAnimationFrame(() => { this._resetting = false; });
-    this._onZoom?.(null, null);   // back to the live edge
+    this._onZoom?.(null, null);  // back to the live edge
   }
 
   destroy() {
@@ -264,7 +255,7 @@ class ChartStack {
     this._panels = [];
   }
 
-  //---------------------------------------------------------- Internals
+  //------------------------------------------------------------------------------------- Internals
 
   _currentRange() {
     if(!this._autoScroll && this._zoomMin != null) return [this._zoomMin, this._zoomMax];
@@ -272,9 +263,7 @@ class ChartStack {
     return [0, 1];
   }
 
-  // Tooltip HTML for cursor index `idx` on plot `u`. One row per series
-  // across all panels; `csClosestIdx` aligns timestamps when sample rates
-  // differ between panels.
+  // One row per series across every panel, timestamps aligned to plot `u`.
   _buildTipHTML(u, idx) {
     const ts = u.data[0][idx];
     if(ts == null) return "";
@@ -285,7 +274,7 @@ class ChartStack {
       const pe = this._entries[p];
       if(!pe?.plot?.data?.[0]?.length) continue;
       const panel = this._panels[p];
-      if(panel.noTip) continue;   // discrete bool/enum: state reads off the y-axis
+      if(panel.noTip) continue;  // discrete bool/enum: state reads off the y-axis
       const pidx = (pe.plot === u) ? idx : csClosestIdx(pe.plot.data[0], ts);
       if(pidx == null) continue;
       for(let s = 0; s < panel.series.length; s++) {
@@ -310,8 +299,7 @@ class ChartStack {
     this._entries = [];
   }
 
-  // `isLast` toggles the x-axis label gutter - only the bottom panel shows
-  // ticks; the rest hide them so the stack reads as one continuous chart.
+  // Only the bottom panel shows x ticks, so the stack reads as one chart.
   _buildOne(idx, isLast) {
     const panel = this._panels[idx];
     const cfg = this._cfg;
@@ -320,8 +308,7 @@ class ChartStack {
     const wrap = document.createElement("div");
     wrap.className = "cs-panel";
 
-    // Darker than the first series so it reads as "owned by" the panel
-    // without matching the series color exactly.
+    // Darker than the series so the axis reads as owned by it, not a copy.
     const yColor = panel.series.length
       ? csDarken(panel.series[0].color, 25)
       : cfg.axisStroke;
@@ -401,8 +388,7 @@ class ChartStack {
         x: { time: false },
         y: {
           auto: !panel.yRange,
-          // Fixed yRange (bool/enum) wins; otherwise pad the auto-range
-          // so points never touch the panel edges.
+          // Pad the auto-range so points never touch the panel edges.
           range: panel.yRange
             ? () => panel.yRange
             : (u, dmin, dmax) => {
@@ -418,9 +404,8 @@ class ChartStack {
       },
       hooks: {
         setScale: [(u, key) => {
-          // User drag-zoom: lock manual range, propagate to siblings.
-          // `_syncing` / `_resetting` flags prevent feedback loops when
-          // we're the one issuing the setScale call.
+          // `_syncing` / `_resetting` guard against feedback loops from our
+          // own setScale calls.
           if(key !== "x" || self._syncing || self._resetting) return;
           const { min, max } = u.scales.x;
           self._autoScroll = false;
@@ -431,7 +416,7 @@ class ChartStack {
             if(e?.plot && e.plot !== u) e.plot.setScale("x", { min, max });
           }
           self._syncing = false;
-          self._onZoom?.(min, max);   // refetch this window at a finer tier
+          self._onZoom?.(min, max);  // refetch this window at a finer tier
         }],
       },
       legend: { show: true, live: true },
@@ -440,8 +425,7 @@ class ChartStack {
     const plot = new uPlot(opts, [[]], chartEl);
     plot.root.addEventListener("dblclick", () => self.resetZoom());
 
-    // Plots need explicit setSize when their container reflows. 60px is a
-    // sanity floor; below that the chart isn't usefully visible.
+    // uPlot needs an explicit setSize on reflow; below 60px it isn't worth drawing.
     const ro = new ResizeObserver(entries => {
       const w = Math.floor(entries[0].contentRect.width);
       if(w > 60) plot.setSize({ width: w, height: h });

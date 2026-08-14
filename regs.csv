@@ -16,7 +16,7 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 14,0x0E,Digital:InputMode,RWs,enum,0:off 1:allow 2:reset,-,,,Digital input function,,reset,user
 15,0x0F,Digital:RelayMode,RWs,enum,0:off 1:run 2:alarm,-,,,Relay output function,,alarm,user
 16,0x10,Digital:LedMode,RWs,enum,0:off 1:fault 2:rs485 3:link 4:update,-,,,Status LED mode,,fault,user
-17,0x11,Failsafe:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,,,Mode used when RS-485 communication is lost,,rpm,user
+17,0x11,Failsafe:Mode,RWs,enum,0:off 1:ai 2:% 3:rpm 4:Hz,-,,,Mode used when RS-485 communication is lost,,off,user
 18,0x12,Failsafe:Setpoint,RWs,rule,rpm/%/Hz,1/100/100,0/0/0,5000/100/300,Failsafe setpoint; interpreted per Failsafe:Mode,switch=Failsafe:Mode,0,user
 19,0x13,Failsafe:Delay,RWs,uint,s,1,1,600,RS-485 silence time before failsafe activates,,60,user
 20,0x14,Resonance:0Low,RWs,uint,rpm,1,0,10000,Resonance skip band 0 lower limit,,0,user
@@ -109,11 +109,11 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 112,0x70,Speed:DerateTemp,RWs,int,°C,100,0,200,Temperature above which speed is derated down to Speed:Derating,,80.0,service
 113,0x71,Speed:DerateCurr,RWs,uint,A,1000,0,30,Current above which speed is derated down to Speed:Derating,,5.0/10.0/13.0,service
 114,0x72,Thresh:Temp,RWs,int,°C,100,0,200,Temperature threshold for emergency shutdown,,85.0,service
-115,0x73,Thresh:CurrRms,RWs,uint,A,1000,0,30,RMS current threshold for emergency shutdown,,6.5/13.0/16.0,service
+115,0x73,Thresh:CurrRms,RWs,uint,A,1000,0,32,RMS current threshold for emergency shutdown,,6.5/13.0/16.0,service
 116,0x74,Thresh:CurrPeak,RWs,uint,A,1000,0,32,Peak current threshold for emergency shutdown; amplitudes above 32.7A saturate the measurement,,7.0/22.0/28.0,service
-117,0x75,Thresh:PeakCount,RWs,uint,-,1,1,50,Peak overcurrent events tolerated before the fault trips,,12,service
-118,0x76,Thresh:DcBusMin,RWs,uint,V,10,400,950,DC-bus undervoltage threshold,,520.0/500.0/500.0,service
-119,0x77,Thresh:DcBusMax,RWs,uint,V,10,400,950,DC-bus overvoltage threshold,,780.0,service
+117,0x75,Thresh:PeakCount,RWs,uint,-,1,0,50,Peak overcurrent events tolerated before the fault trips,,12,service
+118,0x76,Thresh:DcBusMin,RWs,uint,V,10,300,850,DC-bus undervoltage threshold,,520.0/500.0/500.0,service
+119,0x77,Thresh:DcBusMax,RWs,uint,V,10,300,850,DC-bus overvoltage threshold,,780.0,service
 120,0x78,Thresh:FlybackMin,RWs,uint,V,100,0,50,Flyback undervoltage threshold,,16.0,service
 121,0x79,Thresh:FlybackMax,RWs,uint,V,100,0,50,Flyback overvoltage threshold,,18.0,service
 122,0x7A,Thresh:Ripple,RWs,uint,V,100,0,50,DC-bus ripple RMS threshold,,3.5,service
@@ -126,13 +126,13 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 129,0x81,Ctrl:BootDelay,RWs,uint,ms,1,0,60000,Stabilization delay after DC bus reaches Thresh:DcBusMin,,5000,service
 130,0x82,Motor:Invert,RWs,bool,-,-,,,Swap phase sequence UVW to UWV; reverses rotation direction,,false,service
 131,0x83,Motor:Type,RWs,enum,1:1500W 2:4000W 3:7500W,-,,,Motor and PCB power variant,,1500W/4000W/7500W,admin
-132,0x84,Motor:Poles,RWs,uint,-,1,1,20,Pole pair count,,6,admin
+132,0x84,Motor:Poles,RWs,uint,-,1,1,20,Pole pair count: rpm x poles / 60 = electrical Hz,,6,admin
 133,0x85,Pwm:InitFreq,RWs,uint,Hz,100,0.5,10,Starting frequency for initial rotor alignment,,0.5,admin
 134,0x86,Pwm:Deadtime,RWs,uint,ns,1,100,5000,Complementary half-bridge dead-time,,2500,admin
-135,0x87,Pwm:ClampShort,RWs,uint,-,1,0,500,Short-pulse suppression in PWM timer counts [0:off],,2,admin
+135,0x87,Pwm:ClampShort,RWs,uint,-,1,0,800,Short-pulse suppression in PWM timer counts [0:off],,2,admin
 136,0x88,Pwm:Shape,RWs,enum,0:sine 1:svpwm 2:trap,-,,,Output waveform shape,,svpwm,admin
 137,0x89,Ramp:StopFreq,RWs,uint,Hz,100,5,400,Reference frequency (x_max) for the Ramp curves,,165.0,admin
-138,0x8A,Ramp:UpdateN,RWs,uint,-,1,1,10000,Frequency step every N PWM cycles,,400,admin
+138,0x8A,Ramp:UpdateN,RWs,uint,-,1,16,10000,Frequency step every N PWM cycles,,400,admin
 139,0x8B,Ramp:RiseDeltaStart,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at 0Hz,,0.05,admin
 140,0x8C,Ramp:RiseDeltaStop,RWs,uint,Hz,100,0.01,100,Acceleration slew rate at Ramp:StopFreq,,0.1,admin
 141,0x8D,Ramp:RiseDeltaBend,RWs,int,-,1,-100,100,Bend for acceleration slew rate curve,,0,admin
@@ -151,8 +151,6 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 154,0x9A,MeasCfg:ScalarSlow,RWs,uint,-,1,0,15,Slow tier EMA shift for voltages and temperatures,,15,admin
 155,0x9B,MeasCfg:WindowFast,RWs,uint,-,1,0,15,Fast tier EMA shift for currents/peaks/ripple; tau = 2^n windows,,1,admin
 156,0x9C,MeasCfg:WindowSlow,RWs,uint,-,1,0,15,Slow tier EMA shift for currents/peaks/ripple,,7,admin
-157,0x9D,MeasCfg:FreqGateCst,RWs,uint,Hz,100,0.1,50,Reserved; the vector frequency estimator uses no interval gate,,2.0,admin
-158,0x9E,MeasCfg:FreqGatePct,RWs,uint,%,1,0,100,Reserved; the vector frequency estimator uses no interval gate,,10,admin
 159,0x9F,MeasCfg:FreqReport,RWs,uint,-,1,1,64,Windows between frequency reports; one window is ~26ms,,4,admin
 160,0xA0,MeasCfg:FreqFast,RWs,uint,-,1,0,15,Fast tier EMA shift for frequency; tau = 2^n reports,,1,admin
 161,0xA1,MeasCfg:FreqSlow,RWs,uint,-,1,0,15,Slow tier EMA shift for frequency,,2,admin
@@ -173,8 +171,8 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 176,0xB0,Trim:FlybackScale,RWs,int,%,100,50,200,Flyback voltage gain correction,,100.0,admin
 177,0xB1,Trim:PowerOffset,RWs,int,W,1,-1000,1000,Estimated power zero offset,,0,admin
 178,0xB2,Trim:PowerScale,RWs,int,%,100,50,200,Estimated power gain correction,,100.0,admin
-179,0xB3,Trim:FreqScale,RWs,int,%,100,50,150,Measured frequency scale correction; applied at Modbus publication,,102.5,admin
-180,0xB4,Trim:FreqOffset,RWs,int,Hz,100,-10,10,Measured frequency offset correction; skips a true zero,,0.3,admin
+179,0xB3,Trim:FreqScale,RWs,int,%,100,50,150,Measured frequency scale correction; applied at Modbus publication,,100.0,admin
+180,0xB4,Trim:FreqOffset,RWs,int,Hz,100,-10,10,Measured frequency offset correction; skips a true zero,,0.0,admin
 181,0xB5,Stall:CurrStart,RWs,uint,A,1000,0,30,Stall current threshold at 0Hz,,5.5/11.0/12.5,service
 182,0xB6,Stall:CurrStop,RWs,uint,A,1000,0,30,Stall current threshold at Stall:StopFreq,,5.0/10.0/11.5,service
 183,0xB7,Stall:StopFreq,RWs,uint,Hz,100,0,200,Locked-rotor detection disabled above this frequency (also bend x_max) [0:off],,30.0,service
@@ -182,21 +180,59 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 185,0xB9,Freeze:VdcLow,RWs,uint,V,10,300,700,Freeze gate: acceleration freezes while DC-bus sits below this voltage,,550.0,admin
 186,0xBA,Freeze:VdcHigh,RWs,uint,V,10,300,800,Freeze gate: deceleration freezes while DC-bus sits above this voltage,,640.0,admin
 187,0xBB,Freeze:VdcHyst,RWs,uint,V,10,1,50,Freeze gate release hysteresis; both directions,,5.0,admin
-188,0xBC,Phase:Enable,RWs,bool,-,-,,,Phase correction: follow the motor with the applied phase; computed from the current transforms,,false,admin
-189,0xBD,Phase:Gain,RWs,uint,%,100,1,500,Phase correction strength,,100.0,admin
-190,0xBE,Phase:StartFreq,RWs,uint,Hz,100,0,650,Phase correction activation floor; corrector idle below (start and ramp),,15.0,admin
-200,0xC8,Debug:RiseDelta,R,?uint,Hz,100,,,Acceleration slew rate at current frequency,,,-
-201,0xC9,Debug:FallDelta,R,?uint,Hz,100,,,Deceleration slew rate at current frequency,,,-
-202,0xCA,Debug:BrakingTime,R,?uint,ms,1,,,Coasting time at current frequency,,,-
-203,0xCB,Debug:UpdateN,R,?uint,-,1,,,Effective ramp update interval in PWM cycles,,,-
-204,0xCC,Debug:PeakCount,R,?uint,-,1,,,Hardware peak events; drains while the comparator stays idle,,,-
-205,0xCD,Debug:PhaseTrim,R,?int,°,100,,,Active phase correction from the phase adaptation,,,-
-206,0xCE,Debug:FreezeRamp,R,?enum,0:off 1:hv- 2:hv+,-,,,Why the ramp is frozen: bus too low for acceleration; too high for deceleration,,,-
-207,0xCF,Debug:LoadAngle,R,?int,°,100,,,Current vector angle vs the applied vector; atan2(Iq;Id),,,-
-208,0xD0,Debug:FaultFreq,R,?uint,Hz,100,,,Output frequency the moment the last fault tripped,,,-
-209,0xD1,Debug:FaultCurr,R,?uint,A,1000,,,Average current the moment the last fault tripped,,,-
-210,0xD2,Debug:FaultVdc,R,?uint,V,10,,,DC-bus voltage the moment the last fault tripped,,,-
-211,0xD3,Debug:FaultTemp,R,?int,°C,100,,,Power stage temperature the moment the last fault tripped,,,-
+188,0xBC,Motor:Rs,RWs,uint,mΩ,1,0,20000,Stator phase resistance; 0 disables the observer (I/f only),,900/320/380,admin
+189,0xBD,Motor:Lq,RWs,uint,µH,1,1,65535,Stator inductance Lq; LCR meter phase-to-phase /2,,6300/5800/7500,admin
+190,0xBE,Motor:Ke,RWs,uint,V/krpm,10,0,6000,Line-to-line RMS BEMF constant per mechanical krpm; 0 disables the observer,,100.6/160.0/420.0,admin
+191,0xBF,Motor:SenseMap,RWs,enum,0:norm 1:invU 2:invV 3:invUV 4:swap 5:swapInvU 6:swapInvV 7:swapInvUV,-,-,-,"Current-sense correction, latched at start: bit0 invert U, bit1 invert V, bit2 swap channels",,invV,admin
+192,0xC0,Foc:Enable,RWs,bool,-,-,,,Vector control master switch; 0 keeps pure V/f rendering,,true,admin
+193,0xC1,Foc:CurrKp,RWs,uint,m%/A,100,0,100,Current-loop proportional gain,,5.0/3.0/2.0,admin
+194,0xC2,Foc:CurrKi,RWs,uint,m%/A,100,0,20,Current-loop integral gain,,0.2/0.15/0.1,admin
+195,0xC3,Foc:StartCurr,RWs,uint,A,1000,0,30,Current held through rotor align and the I/f ramp,,2.0/3.5/6.0,admin
+196,0xC4,Foc:StartFreq,RWs,uint,Hz,100,2,200,"Observer takeover floor: forced angle below, closed loop above",,25.0,admin
+197,0xC5,Foc:FreqHyst,RWs,uint,Hz,100,0.5,10,Takeover hysteresis band around Foc:StartFreq,,2.0,admin
+198,0xC6,Foc:IdRef,RWs,int,A,1000,-10,10,Flux-axis current setpoint; 0 for a surface-magnet PMSM,,0,admin
+199,0xC7,Foc:IqRef,RWs,uint,A,1000,0,30,Open-torque diagnostic setpoint,,3.0/5.0/8.0,admin
+200,0xC8,Foc:IqMax,RWs,uint,A,1000,0.5,32,Torque-axis current clamp; the entire current limit,,4.0/10.5/17.0,admin
+201,0xC9,Foc:ModCeil,RWs,uint,%,100,5,90,Voltage-vector ceiling; sampling slots stay valid to 90,,78.0,admin
+202,0xCA,Foc:IfCeil,RWs,uint,Hz,100,0,300,Highest forced-vector frequency without takeover [0:off],,90.0,admin
+208,0xD0,Pll:Bw,RWs,uint,Hz,1,5,100,Angle-PLL bandwidth,,30,admin
+209,0xD1,Pll:Damp,RWs,uint,-,100,0.3,2,Angle-PLL damping ratio,,0.71,admin
+210,0xD2,Obs:HpHz,RWs,uint,Hz,10,0.5,5,Flux-integrator leak corner,,1.6,admin
+211,0xD3,Obs:LockErr,RWs,uint,°,100,1,90,Max observer-vs-forced angle error for takeover,,10.0,admin
+212,0xD4,Spd:Kp,RWs,uint,mA/Hz,1,0,65535,Speed-loop proportional gain,,150/300/500,admin
+213,0xD5,Spd:Ki,RWs,uint,mA/Hzs,1,0,65535,Speed-loop integral gain,,300/600/1000,admin
+214,0xD6,Obs:DtComp,RWs,uint,%,1,0,200,Dead-time compensation strength; 100 cancels the nominal bridge loss,,70,admin
+215,0xD7,Obs:LockSpeed,RWs,uint,%,1,5,100,Max observer-vs-ramp speed error for takeover,,25,admin
+216,0xD8,Debug:FocState,R,enum,0:idle 1:off 2:shunt 3:obs 4:guard 5:fault 6:align 7:forced 8:closed,-,,,Vector-core state: below align = stop verdict (why V/f renders); align/forced/closed = live mode,,,-
+217,0xD9,Debug:FocFlags,R,bits,0:regen 1:limit 2:sat,-,,,"Condition bits, orthogonal to FocState",,,-
+218,0xDA,Debug:OmegaHat,R,?uint,Hz,100,,,Observer speed estimate,,,-
+219,0xDB,Debug:ThetaErr,R,?int,°,100,,,Observer vs applied angle error,,,-
+220,0xDC,Debug:Vd,R,?int,m%,100,,,Flux-axis output voltage,,,-
+221,0xDD,Debug:Vq,R,?int,m%,100,,,Torque-axis output voltage,,,-
+222,0xDE,Debug:IqCmd,R,?int,A,1000,,,Torque command after clamp and regen fade,,,-
+223,0xDF,Debug:GuardVd,R,?int,m%,100,,,vd the moment the start feed guard tripped,,,-
+224,0xE0,Debug:GuardId,R,?int,A,1000,,,"Measured id at guard trip: near 0 = blind channel, negative = inverted polarity",,,-
+225,0xE1,Debug:GuardIdRef,R,?int,A,1000,,,id reference at guard trip,,,-
+226,0xE2,Debug:IsrSlack,R,?uint,-,1,,,Minimum ISR tick slack over the last second,,,-
+227,0xE3,Debug:RegenCount,R,?uint,-,1,,,Regen fade episodes since boot: braking met the bus ceiling,,,-
+228,0xE4,Debug:CeilCount,R,?uint,-,1,,,Ramp holds since boot: past the takeover window or out of voltage authority,,,-
+229,0xE5,Debug:DutyPeak,R,?uint,%,100,,,Peak PWM leg duty; attack instant decay about 10%/s,,,-
+230,0xE6,Debug:BusPeak,R,?uint,V,10,,,Peak raw DC-bus; attack instant decay about 94V/s,,,-
+231,0xE7,Debug:BusMax,R,?uint,V,10,,,Highest raw DC-bus since last start; held through a fault,,,-
+232,0xE8,Debug:RiseDelta,R,?uint,Hz,100,,,Acceleration slew rate at current frequency,,,-
+233,0xE9,Debug:FallDelta,R,?uint,Hz,100,,,Deceleration slew rate at current frequency,,,-
+234,0xEA,Debug:BrakingTime,R,?uint,ms,1,,,Coasting time at current frequency,,,-
+235,0xEB,Debug:UpdateN,R,?uint,-,1,,,Effective ramp update interval in PWM cycles,,,-
+236,0xEC,Debug:PeakCount,R,?uint,-,1,,,Hardware peak events; drains while the comparator stays idle,,,-
+237,0xED,Debug:FreezeRamp,R,?enum,0:off 1:hv- 2:hv+ 3:foc,-,,,Why the ramp is frozen: bus too low to accelerate; too high to decelerate; I/f past its window or without voltage authority,,,-
+238,0xEE,Debug:LoadAngle,R,?int,°,100,,,Current vector angle vs the applied vector; atan2(Iq;Id),,,-
+239,0xEF,Debug:FaultFreq,R,?uint,Hz,100,,,Output frequency the moment the last fault tripped,,,-
+240,0xF0,Debug:FaultCurr,R,?uint,A,1000,,,Average current the moment the last fault tripped,,,-
+241,0xF1,Debug:FaultVdc,R,?uint,V,10,,,DC-bus voltage the moment the last fault tripped,,,-
+242,0xF2,Debug:FaultTemp,R,?int,°C,100,,,Power stage temperature the moment the last fault tripped,,,-
+243,0xF3,Debug:ThetaAvg,R,?int,°,100,,,Observer vs applied angle error; 1.3s mean for bias tuning,,,-
+244,0xF4,Debug:ObsErr,R,?uint,°,100,,,Lock discriminant magnitude; 1.3s mean; takeover needs it under Obs:LockErr,,,-
+245,0xF5,Debug:ObsLock,R,?uint,-,1,,,Takeover gate progress in detector ticks; fires at 40,,,-
 255,0xFF,Journal:Count,R,uint,-,1,0,32,Number of records returned by last Journal:Read (0..32),,,-
 256,0x100,Journal:0Event,R,?enum,0:boot 1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 12:st 13:sp 14:perm 15:ftr,-,,,Journal entry 0 event code,,,-
 257,0x101,Journal:0Hours,R,?uint,h,1,,,Journal entry 0 operating hours,,,-
@@ -262,102 +298,102 @@ id,hex,name,rws,type,unit,scale,min,max,desc,rule,default,auth
 317,0x13D,Journal:30Hours,R,?uint,h,1,,,Journal entry 30 operating hours,,,-
 318,0x13E,Journal:31Event,R,?enum,0:boot 1:peak 2:imax 3:irms 4:stall 5:temp 6:hv- 7:hv+ 8:lv- 9:lv+ 10:sync 11:link 12:st 13:sp 14:perm 15:ftr,-,,,Journal entry 31 event code,,,-
 319,0x13F,Journal:31Hours,R,?uint,h,1,,,Journal entry 31 operating hours,,,-
-320,0x140,ModTab:2Hz,RWs,uint,m%,100,0,100,Modulation index at 2.05Hz,,6.97/2.5/2.75,admin
-321,0x141,ModTab:4Hz,RWs,uint,m%,100,0,100,Modulation index at 4.10Hz,,7.09/3.25/3.75,admin
-322,0x142,ModTab:6Hz,RWs,uint,m%,100,0,100,Modulation index at 6.15Hz,,7.19/3.75/4.5,admin
-323,0x143,ModTab:8Hz,RWs,uint,m%,100,0,100,Modulation index at 8.19Hz,,7.31/4.5/5.5,admin
-324,0x144,ModTab:10Hz,RWs,uint,m%,100,0,100,Modulation index at 10.24Hz,,7.44/5.0/6.5,admin
-325,0x145,ModTab:12Hz,RWs,uint,m%,100,0,100,Modulation index at 12.29Hz,,7.56/5.5/7.5,admin
-326,0x146,ModTab:14Hz,RWs,uint,m%,100,0,100,Modulation index at 14.34Hz,,7.69/6.25/9.0,admin
-327,0x147,ModTab:16Hz,RWs,uint,m%,100,0,100,Modulation index at 16.39Hz,,7.84/7.0/10.5,admin
-328,0x148,ModTab:18Hz,RWs,uint,m%,100,0,100,Modulation index at 18.43Hz,,8.0/7.75/11.5,admin
-329,0x149,ModTab:20Hz,RWs,uint,m%,100,0,100,Modulation index at 20.48Hz,,8.19/8.5/12.5,admin
-330,0x14A,ModTab:23Hz,RWs,uint,m%,100,0,100,Modulation index at 22.53Hz,,8.41/9.5/13.5,admin
-331,0x14B,ModTab:25Hz,RWs,uint,m%,100,0,100,Modulation index at 24.58Hz,,8.66/10.0/14.5,admin
-332,0x14C,ModTab:27Hz,RWs,uint,m%,100,0,100,Modulation index at 26.63Hz,,8.91/10.75/16.0,admin
-333,0x14D,ModTab:29Hz,RWs,uint,m%,100,0,100,Modulation index at 28.68Hz,,9.19/11.5/17.5,admin
-334,0x14E,ModTab:31Hz,RWs,uint,m%,100,0,100,Modulation index at 30.73Hz,,9.47/12.5/18.5,admin
-335,0x14F,ModTab:33Hz,RWs,uint,m%,100,0,100,Modulation index at 32.77Hz,,9.75/13.0/20.0,admin
-336,0x150,ModTab:35Hz,RWs,uint,m%,100,0,100,Modulation index at 34.82Hz,,10.03/14.0/21.5,admin
-337,0x151,ModTab:37Hz,RWs,uint,m%,100,0,100,Modulation index at 36.87Hz,,10.28/15.0/23.0,admin
-338,0x152,ModTab:39Hz,RWs,uint,m%,100,0,100,Modulation index at 38.92Hz,,10.56/15.5/24.5,admin
-339,0x153,ModTab:41Hz,RWs,uint,m%,100,0,100,Modulation index at 40.97Hz,,10.84/16.0/26.0,admin
-340,0x154,ModTab:43Hz,RWs,uint,m%,100,0,100,Modulation index at 43.02Hz,,11.13/17.0/27.5,admin
-341,0x155,ModTab:45Hz,RWs,uint,m%,100,0,100,Modulation index at 45.07Hz,,11.41/18.0/29.5,admin
-342,0x156,ModTab:47Hz,RWs,uint,m%,100,0,100,Modulation index at 47.12Hz,,11.72/19.0/31.0,admin
-343,0x157,ModTab:49Hz,RWs,uint,m%,100,0,100,Modulation index at 49.17Hz,,12.0/20.0/32.5,admin
-344,0x158,ModTab:51Hz,RWs,uint,m%,100,0,100,Modulation index at 51.22Hz,,12.31/20.62/34.0,admin
-345,0x159,ModTab:53Hz,RWs,uint,m%,100,0,100,Modulation index at 53.27Hz,,12.63/21.25/35.5,admin
-346,0x15A,ModTab:55Hz,RWs,uint,m%,100,0,100,Modulation index at 55.33Hz,,12.97/22.0/36.75,admin
-347,0x15B,ModTab:57Hz,RWs,uint,m%,100,0,100,Modulation index at 57.38Hz,,13.31/23.0/37.75,admin
-348,0x15C,ModTab:59Hz,RWs,uint,m%,100,0,100,Modulation index at 59.43Hz,,13.66/24.0/38.25,admin
-349,0x15D,ModTab:61Hz,RWs,uint,m%,100,0,100,Modulation index at 61.49Hz,,14.03/24.5/38.75,admin
-350,0x15E,ModTab:64Hz,RWs,uint,m%,100,0,100,Modulation index at 63.54Hz,,14.38/25.0/39.5,admin
-351,0x15F,ModTab:66Hz,RWs,uint,m%,100,0,100,Modulation index at 65.60Hz,,14.72/26.0/39.75,admin
-352,0x160,ModTab:68Hz,RWs,uint,m%,100,0,100,Modulation index at 67.65Hz,,15.09/27.0/40.0,admin
-353,0x161,ModTab:70Hz,RWs,uint,m%,100,0,100,Modulation index at 69.71Hz,,15.44/27.5/40.25,admin
-354,0x162,ModTab:72Hz,RWs,uint,m%,100,0,100,Modulation index at 71.77Hz,,15.78/28.0/40.5,admin
-355,0x163,ModTab:74Hz,RWs,uint,m%,100,0,100,Modulation index at 73.83Hz,,16.13/28.5/40.75,admin
-356,0x164,ModTab:76Hz,RWs,uint,m%,100,0,100,Modulation index at 75.90Hz,,16.44/29.0/41.0,admin
-357,0x165,ModTab:78Hz,RWs,uint,m%,100,0,100,Modulation index at 77.96Hz,,16.81/29.5/41.25,admin
-358,0x166,ModTab:80Hz,RWs,uint,m%,100,0,100,Modulation index at 80.03Hz,,17.16/30.0/41.5,admin
-359,0x167,ModTab:82Hz,RWs,uint,m%,100,0,100,Modulation index at 82.10Hz,,17.5/30.5/41.75,admin
-360,0x168,ModTab:84Hz,RWs,uint,m%,100,0,100,Modulation index at 84.18Hz,,17.88/31.0/42.0,admin
-361,0x169,ModTab:86Hz,RWs,uint,m%,100,0,100,Modulation index at 86.26Hz,,18.25/31.5/42.25,admin
-362,0x16A,ModTab:88Hz,RWs,uint,m%,100,0,100,Modulation index at 88.34Hz,,18.63/32.0/42.5,admin
-363,0x16B,ModTab:90Hz,RWs,uint,m%,100,0,100,Modulation index at 90.44Hz,,19.03/32.5/43.5,admin
-364,0x16C,ModTab:93Hz,RWs,uint,m%,100,0,100,Modulation index at 92.53Hz,,19.41/33.0/44.5,admin
-365,0x16D,ModTab:95Hz,RWs,uint,m%,100,0,100,Modulation index at 94.64Hz,,19.81/33.5/45.5,admin
-366,0x16E,ModTab:97Hz,RWs,uint,m%,100,0,100,Modulation index at 96.75Hz,,20.22/34.0/46.5,admin
-367,0x16F,ModTab:99Hz,RWs,uint,m%,100,0,100,Modulation index at 98.87Hz,,20.63/34.5/47.5,admin
-368,0x170,ModTab:101Hz,RWs,uint,m%,100,0,100,Modulation index at 101.00Hz,,21.06/35.0/48.5,admin
-369,0x171,ModTab:103Hz,RWs,uint,m%,100,0,100,Modulation index at 103.15Hz,,21.53/35.5/49.5,admin
-370,0x172,ModTab:105Hz,RWs,uint,m%,100,0,100,Modulation index at 105.31Hz,,21.97/36.0/50.0,admin
-371,0x173,ModTab:107Hz,RWs,uint,m%,100,0,100,Modulation index at 107.48Hz,,22.47/36.5/50.0,admin
-372,0x174,ModTab:110Hz,RWs,uint,m%,100,0,100,Modulation index at 109.68Hz,,22.97/36.75/50.0,admin
-373,0x175,ModTab:112Hz,RWs,uint,m%,100,0,100,Modulation index at 111.90Hz,,23.47/37.0/50.0,admin
-374,0x176,ModTab:114Hz,RWs,uint,m%,100,0,100,Modulation index at 114.14Hz,,23.97/37.12/50.0,admin
-375,0x177,ModTab:116Hz,RWs,uint,m%,100,0,100,Modulation index at 116.42Hz,,24.5/37.25/50.0,admin
-376,0x178,ModTab:119Hz,RWs,uint,m%,100,0,100,Modulation index at 118.72Hz,,25.03/37.38/50.0,admin
-377,0x179,ModTab:121Hz,RWs,uint,m%,100,0,100,Modulation index at 121.07Hz,,25.56/37.5/50.0,admin
-378,0x17A,ModTab:123Hz,RWs,uint,m%,100,0,100,Modulation index at 123.46Hz,,26.13/37.62/50.0,admin
-379,0x17B,ModTab:126Hz,RWs,uint,m%,100,0,100,Modulation index at 125.90Hz,,26.69/37.75/50.0,admin
-380,0x17C,ModTab:128Hz,RWs,uint,m%,100,0,100,Modulation index at 128.40Hz,,27.31/37.88/50.0,admin
-381,0x17D,ModTab:131Hz,RWs,uint,m%,100,0,100,Modulation index at 130.97Hz,,27.91/38.0/50.0,admin
-382,0x17E,ModTab:134Hz,RWs,uint,m%,100,0,100,Modulation index at 133.62Hz,,28.53/38.12/50.0,admin
-383,0x17F,ModTab:136Hz,RWs,uint,m%,100,0,100,Modulation index at 136.35Hz,,29.16/38.55/50.0,admin
-384,0x180,ModTab:139Hz,RWs,uint,m%,100,0,100,Modulation index at 139.19Hz,,29.84/39.0/50.0,admin
-385,0x181,ModTab:142Hz,RWs,uint,m%,100,0,100,Modulation index at 142.15Hz,,30.5/39.5/50.0,admin
-386,0x182,ModTab:145Hz,RWs,uint,m%,100,0,100,Modulation index at 145.24Hz,,31.22/40.0/50.0,admin
-387,0x183,ModTab:148Hz,RWs,uint,m%,100,0,100,Modulation index at 148.49Hz,,31.97/40.5/50.0,admin
-388,0x184,ModTab:152Hz,RWs,uint,m%,100,0,100,Modulation index at 151.92Hz,,32.75/41.05/50.0,admin
-389,0x185,ModTab:156Hz,RWs,uint,m%,100,0,100,Modulation index at 155.56Hz,,33.59/41.65/50.0,admin
-390,0x186,ModTab:159Hz,RWs,uint,m%,100,0,100,Modulation index at 159.43Hz,,34.47/42.25/50.0,admin
-391,0x187,ModTab:164Hz,RWs,uint,m%,100,0,100,Modulation index at 163.58Hz,,35.38/42.95/50.0,admin
-392,0x188,ModTab:168Hz,RWs,uint,m%,100,0,100,Modulation index at 168.04Hz,,36.31/43.65/50.0,admin
-393,0x189,ModTab:173Hz,RWs,uint,m%,100,0,100,Modulation index at 172.86Hz,,37.34/44.4/50.0,admin
-394,0x18A,ModTab:178Hz,RWs,uint,m%,100,0,100,Modulation index at 178.10Hz,,38.47/45.25/50.0,admin
-395,0x18B,ModTab:184Hz,RWs,uint,m%,100,0,100,Modulation index at 183.82Hz,,39.69/46.15/50.0,admin
-396,0x18C,ModTab:190Hz,RWs,uint,m%,100,0,100,Modulation index at 190.08Hz,,41.06/47.15/50.0,admin
-397,0x18D,ModTab:197Hz,RWs,uint,m%,100,0,100,Modulation index at 196.98Hz,,42.5/48.3/50.0,admin
-398,0x18E,ModTab:205Hz,RWs,uint,m%,100,0,100,Modulation index at 204.60Hz,,43.97/49.5/50.0,admin
-399,0x18F,ModTab:213Hz,RWs,uint,m%,100,0,100,Modulation index at 213.06Hz,,45.38/49.59/50.0,admin
-400,0x190,ModTab:222Hz,RWs,uint,m%,100,0,100,Modulation index at 222.48Hz,,46.63/49.66/50.0,admin
-401,0x191,ModTab:233Hz,RWs,uint,m%,100,0,100,Modulation index at 233.00Hz,,47.78/49.7/50.0,admin
-402,0x192,ModTab:245Hz,RWs,uint,m%,100,0,100,Modulation index at 244.79Hz,,49.0/49.75/50.0,admin
-403,0x193,ModTab:258Hz,RWs,uint,m%,100,0,100,Modulation index at 258.03Hz,,50.31/49.8/50.0,admin
-404,0x194,ModTab:273Hz,RWs,uint,m%,100,0,100,Modulation index at 272.96Hz,,51.66/49.84/50.0,admin
-405,0x195,ModTab:290Hz,RWs,uint,m%,100,0,100,Modulation index at 289.81Hz,,53.03/49.91/50.0,admin
-406,0x196,ModTab:309Hz,RWs,uint,m%,100,0,100,Modulation index at 308.87Hz,,54.28/49.95/50.0,admin
-407,0x197,ModTab:330Hz,RWs,uint,m%,100,0,100,Modulation index at 330.49Hz,,55.34/50.0/50.0,admin
-408,0x198,ModTab:355Hz,RWs,uint,m%,100,0,100,Modulation index at 355.03Hz,,55.94/50.0/50.0,admin
-409,0x199,ModTab:383Hz,RWs,uint,m%,100,0,100,Modulation index at 382.95Hz,,56.22/50.0/50.0,admin
-410,0x19A,ModTab:415Hz,RWs,uint,m%,100,0,100,Modulation index at 414.73Hz,,56.44/50.0/50.0,admin
-411,0x19B,ModTab:451Hz,RWs,uint,m%,100,0,100,Modulation index at 450.97Hz,,56.66/50.0/50.0,admin
-412,0x19C,ModTab:492Hz,RWs,uint,m%,100,0,100,Modulation index at 492.32Hz,,56.84/50.0/50.0,admin
-413,0x19D,ModTab:540Hz,RWs,uint,m%,100,0,100,Modulation index at 539.56Hz,,57.0/50.0/50.0,admin
-414,0x19E,ModTab:594Hz,RWs,uint,m%,100,0,100,Modulation index at 593.57Hz,,57.16/50.0/50.0,admin
-415,0x19F,ModTab:655Hz,RWs,uint,m%,100,0,100,Modulation index at 655.35Hz,,57.41/50.0/50.0,admin
+320,0x140,ModTab:2Hz,RWs,uint,m%,100,0,100,Modulation index at 2.05Hz,,7.0/5.0/5.5,admin
+321,0x141,ModTab:4Hz,RWs,uint,m%,100,0,100,Modulation index at 4.10Hz,,7.0/5.0/5.5,admin
+322,0x142,ModTab:6Hz,RWs,uint,m%,100,0,100,Modulation index at 6.15Hz,,7.25/5.75/6.5,admin
+323,0x143,ModTab:8Hz,RWs,uint,m%,100,0,100,Modulation index at 8.19Hz,,7.5/6.5/7.49,admin
+324,0x144,ModTab:10Hz,RWs,uint,m%,100,0,100,Modulation index at 10.24Hz,,7.75/7.0/8.25,admin
+325,0x145,ModTab:12Hz,RWs,uint,m%,100,0,100,Modulation index at 12.29Hz,,8.0/7.5/8.99,admin
+326,0x146,ModTab:14Hz,RWs,uint,m%,100,0,100,Modulation index at 14.34Hz,,8.5/8.25/10.0,admin
+327,0x147,ModTab:16Hz,RWs,uint,m%,100,0,100,Modulation index at 16.39Hz,,9.0/9.0/11.0,admin
+328,0x148,ModTab:18Hz,RWs,uint,m%,100,0,100,Modulation index at 18.43Hz,,9.5/9.5/12.0,admin
+329,0x149,ModTab:20Hz,RWs,uint,m%,100,0,100,Modulation index at 20.48Hz,,10.0/10.0/13.0,admin
+330,0x14A,ModTab:23Hz,RWs,uint,m%,100,0,100,Modulation index at 22.53Hz,,10.5/10.5/14.0,admin
+331,0x14B,ModTab:25Hz,RWs,uint,m%,100,0,100,Modulation index at 24.58Hz,,11.0/11.0/15.0,admin
+332,0x14C,ModTab:27Hz,RWs,uint,m%,100,0,100,Modulation index at 26.63Hz,,11.5/11.75/16.49,admin
+333,0x14D,ModTab:29Hz,RWs,uint,m%,100,0,100,Modulation index at 28.68Hz,,12.0/12.5/17.99,admin
+334,0x14E,ModTab:31Hz,RWs,uint,m%,100,0,100,Modulation index at 30.73Hz,,12.5/13.25/19.49,admin
+335,0x14F,ModTab:33Hz,RWs,uint,m%,100,0,100,Modulation index at 32.77Hz,,13.0/13.99/20.99,admin
+336,0x150,ModTab:35Hz,RWs,uint,m%,100,0,100,Modulation index at 34.82Hz,,13.5/14.75/21.99,admin
+337,0x151,ModTab:37Hz,RWs,uint,m%,100,0,100,Modulation index at 36.87Hz,,14.0/15.5/23.0,admin
+338,0x152,ModTab:39Hz,RWs,uint,m%,100,0,100,Modulation index at 38.92Hz,,14.5/16.25/24.0,admin
+339,0x153,ModTab:41Hz,RWs,uint,m%,100,0,100,Modulation index at 40.97Hz,,15.0/17.0/25.0,admin
+340,0x154,ModTab:43Hz,RWs,uint,m%,100,0,100,Modulation index at 43.02Hz,,15.5/18.0/26.0,admin
+341,0x155,ModTab:45Hz,RWs,uint,m%,100,0,100,Modulation index at 45.07Hz,,16.0/19.0/27.0,admin
+342,0x156,ModTab:47Hz,RWs,uint,m%,100,0,100,Modulation index at 47.12Hz,,16.75/19.5/28.0,admin
+343,0x157,ModTab:49Hz,RWs,uint,m%,100,0,100,Modulation index at 49.17Hz,,17.5/20.0/29.0,admin
+344,0x158,ModTab:51Hz,RWs,uint,m%,100,0,100,Modulation index at 51.22Hz,,18.25/20.75/30.5,admin
+345,0x159,ModTab:53Hz,RWs,uint,m%,100,0,100,Modulation index at 53.27Hz,,19.0/21.5/32.0,admin
+346,0x15A,ModTab:55Hz,RWs,uint,m%,100,0,100,Modulation index at 55.33Hz,,19.25/22.25/33.5,admin
+347,0x15B,ModTab:57Hz,RWs,uint,m%,100,0,100,Modulation index at 57.38Hz,,19.5/23.0/35.0,admin
+348,0x15C,ModTab:59Hz,RWs,uint,m%,100,0,100,Modulation index at 59.43Hz,,19.75/24.0/36.0,admin
+349,0x15D,ModTab:61Hz,RWs,uint,m%,100,0,100,Modulation index at 61.49Hz,,20.0/25.0/37.01,admin
+350,0x15E,ModTab:64Hz,RWs,uint,m%,100,0,100,Modulation index at 63.54Hz,,20.5/25.5/38.51,admin
+351,0x15F,ModTab:66Hz,RWs,uint,m%,100,0,100,Modulation index at 65.60Hz,,21.0/26.02/40.03,admin
+352,0x160,ModTab:68Hz,RWs,uint,m%,100,0,100,Modulation index at 67.65Hz,,21.25/27.02/41.53,admin
+353,0x161,ModTab:70Hz,RWs,uint,m%,100,0,100,Modulation index at 69.71Hz,,21.51/28.02/43.04,admin
+354,0x162,ModTab:72Hz,RWs,uint,m%,100,0,100,Modulation index at 71.77Hz,,21.76/29.03/44.54,admin
+355,0x163,ModTab:74Hz,RWs,uint,m%,100,0,100,Modulation index at 73.83Hz,,22.01/30.02/46.05,admin
+356,0x164,ModTab:76Hz,RWs,uint,m%,100,0,100,Modulation index at 75.90Hz,,22.26/30.52/47.56,admin
+357,0x165,ModTab:78Hz,RWs,uint,m%,100,0,100,Modulation index at 77.96Hz,,22.51/31.02/49.07,admin
+358,0x166,ModTab:80Hz,RWs,uint,m%,100,0,100,Modulation index at 80.03Hz,,22.76/31.53/50.58,admin
+359,0x167,ModTab:82Hz,RWs,uint,m%,100,0,100,Modulation index at 82.10Hz,,23.03/32.07/52.1,admin
+360,0x168,ModTab:84Hz,RWs,uint,m%,100,0,100,Modulation index at 84.18Hz,,23.54/33.08/53.62,admin
+361,0x169,ModTab:86Hz,RWs,uint,m%,100,0,100,Modulation index at 86.26Hz,,24.05/34.09/55.19,admin
+362,0x16A,ModTab:88Hz,RWs,uint,m%,100,0,100,Modulation index at 88.34Hz,,24.55/35.11/57.22,admin
+363,0x16B,ModTab:90Hz,RWs,uint,m%,100,0,100,Modulation index at 90.44Hz,,25.07/36.13/59.2,admin
+364,0x16C,ModTab:93Hz,RWs,uint,m%,100,0,100,Modulation index at 92.53Hz,,25.58/37.15/60.73,admin
+365,0x16D,ModTab:95Hz,RWs,uint,m%,100,0,100,Modulation index at 94.64Hz,,26.09/38.18/62.27,admin
+366,0x16E,ModTab:97Hz,RWs,uint,m%,100,0,100,Modulation index at 96.75Hz,,26.6/39.21/63.81,admin
+367,0x16F,ModTab:99Hz,RWs,uint,m%,100,0,100,Modulation index at 98.87Hz,,27.12/40.15/65.37,admin
+368,0x170,ModTab:101Hz,RWs,uint,m%,100,0,100,Modulation index at 101.00Hz,,27.64/40.8/66.92,admin
+369,0x171,ModTab:103Hz,RWs,uint,m%,100,0,100,Modulation index at 103.15Hz,,28.17/41.46/68.5,admin
+370,0x172,ModTab:105Hz,RWs,uint,m%,100,0,100,Modulation index at 105.31Hz,,28.69/42.11/70.08,admin
+371,0x173,ModTab:107Hz,RWs,uint,m%,100,0,100,Modulation index at 107.48Hz,,29.22/42.83/71.55,admin
+372,0x174,ModTab:110Hz,RWs,uint,m%,100,0,100,Modulation index at 109.68Hz,,29.75/43.63/72.88,admin
+373,0x175,ModTab:112Hz,RWs,uint,m%,100,0,100,Modulation index at 111.90Hz,,30.29/44.59/74.09,admin
+374,0x176,ModTab:114Hz,RWs,uint,m%,100,0,100,Modulation index at 114.14Hz,,30.84/45.68/75.18,admin
+375,0x177,ModTab:116Hz,RWs,uint,m%,100,0,100,Modulation index at 116.42Hz,,31.4/46.79/75.9,admin
+376,0x178,ModTab:119Hz,RWs,uint,m%,100,0,100,Modulation index at 118.72Hz,,31.96/47.91/76.46,admin
+377,0x179,ModTab:121Hz,RWs,uint,m%,100,0,100,Modulation index at 121.07Hz,,32.53/48.53/77.03,admin
+378,0x17A,ModTab:123Hz,RWs,uint,m%,100,0,100,Modulation index at 123.46Hz,,33.11/49.11/77.66,admin
+379,0x17B,ModTab:126Hz,RWs,uint,m%,100,0,100,Modulation index at 125.90Hz,,33.7/49.7/78.55,admin
+380,0x17C,ModTab:128Hz,RWs,uint,m%,100,0,100,Modulation index at 128.40Hz,,34.31/50.62/79.16,admin
+381,0x17D,ModTab:131Hz,RWs,uint,m%,100,0,100,Modulation index at 130.97Hz,,34.93/51.87/79.47,admin
+382,0x17E,ModTab:134Hz,RWs,uint,m%,100,0,100,Modulation index at 133.62Hz,,35.58/53.16/79.79,admin
+383,0x17F,ModTab:136Hz,RWs,uint,m%,100,0,100,Modulation index at 136.35Hz,,36.24/54.24/80.12,admin
+384,0x180,ModTab:139Hz,RWs,uint,m%,100,0,100,Modulation index at 139.19Hz,,36.93/54.93/80.47,admin
+385,0x181,ModTab:142Hz,RWs,uint,m%,100,0,100,Modulation index at 142.15Hz,,37.65/55.65/80.83,admin
+386,0x182,ModTab:145Hz,RWs,uint,m%,100,0,100,Modulation index at 145.24Hz,,38.4/56.4/81.2,admin
+387,0x183,ModTab:148Hz,RWs,uint,m%,100,0,100,Modulation index at 148.49Hz,,39.19/57.19/81.59,admin
+388,0x184,ModTab:152Hz,RWs,uint,m%,100,0,100,Modulation index at 151.92Hz,,40.02/58.02/82.01,admin
+389,0x185,ModTab:156Hz,RWs,uint,m%,100,0,100,Modulation index at 155.56Hz,,40.9/58.9/82.45,admin
+390,0x186,ModTab:159Hz,RWs,uint,m%,100,0,100,Modulation index at 159.43Hz,,41.84/59.84/82.92,admin
+391,0x187,ModTab:164Hz,RWs,uint,m%,100,0,100,Modulation index at 163.58Hz,,42.84/60.84/83.42,admin
+392,0x188,ModTab:168Hz,RWs,uint,m%,100,0,100,Modulation index at 168.04Hz,,43.91/61.91/83.96,admin
+393,0x189,ModTab:173Hz,RWs,uint,m%,100,0,100,Modulation index at 172.86Hz,,45.07/63.07/84.53,admin
+394,0x18A,ModTab:178Hz,RWs,uint,m%,100,0,100,Modulation index at 178.10Hz,,46.32/64.32/85.65,admin
+395,0x18B,ModTab:184Hz,RWs,uint,m%,100,0,100,Modulation index at 183.82Hz,,47.69/65.69/88.38,admin
+396,0x18C,ModTab:190Hz,RWs,uint,m%,100,0,100,Modulation index at 190.08Hz,,49.18/67.18/91.35,admin
+397,0x18D,ModTab:197Hz,RWs,uint,m%,100,0,100,Modulation index at 196.98Hz,,50.81/68.81/94.61,admin
+398,0x18E,ModTab:205Hz,RWs,uint,m%,100,0,100,Modulation index at 204.60Hz,,52.59/70.59/98.18,admin
+399,0x18F,ModTab:213Hz,RWs,uint,m%,100,0,100,Modulation index at 213.06Hz,,54.55/72.55/100.0,admin
+400,0x190,ModTab:222Hz,RWs,uint,m%,100,0,100,Modulation index at 222.48Hz,,56.69/73.84/100.0,admin
+401,0x191,ModTab:233Hz,RWs,uint,m%,100,0,100,Modulation index at 233.00Hz,,59.02/74.5/100.0,admin
+402,0x192,ModTab:245Hz,RWs,uint,m%,100,0,100,Modulation index at 244.79Hz,,61.54/75.13/100.0,admin
+403,0x193,ModTab:258Hz,RWs,uint,m%,100,0,100,Modulation index at 258.03Hz,,64.22/75.81/100.0,admin
+404,0x194,ModTab:273Hz,RWs,uint,m%,100,0,100,Modulation index at 272.96Hz,,67.03/81.52/100.0,admin
+405,0x195,ModTab:290Hz,RWs,uint,m%,100,0,100,Modulation index at 289.81Hz,,69.88/99.0/100.0,admin
+406,0x196,ModTab:309Hz,RWs,uint,m%,100,0,100,Modulation index at 308.87Hz,,72.68/99.0/100.0,admin
+407,0x197,ModTab:330Hz,RWs,uint,m%,100,0,100,Modulation index at 330.49Hz,,75.36/99.0/100.0,admin
+408,0x198,ModTab:355Hz,RWs,uint,m%,100,0,100,Modulation index at 355.03Hz,,89.88/99.0/100.0,admin
+409,0x199,ModTab:383Hz,RWs,uint,m%,100,0,100,Modulation index at 382.95Hz,,92.19/99.0/100.0,admin
+410,0x19A,ModTab:415Hz,RWs,uint,m%,100,0,100,Modulation index at 414.73Hz,,94.2/99.06/100.0,admin
+411,0x19B,ModTab:451Hz,RWs,uint,m%,100,0,100,Modulation index at 450.97Hz,,95.89/99.34/100.0,admin
+412,0x19C,ModTab:492Hz,RWs,uint,m%,100,0,100,Modulation index at 492.32Hz,,97.14/99.51/100.0,admin
+413,0x19D,ModTab:540Hz,RWs,uint,m%,100,0,100,Modulation index at 539.56Hz,,98.06/99.67/100.0,admin
+414,0x19E,ModTab:594Hz,RWs,uint,m%,100,0,100,Modulation index at 593.57Hz,,98.77/99.85/100.0,admin
+415,0x19F,ModTab:655Hz,RWs,uint,m%,100,0,100,Modulation index at 655.35Hz,,99.37/99.99/100.0,admin
 416,0x1A0,Flow:PwrMax100rpm,RWs,uint,W,1,0,65535,Max power at 100rpm (normalizes load axis),,0/0/2,admin
 417,0x1A1,Flow:PwrMax200rpm,RWs,uint,W,1,0,65535,Max power at 200rpm (normalizes load axis),,0/2/17,admin
 418,0x1A2,Flow:PwrMax300rpm,RWs,uint,W,1,0,65535,Max power at 300rpm (normalizes load axis),,2/6/58,admin

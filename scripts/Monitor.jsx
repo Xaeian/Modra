@@ -211,8 +211,6 @@ const Monitor = {
       cfg.yRange = [lo - 0.5, hi + 0.5];
       cfg.yFormat = v => v == null ? "-" : (labels[Math.round(v)] ?? csFmtVal(v));
       cfg.noTip = true;
-      // The enum's "unit" is its raw label map, not something to show.
-      cfg.unit = "";
     }
     else if(grp.type === "bits" && grp.bitsLabels) {
       // A bitmask isn't legible from one y-position, so keep the shared tooltip.

@@ -39,7 +39,7 @@ const S = {
   regs: [],
   values: {},
   dirty: {},
-  variant: 0,  // which `default` slot a restore stages from
+  variant: 0, // which `default` slot a restore stages from
 
   //--------------------------------------------------------------------------------------- Monitor
 
@@ -50,7 +50,7 @@ const S = {
 
   // Backend skips polling these. Mirror of `view.ignore` on disk.
   ignore: new Set(),
-  showDisabled: false,  // reveal ignored rows inline with the active ones
+  showDisabled: false, // reveal ignored rows inline with the active ones
 
   //---------------------------------------------------------------------------------- Address scan
 

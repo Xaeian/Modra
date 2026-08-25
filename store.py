@@ -194,7 +194,7 @@ class Store:
     await self._ensure(dst)
     src_max = await self.db.get_value(f"SELECT MAX(ts) FROM {ident(src)}")
     if src_max is None: return 0
-    end = (int(src_max // bucket)) * bucket   # start of the current (incomplete) bucket
+    end = (int(src_max // bucket)) * bucket # start of the current (incomplete) bucket
     mark = await self.db.get_value("SELECT ts FROM _roll WHERE tbl=?", (dst,))
     if mark is None:
       # First sight of this tier: anchor the watermark at the current edge and
@@ -215,7 +215,7 @@ class Store:
       for c in self._cols:
         vals = [r[c["col"]] for r in buckets[b] if r[c["col"]] is not None]
         if not vals: agg[c["col"]] = None
-        elif c.get("agg") == "or":                           # bitfield: any bit set in the window
+        elif c.get("agg") == "or": # bitfield: any bit set in the window
           acc = 0
           for v in vals: acc |= int(v)
           agg[c["col"]] = acc
@@ -274,7 +274,7 @@ class Store:
       cols_sql = ", ".join(ident(c) for c in (["ts"] + vcols)) if vcols else "ts"
       cap = max(max_points * 2, 4000)
       sql = (f"SELECT {cols_sql} FROM {ident(table)} "
-             f"WHERE ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?")
+        f"WHERE ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?")
       return await self.db.get_dicts(sql, (from_ts, to_ts, cap))
     except Exception as e:
       log.err(f"query: {e}")

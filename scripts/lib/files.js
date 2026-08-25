@@ -1,4 +1,10 @@
 // scripts/lib/files.js
+//
+// CSV, INI, JSON, YAML and ZIP each expose the same triad.
+// load(file) parses a File you already hold; save(filename, data) starts a download.
+// open() shows a file picker and resolves the parsed data, or null if nothing is picked.
+
+//---------------------------------------------------------------------------------------- Download
 
 function _download(filename, content, type="text/plain") {
   const url = URL.createObjectURL(new Blob([content], {type}));
@@ -8,7 +14,10 @@ function _download(filename, content, type="text/plain") {
   URL.revokeObjectURL(url);
 }
 
-//----------------------------------------------------------------------------------------- CSV
+//--------------------------------------------------------------------------------------------- CSV
+
+// parse_raw gives rows as arrays, parse_text rows as objects, parse_vectors columns as arrays.
+// Input is split on newlines before quotes are parsed, so a field can never span lines.
 
 const CSV = {
 
@@ -127,7 +136,6 @@ const CSV = {
     _download(filename, lines.join("\n") + "\n", "text/csv");
   },
 
-  /** File picker, parsed as vectors. */
   async open_vectors(delimiter=",", types=null, groupBy=null, accept=".csv") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -145,19 +153,16 @@ const CSV = {
     });
   },
 
-  /** Parse a File object. */
   async load(file, delimiter=",", types=null) {
     const text = await file.text();
     return CSV.parse_text(text, delimiter, types);
   },
 
-  /** Download as CSV. */
   save(filename, data, fieldNames=null, delimiter=",") {
     const content = CSV.stringify(data, fieldNames, delimiter);
     _download(filename, content, "text/csv");
   },
 
-  /** File picker, parsed as CSV. */
   async open(delimiter=",", types=null, accept=".csv") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -174,7 +179,12 @@ const CSV = {
   },
 };
 
-//----------------------------------------------------------------------------------------- INI
+//--------------------------------------------------------------------------------------------- INI
+
+// {comments: true} makes parse_text return {data, commentSection, commentField}, not plain data.
+// commentField[null] holds comments for top-level keys, the ones outside any section.
+// stringify emits scalars before sections, so a top-level key never lands inside one.
+// A value written as [value, comment] carries its own inline comment.
 
 const INI = {
 
@@ -221,6 +231,7 @@ const INI = {
     return text;
   },
 
+  // Skips a leading quoted string so a ; or # inside it does not start a comment.
   _splitInlineComment(text) {
     let i = 0;
     if(text[0] === '"' || text[0] === "'") {
@@ -326,19 +337,16 @@ const INI = {
     return lines.join("\n") + "\n";
   },
 
-  /** Parse a File object. */
   async load(file) {
     const text = await file.text();
     return INI.parse_text(text);
   },
 
-  /** Download as INI. */
   save(filename, data, commentSection, commentField) {
     const content = INI.stringify(data, commentSection, commentField);
     _download(filename, content);
   },
 
-  /** File picker, parsed as INI. */
   async open(accept=".ini") {
     return new Promise((resolve, reject) => {
       const input = document.createElement("input");
@@ -355,7 +363,12 @@ const INI = {
   },
 };
 
-//---------------------------------------------------------------------------------------- JSON
+//-------------------------------------------------------------------------------------------- JSON
+
+// Patched onto the builtin JSON so every format keeps the same call shape.
+// JSON.smart trades strict indentation for readable numeric data.
+// Numeric arrays wrap every arrayWrap items, 2-D ones keep one row per line.
+// Flat objects pack as many entries per line as maxLine allows.
 
 JSON.smart = function(obj, indent=2, maxLine=100, arrayWrap=10, compactDict=true) {
   function isPrimitive(v) {
@@ -469,7 +482,9 @@ JSON.open = async function(accept=".json") {
   });
 };
 
-//---------------------------------------------------------------------------------------- YAML
+//-------------------------------------------------------------------------------------------- YAML
+
+// Requires js-yaml (window.jsyaml).
 
 const YAML = {
 
@@ -510,13 +525,13 @@ const YAML = {
     });
   },
 };
-//----------------------------------------------------------------------------------------- ZIP
 
-// Wymaga fflate (window.fflate). unpack zwraca Uint8Array per entry.
+//--------------------------------------------------------------------------------------------- ZIP
+
+// Requires fflate (window.fflate).
 
 const ZIP = {
 
-  /** Dowolny content do Uint8Array (format wejscia fflate). */
   async _toBytes(content) {
     if(typeof content === "string") return new TextEncoder().encode(content);
     if(content instanceof Uint8Array) return content;
@@ -525,7 +540,7 @@ const ZIP = {
     throw new TypeError("ZIP: content must be string, Uint8Array, ArrayBuffer or Blob");
   },
 
-  /** entries: [{name, content}] do Blob (application/zip). */
+  // entries: [{name, content}] where content is a string, Uint8Array, ArrayBuffer or Blob.
   async pack(entries) {
     const input = {};
     for(const { name, content } of entries) {
@@ -539,7 +554,7 @@ const ZIP = {
     });
   },
 
-  /** Blob/ArrayBuffer/Uint8Array do [{name, content: Uint8Array}]. */
+  // Content comes back as raw bytes, decoding text is left to the caller.
   async unpack(data) {
     const bytes = await ZIP._toBytes(data);
     return new Promise((resolve, reject) => {

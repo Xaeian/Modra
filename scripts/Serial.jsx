@@ -106,7 +106,7 @@ const Serial = () => {
           {variantCount() > 1 &&
             <select class="rb-cfg-input" value={S.variant}
               title="Which variant the defaults are taken from"
-              onChange={(e) => setVariant(parseInt(e.target.value))}>
+              onChange={(e) => { S.variant = parseInt(e.target.value); render(); }}>
               {Array.from({ length: variantCount() }, (_, i) =>
                 <option value={i}>{i + 1}</option>)}
             </select>}

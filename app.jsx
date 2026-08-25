@@ -151,22 +151,17 @@ async function boot(skipPrompt = false) {
   // Stale monitor traces (regs.csv changed) drop silently; ignored names are
   // taken verbatim so a temporarily-removed register comes back still ignored.
   if(view && typeof view === "object") {
-    if(Array.isArray(view.ignore)) {
-      for(const n of view.ignore) S.ignore.add(String(n));
-    }
-    const known = new Set(regs.map(r => r.name));
+    if(Array.isArray(view.ignore)) S.ignore = expandIgnore(view.ignore);
     for(const panel of (view.monitor || [])) {
       const traces = Array.isArray(panel.traces) ? panel.traces : [];
       const size = CHART_SIZE_CYCLE.includes(panel.size) ? panel.size : CHART_SIZE_DEFAULT;
       // Panel size is keyed by group; take the key from the first surviving trace.
       let groupKey = null;
       for(const name of traces) {
-        if(!known.has(name)) continue;
+        const reg = Reg.byName(name);
+        if(!reg || !Reg.isTelemetry(reg)) continue;
         S.monitor.add(name);
-        if(!groupKey) {
-          const reg = Reg.byName(name);
-          if(reg) groupKey = chartGroupKey(reg);
-        }
+        if(!groupKey) groupKey = chartGroupKey(reg);
       }
       if(groupKey) S.chartSizes[groupKey] = size;
     }

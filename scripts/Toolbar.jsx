@@ -32,7 +32,7 @@ const Toolbar = () => {
         onInput={(e) => { S.addrInput = e.target.value; }} />
       <button onClick={toggleConnection}
         class={cls("rb-tbtn rb-conn", S.connected && "on",
-                   S.serial_open && !S.connected && "open")}
+          S.serial_open && !S.connected && "open")}
         disabled={S.busy || (!lineUp && !S.portInput)}>
         {S.busy ? "⏳" : "⚡"}
       </button>

@@ -4,6 +4,7 @@ view.json (monitor panels + ignore list). Factory for ModbusMaster bound
 to current on-disk state.
 """
 
+from fnmatch import fnmatchcase
 from modbus import ModbusMaster
 from xaeian import INI, JSON, FILE, PATH, Color
 
@@ -32,7 +33,7 @@ AUTH_LEVEL = "admin"             # label from that enum to hold
 STATE_DEFAULT = {
   "port": "COM3",
   "addr": 1,
-  "baudrate": 9600,
+  "baudrate": 115200,
   "parity": "N",
   "stopbits": 1,
   "timeout": 1000,
@@ -102,6 +103,16 @@ def _sim_factory(mb:ModbusMaster):
   from sim import SimulatedClient
   return SimulatedClient(mb.id_map)
 
+def ignore_names(patterns, mb:ModbusMaster) -> set[str]:
+  """view.json entries may be globs (`Journal:*`); the map takes plain names, so
+  expand once, here. Case-sensitive everywhere - `fnmatch` folds case on Windows."""
+  known = list(mb.name_map) + list(mb.pairs)
+  out = set()
+  for p in (str(x).strip() for x in patterns):
+    if not p: continue
+    out |= {n for n in known if fnmatchcase(n, p)} if "*" in p or "?" in p else {p}
+  return out
+
 def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   """ModbusMaster bound to current state + `view.ignore`. Ignore is applied
   inside `mb.read()`; the map itself stays complete so the DB schema covers
@@ -109,7 +120,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   port swaps the transport client here."""
   if view is None: view = load_view()
   port = port or str(state.get("port", ""))
-  return ModbusMaster(
+  mb = ModbusMaster(
     port=port,
     regmap_file=regs_path(),
     addr=_int(state.get("addr"), 1),
@@ -118,9 +129,11 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     stopbits=_int(state.get("stopbits"), 1),
     timeout=_int(state.get("timeout"), 1000) / 1000,
     retries=_int(state.get("retries"), 3),
-    ignore_set=set(view.get("ignore", [])),
     client_factory=_sim_factory if port == "SIM" else None,
   )
+  # Needs the parsed map to resolve globs against.
+  mb.ignore_set = ignore_names(view.get("ignore", []), mb)
+  return mb
 
 #----------------------------------------------------------------------------------------- Map lint
 
@@ -201,7 +214,7 @@ def save_regs(text:str) -> list[dict]|None:
   previous file (or the absence of one) is put back on failure."""
   path = regs_path()
   backup = FILE.load(path, binary=True) if FILE.exists(path) else None
-  if text.startswith("﻿"): text = text[1:]   # spreadsheets add a BOM
+  if text.startswith("﻿"): text = text[1:] # spreadsheets add a BOM
   # Bytes with normalised newlines: a text-mode write translates them, so a
   # CRLF source would land as \r\r\n.
   FILE.save(path, text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))

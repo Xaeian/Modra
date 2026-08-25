@@ -213,6 +213,10 @@ const Reg = (() => {
   const isVer = (reg) => reg.type === "ver";
   const isBits = (reg) => reg.type === "bits" && reg.bits;
 
+  // Identity, not telemetry: an opaque word has no trend, and a version string
+  // has no numeric order to plot ("1.10.0" would sit below "1.2.3").
+  const isTelemetry = (reg) => !["ver", "hex"].includes(reg.type);
+
   // Renders the free-text Input control (Control.For's fallthrough).
   const isScalar = (reg) => !isEnum(reg) && !isBool(reg) && !isVer(reg) && !isBits(reg);
 
@@ -370,7 +374,7 @@ const Reg = (() => {
         cols[Math.min(k - 1, Math.floor((cum + b.length / 2) / colSize))].push(...b);
         cum += b.length;
       }
-      else for(const r of b) {  // oversized block spills by row
+      else for(const r of b) { // oversized block spills by row
         cols[Math.min(k - 1, Math.floor(cum / colSize))].push(r);
         cum++;
       }
@@ -384,7 +388,7 @@ const Reg = (() => {
     unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
-    isEnum, isBool, isVer, isBits, isScalar, isNA,
+    isEnum, isBool, isVer, isBits, isScalar, isNA, isTelemetry,
     outOfRange, willWrap, wrapPreview,
     tooltip, filter, match, visibility, blocks, columns,
   };

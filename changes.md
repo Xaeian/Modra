@@ -1,5 +1,11 @@
 # Changes `modra`
 
+## `1.3.2` Units, Ignore
+
+- Compound units like `m³/h` stay whole; `ver`/`hex` off the charts
+- `ignore` takes patterns _(`Journal:*`)_ and skips only polling
+- Trickle fits whatever the poll leaves of the interval
+
 ## `1.3.1` Search, Defs
 
 - Search fades misses instead of hiding them 🙈

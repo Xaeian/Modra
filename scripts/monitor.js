@@ -240,7 +240,7 @@ const MonitData = {
     const now = Date.now();
     if(now < this._nextFetch) return null;
     this._nextFetch = now + CHART_LIVE_MS;
-    if(!this.live) this.to = now / 1000;  // persist the followed edge
+    if(!this.live) this.to = now / 1000; // persist the followed edge
     return this.fetchParams();
   },
 
@@ -261,7 +261,7 @@ const MonitData = {
   ingest(rows) {
     if(!Array.isArray(rows)) return;
     const next = {};
-    const traces = [];  // [name, reg, col] per name with a resolvable column
+    const traces = []; // [name, reg, col] per name with a resolvable column
     for(const name of S.monitor) {
       next[name] = [];
       const reg = Reg.byName(name);
@@ -271,7 +271,7 @@ const MonitData = {
     for(const row of rows) {
       for(const [name, reg, col] of traces) {
         const raw = row[col];
-        if(raw == null) continue;  // gap: inactive slot / no data this bucket
+        if(raw == null) continue; // gap: inactive slot / no data this bucket
         next[name].push({ ts: row.ts, v: typeof raw === "number" ? raw : chartToNum(reg, raw) });
       }
     }

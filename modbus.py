@@ -25,7 +25,7 @@ NULL_SENTINELS_32 = {"uint": 0xFFFFFFFF, "hex": 0xFFFFFFFF, "int": 0x80000000}
 # Columns the library reads. Anything else is the project's own (this app adds
 # `auth`) and rides along in `extra`, back out through `reg_info()`.
 COLUMNS = {"id", "hex", "name", "rws", "type", "unit", "scale",
-           "min", "max", "desc", "rule", "default", "null"}
+  "min", "max", "desc", "rule", "default", "null"}
 
 #----------------------------------------------------------------------------------- Regmap parsing
 
@@ -46,12 +46,12 @@ def _text(val) -> str|None:
   s = str(val).strip() if val is not None else ""
   return s if s not in ("", "-") else None
 
-def _parse_slots(val, conv, empty=None):
-  """CSV cell → value or `/`-separated rule-slot list. Empty / `-` → `empty`;
-  `conv` maps one token and supplies its own fallback on garbage."""
+def _parse_slots(val, conv, empty=None, split=True):
+  """CSV cell → value, or `/`-separated slot list when `split`. Empty / `-` →
+  `empty`; `conv` maps one token and supplies its own fallback on garbage."""
   s = str(val).strip()
   if s in ("", "-"): return empty
-  if "/" in s: return [_parse_slots(x, conv, empty) for x in s.split("/")]
+  if split and "/" in s: return [_parse_slots(x, conv, empty) for x in s.split("/")]
   return conv(s)
 
 def _slot(val, index:int=None, fallback=None):
@@ -173,10 +173,11 @@ class ModbusMaster:
     reg_id = int(row["id"])
     fullname = row["name"].strip()
     group, name = fullname.split(":", 1) if ":" in fullname else (None, fullname)
-    hex_str = str(row["hex"]).strip()
-    try: hex_val = int(hex_str, 0)
-    except ValueError: hex_val = reg_id
-    if hex_val != reg_id: hex_str = f"0x{reg_id:02X}"
+    # `id` is the truth; the hex cell is display only and may be absent or stale.
+    hex_str = _text(row.get("hex"))
+    try: hex_ok = hex_str is not None and int(hex_str, 0) == reg_id
+    except ValueError: hex_ok = False
+    if not hex_ok: hex_str = f"0x{reg_id:02X}"
     rws_map = {"R": "R", "RW": "RW", "RWS": "RWs", "W": "W"}
     rws = rws_map.get(str(row.get("rws", "R")).strip().upper(), "R")
     # `?` prefix → nullable. Strip so downstream sees the plain type.
@@ -184,26 +185,30 @@ class ModbusMaster:
     nullable = typ.startswith("?")
     if nullable: typ = typ[1:].strip()
     null_override = _parse_null_override(row.get("null"))
+    # Outside a rule register a slash belongs to the value itself (`m³/h`).
+    # `default` splits by variant instead - a separate axis, on every type.
+    slots = typ == "rule"
     entry = {
       "id": reg_id, "hex": hex_str, "group": group, "name": name, "fullname": fullname,
       "rws": rws, "type": typ,
       "nullable": nullable,
       "null_override": null_override,
       "null_raw": _null_raw_16(typ, nullable, null_override),
-      "unit": _parse_slots(row.get("unit", ""), lambda s: s),
-      "scale": _parse_slots(row.get("scale", "1"), lambda s: _float(s, 1.0), 1.0),
-      "min": _parse_slots(row.get("min", ""), _float),
-      "max": _parse_slots(row.get("max", ""), _float),
+      "unit": _parse_slots(row.get("unit", ""), lambda s: s, split=slots),
+      "scale": _parse_slots(row.get("scale", "1"), lambda s: _float(s, 1.0), 1.0, split=slots),
+      "min": _parse_slots(row.get("min", ""), _float, split=slots),
+      "max": _parse_slots(row.get("max", ""), _float, split=slots),
       "desc": _text(row.get("desc")),
       "rule": _parse_rule(row.get("rule", "")),
       "default": _parse_slots(row.get("default", ""), _bool if typ == "bool" else _num_or_str),
       "extra": {k: _text(v) for k, v in row.items() if k not in COLUMNS},
     }
+    # These types overload the unit cell - labels, bit names, version fields.
+    # Parsed into their own key and cleared, so `unit` is always a unit.
     if typ == "enum": entry["enum"] = _parse_enum(row.get("unit", ""))
-    # For bits the unit column holds the bit→label map, not a real unit.
-    if typ == "bits":
-      entry["bits"] = _parse_enum(row.get("unit", ""))
-      entry["unit"] = None
+    elif typ == "bits": entry["bits"] = _parse_enum(row.get("unit", ""))
+    elif typ == "ver": entry["ver"] = _text(row.get("unit"))
+    if typ in ("enum", "bits", "ver"): entry["unit"] = None
     return entry
 
   #------------------------------------------------------------------------------------- Connection
@@ -252,7 +257,7 @@ class ModbusMaster:
   def _write_blocks(self, raw_data:dict[int, int]) -> list[tuple[int, list[int]]]:
     # A block is a contiguous run, so every id in its range is a key.
     return [(start, [raw_data[i] & 0xFFFF for i in range(start, start + count)])
-            for start, count in self._contiguous_blocks(list(raw_data.keys()))]
+      for start, count in self._contiguous_blocks(list(raw_data.keys()))]
 
   async def _retry(self, op):
     """Run `op` up to `retries` times, raising the last failure."""
@@ -271,6 +276,12 @@ class ModbusMaster:
       async def op(start=start, count=count):
         resp = await client.read_holding_registers(start, count=count, device_id=self.addr)
         if resp.isError(): raise RuntimeError(f"Read error R{start}: {resp}")
+        # A non-error response may still be truncated; caching the prefix would
+        # mix words from two device epochs.
+        registers = getattr(resp, "registers", None)
+        if registers is None or len(registers) != count:
+          got = None if registers is None else len(registers)
+          raise RuntimeError(f"Short read R{start}: got {got}, expected {count}")
         return resp
       resp = await self._retry(op)
       for i, val in enumerate(resp.registers):
@@ -410,7 +421,7 @@ class ModbusMaster:
     if typ == "bool": return bool(raw & 1)
     if typ == "int": return (raw if raw < 0x8000 else raw - 0x10000) / scale
     if typ in ("hex", "uint", "rule"): return raw / scale
-    if typ == "bits": return int(raw)  # raw bitmask, never scaled
+    if typ == "bits": return int(raw) # raw bitmask, never scaled
     return int(raw)
 
   def _encode_value(
@@ -589,7 +600,7 @@ class ModbusMaster:
       if rws_filter is None: rws_filter = ["R"]
       ignored_ids = self.resolved_ignored_ids()
       reg_ids = [rid for rid, entry in self.id_map.items()
-                 if entry["rws"] in rws_filter and rid not in ignored_ids]
+        if entry["rws"] in rws_filter and rid not in ignored_ids]
     if not reg_ids: return {}
     await self.read_registers(reg_ids)
     return self.decode(
@@ -626,6 +637,7 @@ class ModbusMaster:
     }
     if entry["type"] == "enum": info["enum"] = entry.get("enum", {})
     if entry["type"] == "bits": info["bits"] = entry.get("bits", {})
+    if entry["type"] == "ver": info["ver"] = entry.get("ver")
     rule = entry.get("rule")
     if rule:
       info["rule"] = {}

@@ -247,7 +247,7 @@ class ChartStack {
     if(this._xMin != null) this.setXRange(this._xMin, this._xMax);
     // Clear on next frame so the setScale hook ignores our synthetic call.
     requestAnimationFrame(() => { this._resetting = false; });
-    this._onZoom?.(null, null);  // back to the live edge
+    this._onZoom?.(null, null); // back to the live edge
   }
 
   destroy() {
@@ -274,7 +274,7 @@ class ChartStack {
       const pe = this._entries[p];
       if(!pe?.plot?.data?.[0]?.length) continue;
       const panel = this._panels[p];
-      if(panel.noTip) continue;  // discrete bool/enum: state reads off the y-axis
+      if(panel.noTip) continue; // discrete bool/enum: state reads off the y-axis
       const pidx = (pe.plot === u) ? idx : csClosestIdx(pe.plot.data[0], ts);
       if(pidx == null) continue;
       for(let s = 0; s < panel.series.length; s++) {
@@ -416,7 +416,7 @@ class ChartStack {
             if(e?.plot && e.plot !== u) e.plot.setScale("x", { min, max });
           }
           self._syncing = false;
-          self._onZoom?.(min, max);  // refetch this window at a finer tier
+          self._onZoom?.(min, max); // refetch this window at a finer tier
         }],
       },
       legend: { show: true, live: true },

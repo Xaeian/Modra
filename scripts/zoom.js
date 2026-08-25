@@ -15,7 +15,7 @@ const ZOOM = (() => {
 
   const enabled = API.MODE === "webview";
   if(enabled) {
-    set(z);  // clamp+apply a possibly stale/corrupt stored value
+    set(z); // clamp+apply a possibly stale/corrupt stored value
     document.addEventListener("keydown", (e) => {
       if(!e.ctrlKey) return;
       if(e.key === "=" || e.key === "+") { set(z + STEP); e.preventDefault(); }

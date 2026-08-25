@@ -31,7 +31,7 @@ const _viewSaver = (() => {
       }));
       schedule();
     },
-    ignore() { pending.ignore = [...S.ignore]; schedule(); },
+    ignore() { pending.ignore = collapseIgnore(); schedule(); },
   };
 })();
 
@@ -153,6 +153,36 @@ function search(q) { S.query = q; render(); }
 function toggleSearchHide() { S.searchHide = !S.searchHide; render(); }
 
 function toggleSerial() { S.serialOpen = !S.serialOpen; render(); }
+
+// view.json may hold globs (`Journal:*`); `S.ignore` works in plain names, so
+// expand on load and collapse on save. Everything between stays a set lookup.
+function expandIgnore(patterns) {
+  const out = new Set();
+  for(const p of patterns) {
+    const s = String(p).trim();
+    if(!s) continue;
+    if(!s.includes("*") && !s.includes("?")) { out.add(s); continue; }
+    const re = new RegExp("^" + s.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    for(const r of S.regs) if(re.test(r.name)) out.add(r.name);
+  }
+  return out;
+}
+
+// A fully ignored group persists as one pattern, which then also covers
+// registers added to that group later - the point of writing it as a group.
+function collapseIgnore() {
+  const groups = {};
+  for(const r of S.regs) (groups[r.name.split(":")[0]] ??= []).push(r.name);
+  const out = [], folded = new Set();
+  for(const [group, names] of Object.entries(groups)) {
+    if(names.length < 2 || !names.every(n => S.ignore.has(n))) continue;
+    out.push(group + ":*");
+    names.forEach(n => folded.add(n));
+  }
+  for(const n of S.ignore) if(!folded.has(n)) out.push(n);
+  return out;
+}
 
 // Ignored regs stop polling, so a pending edit never confirms and a trace never grows.
 function toggleIgnore(reg) {
@@ -343,8 +373,6 @@ function restoreDefaults() {
   else alert.ok("Already at defaults");
   render();
 }
-
-function setVariant(i) { S.variant = i; render(); }
 
 //--------------------------------------------------------------------------------- Import / Export
 

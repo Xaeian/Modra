@@ -8,7 +8,8 @@ and the `ModbusMaster` class (connection, block transport, codec, public API).
 ## Requirements
 
 ```
-pymodbus
+python >= 3.10
+pymodbus >= 3.7 (device_id API)
 xaeian
 ```
 
@@ -33,24 +34,33 @@ await mb.disconnect()
 
 ## Register Map CSV
 
-| Column    | Description                               | Example                    |
-| --------- | ----------------------------------------- | -------------------------- |
-| `id`      | Register address                          | `10`                       |
-| `hex`     | Hex address (optional)                    | `0x0A`                     |
-| `name`    | `Group:Name` format                       | `Ctrl:Mode`                |
-| `rws`     | Access: R, W, RW, RWs                     | `RW`                       |
-| `type`    | Data type (prefix `?` = nullable)         | `uint` / `?int`            |
-| `unit`    | Unit, or enum / bits label map            | `rpm` or `0=off 1=on`      |
-| `scale`   | Multiplier (or `/` separated list)        | `10` or `1/10/100`         |
-| `min`     | Minimum value                             | `0`                        |
-| `max`     | Maximum value                             | `10000`                    |
-| `desc`    | Description                               | `Motor speed`              |
-| `rule`    | Special rules                             | `switch=Ctrl:Mode`         |
-| `default` | Factory value; `/`-list per device variant       | `1500` or `3700/2600/1500` |
-| `null`    | Sentinel override for nullable types      | `0xFFFF` / `0` / `-1`      |
+| Column    | Description                                | Example                    |
+| --------- | ------------------------------------------ | -------------------------- |
+| `id`      | Register address                           | `10`                       |
+| `hex`     | Hex address (optional)                     | `0x0A`                     |
+| `name`    | `Group:Name` format                        | `Ctrl:Mode`                |
+| `rws`     | Access: R, W, RW, RWs                      | `RW`                       |
+| `type`    | Data type (prefix `?` = nullable)          | `uint` / `?int`            |
+| `unit`    | Unit, or enum / bits label map             | `m³/h` or `0=off 1=on`     |
+| `scale`   | Multiplier                                 | `10`                       |
+| `min`     | Minimum value                              | `0`                        |
+| `max`     | Maximum value                              | `10000`                    |
+| `desc`    | Description                                | `Motor speed`              |
+| `rule`    | Special rules                              | `switch=Ctrl:Mode`         |
+| `default` | Factory value; `/`-list per device variant | `1500` or `3700/2600/1500` |
+| `null`    | Sentinel override for nullable types       | `0xFFFF` / `0` / `-1`      |
 
-Any other column is the project's own: carried through untouched and returned
-by `reg_info()`. This app adds `auth`.
+`unit` / `scale` / `min` / `max` split on `/` **only** for `type=rule`, one slot per switch
+position. On any other type a slash is part of the value,
+so compound units like `m³/h` or `V/krpm` stay intact.
+`default` splits by device variant on every type.
+
+`enum`, `bits` and `ver` overload the `unit` cell - label map, bit names, version fields.
+Each is parsed into its own key (`enum` / `bits` / `ver`) and `unit` is cleared,
+so downstream `unit` always means a physical unit.
+
+Any other column is the project's own: carried through untouched and returned by `reg_info()`.
+This app adds `auth`.
 
 ### Access Modes (rws)
 
@@ -75,14 +85,14 @@ by `reg_info()`. This app adds `auth`.
 | `rule`  | Dynamic scale/unit based on switch                        |
 | `float` | IEEE 754 single, used in `high`/`low` pair (32-bit)       |
 
-`bool` accepts spelled-out text - `false` / `no` / `off` / `0` are 0, anything
-else 1. Without that every non-empty string would be truthy.
+`bool` accepts spelled-out text - `false` / `no` / `off` / `0` are 0, anything else 1.
+Without that every non-empty string would be truthy.
 
 ### Nullable registers
 
-A `?` prefix on `type` reserves one raw value as "no data". Default
-sentinels follow the SunSpec industry convention; override per-register
-via the `null` column when the device uses a different value.
+A `?` prefix on `type` reserves one raw value as "no data".
+Default sentinels follow the SunSpec industry convention;
+the `null` column overrides per-register when the device uses a different value.
 
 | Type prefix      | Default sentinel  | Decoded |
 | ---------------- | ----------------- | ------- |
@@ -93,16 +103,16 @@ via the `null` column when the device uses a different value.
 | `?int`  (pair)   | `0x80000000`      | `None`  |
 | `float` (pair)   | `NaN` (IEEE-754)  | `None`  |
 
-`?bool` works because a boolean Modbus register still occupies a full
-16-bit word - `0`/`1` are HIGH/LOW, anything else is free for N/A.
+`?bool` works because a boolean Modbus register still occupies a full 16-bit word -
+`0`/`1` are HIGH/LOW, anything else is free for N/A.
 
-`float` pairs are nullable by default - NaN is the natural sentinel and
-`?` is redundant. `enum` / `ver` / `rule` / `bits` accept `?` for
-metadata purposes but have no clean spare encoding (`ver` packs all 16
-bits, `enum` raw outside the table reads as an integer fallback, `rule`
-already returns `None` for an inactive slot, and `bits` treats `0xFFFF`
-as a valid all-set mask - use an explicit `null` override if a device
-reserves a sentinel).
+`float` pairs are nullable by default - NaN is the natural sentinel, `?` is redundant.
+`enum` / `ver` / `rule` / `bits` accept `?` for metadata purposes
+but have no clean spare encoding: `ver` packs all 16 bits,
+`enum` raw outside the table reads as an integer fallback,
+`rule` already returns `None` for an inactive slot,
+and `bits` treats `0xFFFF` as a valid all-set mask.
+A device that does reserve a sentinel takes an explicit `null` override.
 
 ```csv
 33,0x21,MeasSlow:Freq,R,?uint,Hz,100,,,Frequency (N/A when output disabled),,
@@ -110,18 +120,17 @@ reserves a sentinel).
 60,0x3C,Energy:Total,R,?uint,Wh,1,,,Accumulated energy (N/A = not accumulated),,0
 ```
 
-Writing `None` emits the sentinel where the type has one; on a
-non-nullable register - or a nullable type with no spare encoding
-(`?enum` / `?ver` / `?rule` / `?bits`) - the write is silently skipped
-(no garbage write). The DB stores SQLite NULL for any nullable read that
-decoded as None, so the history column reads as a gap rather than a
-sentinel-valued spike.
+Writing `None` emits the sentinel where the type has one.
+On a non-nullable register - or a nullable type with no spare encoding
+(`?enum` / `?ver` / `?rule` / `?bits`) - the write is silently skipped, never garbage.
+The DB stores SQLite NULL for any nullable read that decoded as None,
+so the history column reads as a gap rather than a sentinel-valued spike.
 
 ### Defaults
 
-`default` is the factory value, reported by `reg_info()` parsed to the
-register's own type. A `/`-list holds one value per device variant, so one map
-can describe a family that shares a register layout but not its tuning.
+`default` is the factory value, reported by `reg_info()` parsed to the register's own type.
+A `/`-list holds one value per device variant,
+so one map can describe a family that shares a register layout but not its tuning.
 
 ```csv
 120,0x78,Speed:Max,RWs,uint,rpm,1,0,3000,Maximum speed,,1650/1300/760
@@ -129,9 +138,9 @@ can describe a family that shares a register layout but not its tuning.
 
 ### Rules
 
-**32-bit pairs** - combine two adjacent registers into one value. The pair's
-type is taken from the high half: `uint` produces a plain uint32 (displayed
-as hex), `float` reinterprets the 32-bit word as an IEEE 754 single.
+**32-bit pairs** - combine two adjacent registers into one value.
+The pair's type is taken from the high half: `uint` produces a plain uint32
+(displayed as hex), `float` reinterprets the 32-bit word as an IEEE 754 single.
 
 ```csv
 20,0x14,Data:KeyHigh,R,uint,-,-,-,-,Secret key high word,high=Key
@@ -144,8 +153,8 @@ Result: `{"Data": {"Key": 0x12345678}}`
 31,0x1F,Calib:GainLow,RWs,float,V,1,-100,100,Calibration gain low word,low=Gain
 ```
 Result: `{"Calib": {"Gain": 1.234}}` (decoded via IEEE 754, big-endian).
-For float pairs, `unit`/`scale`/`min`/`max` are taken from the high half so
-the pair carries real engineering metadata.
+For float pairs, `unit`/`scale`/`min`/`max` are taken from the high half,
+so the pair carries real engineering metadata.
 
 **Switch-based scaling** - dynamic unit/scale based on another register
 (case-insensitive matching):
@@ -187,7 +196,7 @@ High-level (decoded values):
 | Method                                  | Description                                 |
 | --------------------------------------- | ------------------------------------------- |
 | `await sync(grouped=None)`              | Read all registers, return decoded cache    |
-| `await read(keys, rws_filter, grouped)` | Read selected registers _(default: `R` polling minus `ignore_set`)_ |
+| `await read(keys, rws_filter, grouped)` | Read selected _(default: `R` minus `ignore_set`)_ |
 | `await write(data)`                     | Encode and write _(W, RW, RWs)_             |
 | `get_cache(grouped=None)` / `cache`     | Decoded cache _(unpolled → `None`)_         |
 | `annotate(data, fields)`                | Wrap values with metadata tuples            |
@@ -215,10 +224,10 @@ Connection and transport (raw words):
 ### Runtime exclusions
 
 `ignore_set` provides *user-level* register filtering outside the descriptor.
-Names in the set are excluded from the `read()` polling cycle but stay in the
-map, so the DB schema and `regs_info()` catalog cover every register. Still
-readable explicitly via `read(keys=[...])` and `sync()` (full read for admin
-tools). Pair keys (e.g. `Auth:SecretKey`) expand to both underlying halves.
+Names in the set are excluded from the `read()` polling cycle but stay in the map,
+so the DB schema and `regs_info()` catalog cover every register.
+Still readable explicitly via `read(keys=[...])` and `sync()` (full read for admin tools).
+Pair keys (e.g. `Auth:SecretKey`) expand to both underlying halves.
 
 ### Data Formats
 
@@ -246,9 +255,13 @@ mb.annotate(data, ["unit", "scale"])        # custom data
 ## Error Handling
 
 `min` / `max` are advisory - out-of-range numeric writes go through.
-The frontend marks them red and the Send button warns, but the device
-sees whatever the operator typed. Symbolic values (enum labels, version
-strings) still raise because they can't be encoded to a meaningful word.
+The frontend marks them red and the Send button warns,
+but the device sees whatever the operator typed.
+Symbolic values (enum labels, version strings) still raise
+because they can't be encoded to a meaningful word.
+
+`write()` touches only `W` / `RW` / `RWs`: a value aimed at an `R` register is
+dropped before validation - no write, no error. Validation runs on what remains.
 
 ```python
 # Out-of-range numeric - encoded and written as-is
@@ -256,11 +269,13 @@ await mb.write({"Ctrl": {"Speed": 99999}})  # OK; firmware decides what to do
 
 # Unknown enum value
 await mb.write({"Ctrl": {"Mode": "turbo"}})
-# ValueError: Ctrl:Mode: unknown enum 'turbo' (valid: off, rpm, hz, ...)
+# ValueError: Ctrl:Mode: unknown enum 'turbo' (valid: off, rpm, hz)
 
-# Invalid version format
-await mb.write({"Dev": {"Version": "99.99.99"}})
-# ValueError: Dev:Version: version '99.99.99' over uint16 max 6.55.35
+# Version out of range / malformed (writable ver register)
+await mb.write({"Cfg": {"Version": "99.99.99"}})
+# ValueError: Cfg:Version: version '99.99.99' over uint16 max 6.55.35
+await mb.write({"Cfg": {"Version": "abc"}})
+# ValueError: Cfg:Version: invalid version 'abc' (expected X.YY.ZZ)
 
 # No sync before write with rule registers
 await mb.write({"Ctrl": {"Speed": 100}})
@@ -280,7 +295,7 @@ Raw values stored in `mb.cache_raw: dict[int, int|None]`.
 mb.cache_raw[10] = 1234
 
 # Decoded access
-data = mb.cache  # get
+data = mb.cache
 
 # Explicit format
 data = mb.get_cache(grouped=False)

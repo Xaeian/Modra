@@ -1,15 +1,15 @@
 // scripts/lib/string.js
 
-//--------------------------------------------------------------------------------------- Split
+//------------------------------------------------------------------------------------------- Split
 
 /**
  * Split string by separator, preserving quoted segments.
  * Doubled quotes (`""`) escape inside quoted segments unless `esc` is given.
- * @param {string} str Input text
- * @param {string} [sep=" "] Separator (multi-char allowed)
- * @param {string} [quote='"'] Single-character quote
- * @param {string} [esc=null] Escape character (`null` = doubled-quote escape)
- * @returns {string[]} Tokens with quotes preserved
+ * @param {string} str          Input text
+ * @param {string} [sep=" "]    Separator (multi-char allowed)
+ * @param {string} [quote='"']  Single-character quote
+ * @param {string} [esc=null]   Escape character (`null` = doubled-quote escape)
+ * @returns {string[]}          Tokens with quotes preserved
  */
 function splitStr(str, sep = " ", quote = '"', esc = null) {
   if(!sep) throw new Error("Separator cannot be empty");
@@ -45,16 +45,17 @@ function splitStr(str, sep = " ", quote = '"', esc = null) {
   return res;
 }
 
-//------------------------------------------------------------------------------------- Replace
+//----------------------------------------------------------------------------------------- Replace
 
 /**
  * Recursively replace mapping keys with values in strings, arrays, and plain objects.
- * Longest pattern wins on overlap, so result is order-independent. Non-plain objects and cycles are returned as-is.
- * @param {string|Array|object} subject Input to process
- * @param {object} mapping `{ key: value }` replacements
- * @param {string} [prefix=""] Prefix before each key
- * @param {string} [suffix=""] Suffix after each key
- * @returns {*} Subject with patterns replaced
+ * Longest pattern wins on overlap, so the result is order-independent.
+ * Non-plain objects and cycles are returned as-is.
+ * @param {string|Array|object} subject  Input to process
+ * @param {object} mapping               `{ key: value }` replacements
+ * @param {string} [prefix=""]           Prefix before each key
+ * @param {string} [suffix=""]           Suffix after each key
+ * @returns {*}                          Subject with patterns replaced
  */
 function replaceMap(subject, mapping, prefix = "", suffix = "") {
   const keys = Object.keys(mapping);
@@ -86,17 +87,17 @@ function replaceMap(subject, mapping, prefix = "", suffix = "") {
   return walk(subject);
 }
 
-//------------------------------------------------------------------------------------ Comments
+//---------------------------------------------------------------------------------------- Comments
 
 /**
  * Generic comment stripper for languages with single-char quotes.
  * Throws on unclosed strings or block comments.
- * @param {string} str Input source
+ * @param {string} str                                      Input source
  * @param {object} [opts]
- * @param {string} [opts.line="//"] Line marker, `null` to disable
- * @param {[string,string]} [opts.block=["/*","*\/"]] Block markers, `null` to disable
- * @param {string} [opts.quotes='"'] Quote character(s)
- * @param {"backslash"|"double"} [opts.escape="backslash"] String escape mode
+ * @param {string} [opts.line="//"]                         Line marker, `null` to disable
+ * @param {[string,string]} [opts.block=["/*","*\/"]]       Block markers, `null` to disable
+ * @param {string} [opts.quotes='"']                        Quote character(s)
+ * @param {"backslash"|"double"} [opts.escape="backslash"]  String escape mode
  * @returns {string}
  */
 function stripComments(str, opts = {}) {
@@ -144,7 +145,8 @@ function stripCommentsC(str) {
 
 /**
  * Strip JavaScript comments. Handles `"`, `'`, and template literals.
- * Does not recognize regex literals; treats `${...}` interpolation as opaque, so comments inside it survive.
+ * Does not recognize regex literals.
+ * Treats `${...}` interpolation as opaque, so comments inside it survive.
  */
 function stripCommentsJs(str) {
   let result = "";
@@ -223,14 +225,14 @@ function stripCommentsPy(str) {
   return result;
 }
 
-//------------------------------------------------------------------------------------ Password
+//---------------------------------------------------------------------------------------- Password
 
 /**
  * Generate cryptographically secure random password.
  * Guarantees at least one lowercase, uppercase, digit and special character.
  * Uses `crypto.getRandomValues` with rejection sampling (no modulo bias).
- * @param {number} [length=16] Password length (minimum 4)
- * @param {boolean} [extendSpec=false] Use extended special character set
+ * @param {number} [length=16]          Password length (minimum 4)
+ * @param {boolean} [extendSpec=false]  Use extended special character set
  * @returns {string}
  */
 function generatePassword(length = 16, extendSpec = false) {

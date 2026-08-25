@@ -3,7 +3,7 @@
 // Dual-mode backend client: `webview` bridges via `window.pywebview.api.*`, `http`
 // falls back to fetch. `mute` suppresses console + toast noise for poll-style calls.
 
-const MODE = "{{mode}}";  // substituted at build/serve time from app.ini
+const MODE = "{{mode}}"; // substituted at build/serve time from app.ini
 const BASE = "http://localhost:8000";
 const IS_WEBVIEW = MODE === "webview";
 

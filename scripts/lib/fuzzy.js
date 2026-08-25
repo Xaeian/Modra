@@ -1,9 +1,9 @@
 // scripts/lib/fuzzy.js
 
-//------------------------------------------------------------------------------------- Fuzzy
+//------------------------------------------------------------------------------------------- Fuzzy
 
 /**
- * Domain-agnostic, diacritic-insensitive fuzzy ranker; caller configures fields via `createFuzzy(config)`.
+ * Domain-agnostic, diacritic-insensitive fuzzy ranker; caller binds fields via `createFuzzy()`.
  *
  * Per-string score bands (integer): exact 1000, prefix [201,499], contains [50,199], fuzzy [1,49].
  * Hard floors/caps keep bands strictly hierarchical. Per-item score sums weighted field scores
@@ -11,7 +11,7 @@
  */
 const createFuzzy = (() => {
 
-  // Score bands; floors positioned one above the next band's ceiling to stay hierarchical.
+  // Each floor sits one above the next band's ceiling, so the bands can never overlap.
   const SCORE_EXACT        = 1000;
   const SCORE_PREFIX       = 500;
   const SCORE_PREFIX_MIN   = 201;  // = SCORE_CONTAINS + 1
@@ -20,7 +20,7 @@ const createFuzzy = (() => {
   const SCORE_FUZZY_BASE   = 1;
   const SCORE_FUZZY_MAX    = 49;   // capped in _scoreString so fuzzy can't reach contains
 
-  // Walker per-char bonuses; can exceed SCORE_FUZZY_MAX, capped in _scoreString.
+  // Walker per-char bonuses; their sum can exceed SCORE_FUZZY_MAX, capped in _scoreString.
   const FUZZY_CHAR   = 5;
   const FUZZY_STREAK = 2;
 
@@ -40,7 +40,7 @@ const createFuzzy = (() => {
 
   /**
    * Score `text` against normalized query `q`; 0 = no match.
-   * @param {string} q  Already normalized via `_norm()`.
+   * @param {string} q     Already normalized via `_norm()`.
    * @param {string} text  Raw, normalized internally.
    * @returns {number}
    */
@@ -66,11 +66,11 @@ const createFuzzy = (() => {
   }
 
   /**
-   * Build a fuzzy ranker bound to an item shape via `fields`.
+   * Build a fuzzy ranker; a field is `{ get(item) -> string, weight?: number }`.
    * @param {Object} config
-   * @param {Array<{get:(item:Object) => string|null|undefined, weight?:number}>} config.fields  Extractors, optional weight (default 1.0); non-string returns score 0.
-   * @param {(a:Object, b:Object) => number} [config.naturalSort]  Comparator for empty query; defaults to insertion order.
-   * @returns {{ rank: Function, score: Function }}
+   * @param {Array<Object>} config.fields    Extractors, non-empty; weight defaults to 1.0.
+   * @param {Function} [config.naturalSort]  Comparator for empty query; default insertion order.
+   * @returns {{rank: Function, score: Function}}
    */
   function _create(config) {
     if(!config || !Array.isArray(config.fields) || !config.fields.length) {
@@ -90,7 +90,7 @@ const createFuzzy = (() => {
     }));
     const naturalSort = config.naturalSort;
 
-    /** Weighted score summed across fields; null/undefined skipped, non-strings coerced via String(). */
+    /** Weighted sum of field scores; null/undefined skipped, other non-strings via String(). */
     function _scoreItem(q, item) {
       let total = 0;
       for(const f of fields) {
@@ -102,7 +102,8 @@ const createFuzzy = (() => {
     }
 
     /**
-     * Rank items: empty query returns all in natural/insertion order; otherwise only matches, score desc, original order as tiebreak. Input never mutated.
+     * Rank items; empty query returns every item in natural (or insertion) order.
+     * Otherwise only matches, score desc, original order as tiebreak. Input is never mutated.
      * @param {string} query
      * @param {Array<Object>} items
      * @returns {Array<Object>}
@@ -124,7 +125,7 @@ const createFuzzy = (() => {
     }
 
     /**
-     * Score one item; empty query returns 0 (unlike `rank("")` which returns all).
+     * Score one item; empty query returns 0 (unlike `rank("")`, which returns everything).
      * @param {string} query
      * @param {Object} item
      * @returns {number}

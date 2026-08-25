@@ -20,12 +20,14 @@ write_log = logger("write", file="write.log", stream=False)
 # config.READBACK_W is set; the regular poll reads "R".
 SYNC_RWS = ["R", "RW", "RWs"] + (["W"] if config.READBACK_W else [])
 
-# Trickle-refresh tuning: each plain poll re-reads a contiguous RWs packet sized
-# to a share of the interval at the current baud (clamped), with error backoff.
-TRICKLE_FRACTION = 0.25
+# Trickle rides the idle tail of a poll: whatever the interval has left once the
+# telemetry read is paid for, less a margin for jitter. MIN keeps RWs refreshing
+# even when that read alone overruns the interval; MAX bounds how long one packet
+# can hold the bus against a pending write.
+TRICKLE_SPARE = 0.75
 TRICKLE_OVERHEAD = 20
 TRICKLE_MIN_REGS = 8
-TRICKLE_MAX_REGS = 48
+TRICKLE_MAX_REGS = 128
 TRICKLE_ERR_LIMIT = 3
 TRICKLE_BACKOFF_TICKS = 5
 
@@ -121,7 +123,7 @@ class ModbusLink:
     self._trickle_errors = self._trickle_backoff = 0
     timeout = self.state.get("timeout", 1000)
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
-            f" baud:{self.mb.baudrate} timeout:{timeout}ms")
+      f" baud:{self.mb.baudrate} timeout:{timeout}ms")
     if self._sim:
       if self._sim_client is None:
         from sim import SimulatedClient
@@ -163,12 +165,20 @@ class ModbusLink:
       self._read_task = None
     log.inf("Read loop stopped")
 
+  def _sync_ids(self) -> list[int]:
+    """Full-read set. Ignore drops a register from the poll cycle; a writable one
+    is still read here, since a value you cannot see is one you cannot edit."""
+    ignored = self.mb.resolved_ignored_ids()
+    return [rid for rid, e in self.mb.id_map.items()
+      if e["rws"] in SYNC_RWS and not (rid in ignored and e["rws"] == "R")]
+
   async def _read_loop(self):
     errors = 0
+    slow_warned = False
     async with self._mb_lock:
       try:
         await self.mb.reconnect()
-        await self.mb.read(rws_filter=SYNC_RWS)
+        await self.mb.read_registers(self._sync_ids())
         log.ok("Initial sync done")
       except Exception as e:
         log.wrn(f"Initial sync failed: {e}")
@@ -178,6 +188,7 @@ class ModbusLink:
     # whether the device answers; it never decides whether to keep trying.
     while True:
       t0 = Time()
+      interval_s = int(self.state.get("interval", 500)) / 1000
       cache = None
       did_sync = False
       if not self._write_pending:
@@ -185,7 +196,7 @@ class ModbusLink:
           try:
             t_read = Time()
             if self._sync_next:
-              await self.mb.read(rws_filter=SYNC_RWS)
+              await self.mb.read_registers(self._sync_ids())
               self._sync_next = False
               did_sync = True
               log.inf(f"Sync done {(Time()-t_read).total_seconds()*1000:.0f}ms")
@@ -206,9 +217,10 @@ class ModbusLink:
               self.connected = False
         if errors == 0:
           await self._auth()
-          # A full sync already refreshed everything; trickle only on plain polls.
+          # A full sync already refreshed everything; trickle only on plain polls,
+          # and only into whatever the telemetry read left of the interval.
           if not did_sync:
-            await self._trickle()
+            await self._trickle(interval_s - (Time() - t0).total_seconds())
           cache = self.mb.cache
       if cache is not None:
         await self.store.log(cache, self.store_key())
@@ -219,10 +231,14 @@ class ModbusLink:
         self._last_prune = Time()
         await self.store.prune(self.history_days())
         await self.store.roll(self.store_key())
-      interval_s = int(self.state.get("interval", 500)) / 1000
       # While unreachable, slow the retry cadence instead of hammering the port.
       if not self.connected: interval_s = max(interval_s, RETRY_INTERVAL_S)
       remaining = interval_s - (Time() - t0).total_seconds()
+      # The bus is the floor: say so once, rather than silently missing the rate.
+      if remaining < 0 and self.connected and not slow_warned:
+        slow_warned = True
+        log.wrn(f"Poll needs {(Time()-t0).total_seconds()*1000:.0f}ms, "
+          f"interval is {interval_s*1000:.0f}ms")
       if remaining > 0:
         try:
           await asyncio.sleep(remaining)
@@ -252,15 +268,13 @@ class ModbusLink:
     self._trickle_run = self._trickle_pos = 0
     self._trickle_built = True
 
-  def _trickle_budget(self) -> int:
-    """Registers per cold packet: a share of the poll interval at the current
-    baud, clamped. Scales with interval so the bus overhead stays bounded."""
-    interval_s = int(self.state.get("interval", 500)) / 1000
+  def _trickle_budget(self, spare_s:float) -> int:
+    """Registers that fit the idle time this tick has left, at the current baud."""
     baud = self.mb.baudrate if self.mb else 9600
-    fit = int((TRICKLE_FRACTION * interval_s * baud / 10 - TRICKLE_OVERHEAD) / 2)
+    fit = int((TRICKLE_SPARE * max(spare_s, 0) * baud / 10 - TRICKLE_OVERHEAD) / 2)
     return max(TRICKLE_MIN_REGS, min(TRICKLE_MAX_REGS, fit))
 
-  async def _trickle(self):
+  async def _trickle(self, spare_s:float):
     """One trickle step: re-read the volatile RW plus the next contiguous RWs
     packet. Best-effort - own error budget that never trips the disconnect
     counter, and yields to writes and forced syncs."""
@@ -272,19 +286,23 @@ class ModbusLink:
     if not self._trickle_built:
       self._build_trickle()
     ids = list(self._trickle_hot)
+    take = 0
     if self._trickle_runs:
-      b = self._trickle_budget()
+      take = self._trickle_budget(spare_s)
       run = self._trickle_runs[self._trickle_run]
-      ids += run[self._trickle_pos:self._trickle_pos + b]
-      self._trickle_pos += b
-      if self._trickle_pos >= len(run):
-        self._trickle_run = (self._trickle_run + 1) % len(self._trickle_runs)
-        self._trickle_pos = 0
+      ids += run[self._trickle_pos:self._trickle_pos + take]
     if not ids: return
     try:
       async with self._mb_lock:
         await self.mb.read_registers(ids)
       self._trickle_errors = 0
+      # Advance past a packet only once it lands, so a failed read is retried
+      # instead of leaving a hole until the next sweep comes round.
+      if take:
+        self._trickle_pos += take
+        if self._trickle_pos >= len(self._trickle_runs[self._trickle_run]):
+          self._trickle_run = (self._trickle_run + 1) % len(self._trickle_runs)
+          self._trickle_pos = 0
     except Exception:
       self._trickle_errors += 1
       if self._trickle_errors >= TRICKLE_ERR_LIMIT:
@@ -328,7 +346,7 @@ class ModbusLink:
     if now is not None and want is not None:
       if now >= want: return
     elif self._auth_tried:
-      return   # nothing to watch: the blind unlock already went out
+      return # nothing to watch: the blind unlock already went out
     if self._auth_at and (Time() - self._auth_at).total_seconds() < AUTH_RETRY_S: return
     self._auth_at = Time()
     self._auth_tried = True
@@ -436,15 +454,14 @@ class ModbusLink:
     open. Applied on the read loop's thread, which owns the trickle plan and
     the raw cache."""
     if not self.mb: return
-    new_ignore = set(self.view.get("ignore", []))
+    new_ignore = config.ignore_names(self.view.get("ignore", []), self.mb)
     def _apply():
       if not self.mb: return
       self.mb.ignore_set = new_ignore
-      # An ignored register stops being polled, so drop its cached raw: the grid
-      # reads blank like one ignored at boot, and history records a gap instead
-      # of a frozen repeat of the last value.
+      # Telemetry drops its cached raw so history takes a gap, not a frozen
+      # repeat. A writable keeps its value - it is still synced, and editable.
       for rid in self.mb.resolved_ignored_ids():
-        self.mb.cache_raw[rid] = None
+        if self.mb.id_map[rid]["rws"] == "R": self.mb.cache_raw[rid] = None
       self._trickle_built = False
       log.inf(f"Poll filter updated: {len(new_ignore)} ignored")
     self._loop.call_soon_threadsafe(_apply)
@@ -479,7 +496,7 @@ class ModbusLink:
   def set_serial(self, params:dict):
     changed = False
     for k in ("baudrate", "parity", "stopbits", "timeout",
-              "retries", "interval", "history", "autosend"):
+      "retries", "interval", "history", "autosend"):
       if k in params:
         self.state[k] = params[k]
         if k in ("baudrate", "parity", "stopbits", "timeout"):

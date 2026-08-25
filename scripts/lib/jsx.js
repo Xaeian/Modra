@@ -1,4 +1,7 @@
 // scripts/lib/jsx.js
+// Minimal JSX runtime: createElement builds real DOM nodes, no virtual DOM and no diffing.
+
+//------------------------------------------------------------------------------------------ Create
 
 const JSX = {
   Fragment: Symbol.for("jsx.fragment"),
@@ -53,11 +56,15 @@ const JSX = {
     JSX.SetRef(_ref, element);
     return element;
   },
+
+//---------------------------------------------------------------------------------------- Children
+
   AppendChild: (parent, child) => {
     if(Array.isArray(child)) {
       child.forEach((nested) => JSX.AppendChild(parent, nested));
       return;
     }
+    // Set/generator children; strings and nodes are iterable too, hence the guards
     if(
       child &&
       typeof child !== "string" &&
@@ -87,6 +94,9 @@ const JSX = {
     JSX.AppendChild(frag, children);
     return frag;
   },
+
+//------------------------------------------------------------------------------------------- Props
+
   GetEventName: (name) => {
     if(name === "onDoubleClick") return "dblclick";
     return name.substring(2).toLowerCase();
@@ -116,6 +126,7 @@ const JSX = {
     if(typeof styles !== "object") return;
     Object.entries(styles).forEach(([name, value]) => {
       if(value === false || value == null) return;
+      // custom properties and kebab-case names reach the style object only via setProperty
       if(name.startsWith("--") || name.includes("-")) {
         element.style.setProperty(name, value.toString());
         return;
@@ -126,6 +137,7 @@ const JSX = {
   AssignData: (element, data) => {
     Object.entries(data).forEach(([key, value]) => {
       if(value == null) return;
+      // dataset can't express dashed keys, those go straight to the data-* attribute
       if(key.includes("-")) {
         element.setAttribute(`data-${key}`, value.toString());
         return;
@@ -157,7 +169,7 @@ const JSX = {
       element.setAttribute(name, attrOnly ? "true" : "");
       return;
     }
-    // Prefer writable property when possible
+    // a writable property wins over the attribute
     if(canAssign) {
       element[name] = value;
       return;
@@ -173,6 +185,7 @@ const JSX = {
     }
     element.setAttribute(name, value.toString());
   },
+  // DOM properties sit on prototypes, so the whole chain is walked, not just the instance
   CanAssignProperty: (element, name) => {
     let target = element;
     while(target) {
@@ -183,6 +196,7 @@ const JSX = {
     return false;
   },
   SetValue: (element, value) => {
+    // multi-select ignores element.value, the selection has to be written per option
     if(
       element instanceof HTMLSelectElement &&
       element.multiple &&
@@ -206,6 +220,10 @@ const JSX = {
     }
     if(typeof ref === "object") ref.current = element;
   },
+
+//------------------------------------------------------------------------------------------- Mount
+
+  // a plain word is looked up as an id first, then retried as a selector
   ResolveTarget: (target) => {
     if(target instanceof Element) return target;
     if(typeof target !== "string") return null;
@@ -228,6 +246,7 @@ const JSX = {
       return null;
     }
   },
+  /** Runs `fnc` once the target is connected, waiting on the tree. Returns a disposer. */
   onMount: (target, fnc) => {
     if(typeof fnc !== "function") return () => {};
     let done = false;

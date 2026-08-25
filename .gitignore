@@ -9,4 +9,5 @@
 .venv/
 .build/
 .dist/
+regs.csv
 index.html

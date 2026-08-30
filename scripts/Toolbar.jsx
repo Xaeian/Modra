@@ -64,10 +64,10 @@ const Toolbar = () => {
       <button class={cls("rb-tbtn", S.showChart && "active")}
         onClick={toggleChart}
         title="Toggle charts (p)">📈</button>
-      {Widgets.any() &&
-        <button class={cls("rb-tbtn", S.showWidgets && "active")}
-          onClick={toggleWidgets}
-          title="Toggle device widgets (w)">🧩</button>}
+      {Widgets.active().map(w =>
+        <button class={cls("rb-tbtn", S.widgetsOn.has(w.id) && "active")}
+          onClick={() => toggleWidget(w.id)}
+          title={"Toggle " + (w.title || w.id)}>{w.icon || "🧩"}</button>)}
       <button class={cls("rb-tbtn", S.showDisabled && "active")}
         onClick={toggleShowDisabled}
         title="Show ignored (i)">🚫</button>

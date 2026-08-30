@@ -37,3 +37,11 @@
 }
 
 .rb-cnt { font-weight: 400; }
+
+/* A widget pointing at a register. Held, not blinking: this marks where to look
+   while the text beside it is being read, and something that moves in the
+   corner of the eye is read as an alarm instead. */
+.rb-reg.rb-pointed {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}

@@ -133,18 +133,28 @@ function toggleChart() { S.showChart = !S.showChart; render(); }
 // Per-machine preference, so it lives in localStorage like the page zoom.
 const WIDGETS_KEY = "modra.widgets";
 
-function toggleWidgets() {
-  if(!Widgets.any()) return;
-  S.showWidgets = !S.showWidgets;
-  try { localStorage.setItem(WIDGETS_KEY, S.showWidgets ? "1" : "0"); }
+// One panel at a time. Widgets are separate things that happen to ship
+// together, so a single switch for all of them would make them one thing again:
+// opening a curve editor to read a procedure is not a choice anybody wants.
+function toggleWidget(id) {
+  if(S.widgetsOn.has(id)) S.widgetsOn.delete(id);
+  else S.widgetsOn.add(id);
+  try { localStorage.setItem(WIDGETS_KEY, [...S.widgetsOn].join(",")); }
   catch(e) { /* storage disabled - the toggle still works for this session */ }
   render();
 }
 
-// Boot only, once the catalog is loaded so `Widgets.any()` is meaningful.
+// Boot only, once the catalog is loaded so the widget list is meaningful. An id
+// that no longer matches this map is dropped rather than kept as a ghost.
 function restoreWidgets() {
-  try { S.showWidgets = Widgets.any() && localStorage.getItem(WIDGETS_KEY) === "1"; }
-  catch(e) { S.showWidgets = false; }
+  S.widgetsOn = new Set();
+  const live = Widgets.active().map(w => w.id);
+  let saved = [];
+  try { saved = (localStorage.getItem(WIDGETS_KEY) || "").split(",").filter(Boolean); }
+  catch(e) { return; }
+  // `1` is what the old single switch wrote; it meant "all of them".
+  if(saved.length === 1 && saved[0] === "1") saved = live;
+  for(const id of saved) if(live.includes(id)) S.widgetsOn.add(id);
 }
 
 function search(q) { S.query = q; render(); }
@@ -152,31 +162,47 @@ function search(q) { S.query = q; render(); }
 // Fading misses (the default) holds the grid still while the query narrows.
 function toggleSearchHide() { S.searchHide = !S.searchHide; render(); }
 
+function toggleSearchStrict() { S.searchStrict = !S.searchStrict; render(); }
+
 function toggleSerial() { S.serialOpen = !S.serialOpen; render(); }
 
 // view.json may hold globs (`Journal:*`); `S.ignore` works in plain names, so
 // expand on load and collapse on save. Everything between stays a set lookup.
+const _globRe = (p) => new RegExp("^" + globSource(p) + "$");
+
+// Hand-written view.json patterns, kept so a save can preserve them.
+let _ignorePats = [];
+
 function expandIgnore(patterns) {
   const out = new Set();
+  _ignorePats = [];
   for(const p of patterns) {
     const s = String(p).trim();
     if(!s) continue;
     if(!s.includes("*") && !s.includes("?")) { out.add(s); continue; }
-    const re = new RegExp("^" + s.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    _ignorePats.push(s);
+    const re = _globRe(s);
     for(const r of S.regs) if(re.test(r.name)) out.add(r.name);
   }
   return out;
 }
 
-// A fully ignored group persists as one pattern, which then also covers
-// registers added to that group later - the point of writing it as a group.
+// A pattern survives a save while everything it covers stays ignored - a
+// carve-out falls back to explicit names. A fully ignored group folds to
+// `Group:*`, which then also covers registers added to that group later.
 function collapseIgnore() {
+  const out = [], folded = new Set();
+  for(const p of _ignorePats) {
+    const names = S.regs.filter(r => _globRe(p).test(r.name)).map(r => r.name);
+    if(!names.length || !names.every(n => S.ignore.has(n))) continue;
+    out.push(p);
+    names.forEach(n => folded.add(n));
+  }
   const groups = {};
   for(const r of S.regs) (groups[r.name.split(":")[0]] ??= []).push(r.name);
-  const out = [], folded = new Set();
   for(const [group, names] of Object.entries(groups)) {
     if(names.length < 2 || !names.every(n => S.ignore.has(n))) continue;
+    if(names.every(n => folded.has(n))) continue;
     out.push(group + ":*");
     names.forEach(n => folded.add(n));
   }
@@ -201,6 +227,32 @@ function toggleIgnore(reg) {
   }
   _viewSaver.ignore();
   render();
+}
+
+// Replace the whole ignore list in one go. `toggleIgnore` per register would be
+// correct and unusably slow across a map of hundreds: one render and one save
+// each. The per-register side effects still apply, they just apply once.
+function setIgnore(names) {
+  const want = new Set(names);
+  let moved = false;
+  for(const name of [...S.ignore]) {
+    if(!want.has(name)) { S.ignore.delete(name); moved = true; }
+  }
+  for(const name of want) {
+    if(S.ignore.has(name)) continue;
+    S.ignore.add(name);
+    moved = true;
+    // An ignored register is not polled, so a staged edit would never confirm
+    // and a chart trace would flatline. Both go with it.
+    delete S.dirty[name];
+    S.monitor.delete(name);
+  }
+  if(!moved) return;
+  _viewSaver.ignore();
+  saveMonitor();
+  render();
+  Monitor.refresh();
+  Monitor.mount();
 }
 
 function toggleShowDisabled() { S.showDisabled = !S.showDisabled; render(); }

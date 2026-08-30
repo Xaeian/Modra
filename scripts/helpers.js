@@ -6,6 +6,16 @@
 //------------------------------------------------------------------------------------- DOM helpers
 
 // Falsy mods drop out, so callers can write `cls("btn", on && "on")`.
+// `*` and `?` as they read in a file name, escaped into a regex body.
+//
+// The search box and the ignore list both take these, and two copies of the
+// rule are two rules the moment one of them is fixed. Callers add their own
+// anchors and flags, because those are where the two uses legitimately differ.
+function globSource(pattern) {
+  return pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*").replace(/\?/g, ".");
+}
+
 function cls(base, ...mods) {
   let out = base;
   for(const m of mods) if(m) out += " " + m;
@@ -289,21 +299,49 @@ const Reg = (() => {
     return _fuzzy;
   }
 
-  // Thins the list only in `S.searchHide` mode; the default marks instead
-  // (see `match`) so the grid never reflows. `blocks()` then re-sorts by id,
-  // dropping fuzzy order on purpose - address topology reads better.
-  function filter(regs, query) {
-    if(!query || !S.searchHide) return regs;
-    return _getFuzzy().rank(query, regs);
+  // `|` separates alternatives in both modes. Strict: `*`/`?` glob over the
+  // whole name, a bare token is a name substring; fuzzy: the ranker per part.
+  const _alts = (query) => query.split("|").map(s => s.trim()).filter(Boolean);
+
+  // A part with a wildcard matches the whole name; one without is a substring,
+  // which is what makes a bare word still useful in strict mode.
+  function _strictRe(part) {
+    const body = globSource(part);
+    return new RegExp(/[*?]/.test(part) ? "^" + body + "$" : body, "i");
   }
 
-  // Matching names, memoized on (catalog, query) - `match` asks once per row.
-  let _hits = null, _hitsSrc = null, _hitsQuery = null;
+  function _rank(query, regs) {
+    const alts = _alts(query);
+    if(!alts.length) return regs;
+    if(S.searchStrict) {
+      const res = alts.map(_strictRe);
+      return regs.filter(r => res.some(re => re.test(r.name)));
+    }
+    const seen = new Set(), out = [];
+    for(const a of alts) {
+      for(const r of _getFuzzy().rank(a, regs)) {
+        if(!seen.has(r.name)) { seen.add(r.name); out.push(r); }
+      }
+    }
+    return out;
+  }
+
+  // Thins the list only in `S.searchHide` mode; the default marks instead
+  // (see `match`) so the grid never reflows. `blocks()` then re-sorts by id,
+  // dropping match order on purpose - address topology reads better.
+  function filter(regs, query) {
+    if(!query || !S.searchHide) return regs;
+    return _rank(query, regs);
+  }
+
+  // Matching names, memoized on (catalog, query, mode) - `match` asks per row.
+  let _hits = null, _hitsSrc = null, _hitsQuery = null, _hitsStrict = null;
   function _hitSet() {
-    if(_hitsSrc !== S.regs || _hitsQuery !== S.query) {
+    if(_hitsSrc !== S.regs || _hitsQuery !== S.query || _hitsStrict !== S.searchStrict) {
       _hitsSrc = S.regs;
       _hitsQuery = S.query;
-      _hits = new Set(_getFuzzy().rank(S.query, S.regs).map(r => r.name));
+      _hitsStrict = S.searchStrict;
+      _hits = new Set(_rank(S.query, S.regs).map(r => r.name));
     }
     return _hits;
   }

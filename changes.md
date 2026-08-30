@@ -1,5 +1,10 @@
 # Changes `modra`
 
+## `1.3.3` Ectra, Search
+
+- 🧩 Ectra widgets and simulator for PMSM drives
+- Search modes: `|` joins alternatives, strict `*?` matches name patterns
+
 ## `1.3.2` Units, Ignore
 
 - Compound units like `m³/h` stay whole; `ver`/`hex` off the charts

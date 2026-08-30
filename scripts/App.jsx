@@ -4,6 +4,24 @@
 
 // `View()` runs inside the normal render pass and must tolerate a rebuild
 // twice a second - see scripts/widgets/readme.md.
+// The header is sticky, so anything else that sticks has to start below it -
+// and it is not one height: opening the serial panel makes it taller. Published
+// as a variable rather than guessed at in CSS, because a guess is wrong in one
+// of the two states and silently wrong in the other.
+//
+// Measured after the frame lands. A `ref` fires while the node is still out of
+// the document, where every rect reads zero.
+function headHeight(el) {
+  if(!el) return;
+  requestAnimationFrame(() => {
+    const px = el.offsetHeight + "px";
+    const root = document.documentElement;
+    if(el.offsetHeight && root.style.getPropertyValue("--rb-header-h") !== px) {
+      root.style.setProperty("--rb-header-h", px);
+    }
+  });
+}
+
 const WidgetPanel = ({ widget }) => (
   <section class="wg">
     <div class="wg-head">{widget.title || widget.id}</div>
@@ -40,16 +58,22 @@ const App = () => {
   const regs = Reg.filter(Reg.visibility(S.regs), S.query);
   return (
     <div class="rb-panel">
-      <div class="rb-header">
+      <div class="rb-header" ref={headHeight}>
         <Toolbar />
         {S.serialOpen && <Serial />}
       </div>
       {S.showChart && <Monitor.Bar />}
-      {S.showWidgets && Widgets.active().map(w => <WidgetPanel widget={w} />)}
-      <div class="rb-grid">
-        {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
-          <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>
-        )}
+      {Widgets.over().map(w => <WidgetPanel widget={w} />)}
+      <div class="rb-body">
+        {Widgets.beside().length > 0 &&
+          <aside class="rb-side">
+            {Widgets.beside().map(w => <WidgetPanel widget={w} />)}
+          </aside>}
+        <div class="rb-grid">
+          {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
+            <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>
+          )}
+        </div>
       </div>
       <footer class="rb-footer">
         <span>Modra © {{ver}}</span>

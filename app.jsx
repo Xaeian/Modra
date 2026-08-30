@@ -40,6 +40,11 @@ window.addEventListener("blur", _flush);
 document.addEventListener("focusout", () => {
   if(_renderPending) setTimeout(() => { if(_renderPending) render(); }, 0);
 });
+// Collapsing a selection releases the copy lock. Needed beside `click`, because
+// deselecting with a key (arrow, Escape) sends no pointer event at all.
+document.addEventListener("selectionchange", () => {
+  if(_renderPending && !_selecting()) render();
+});
 // Column count tracks viewport width.
 let _resizeTimer = null;
 window.addEventListener("resize", () => {
@@ -48,6 +53,28 @@ window.addEventListener("resize", () => {
 });
 
 //---------------------------------------------------------------------------------------- render()
+
+// Text under selection, still attached. A rebuild would replace those very
+// nodes and drop the selection halfway through a copy, so an arriving poll has
+// to wait. A range left over detached nodes is stale and parks nothing.
+//
+// Bounded, and that bound is the important part. A selection can stand for as
+// long as nobody clears it: left inside a field, or forgotten after a drag. An
+// unbounded wait then stops every render in the app, so the window looks frozen
+// while it is merely being polite. Long enough to reach Ctrl+C, short enough
+// that nothing can wedge behind it.
+const SELECT_HOLD_MS = 4000;
+let _selectSince = 0;
+
+function _selecting() {
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed || !sel.anchorNode?.isConnected) {
+    _selectSince = 0;
+    return false;
+  }
+  if(!_selectSince) _selectSince = Date.now();
+  return Date.now() - _selectSince < SELECT_HOLD_MS;
+}
 
 function render() {
   // Re-entrant call: replaceChild detaching the focused field fires blur
@@ -60,7 +87,7 @@ function render() {
   const active = document.activeElement;
   // A caret in a text input is never disturbed by arriving data: async
   // renders (no `window.event`) park until the field blurs or a user acts.
-  if(_gesture || active?.tagName === "SELECT"
+  if(_gesture || _selecting() || active?.tagName === "SELECT"
     || (active?.tagName === "INPUT" && active.type === "text" && !window.event)) {
     _renderPending = true;
     return;

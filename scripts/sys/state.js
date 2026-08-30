@@ -26,13 +26,14 @@ const S = {
   //------------------------------------------------------------------------------------ UI toggles
 
   showChart: false,
-  mapPrompt: false,    // startup map prompt is on screen
-  askMap: true,        // re-prompt on every start (mirrors view.json)
-  showWidgets: false,  // device widget panels visible (restored from localStorage)
-  serialOpen: false,   // Serial panel expanded (≠ backend `serial_open`)
-  utilOpen: null,      // register name whose Misc panel is open, or null
+  mapPrompt: false,     // startup map prompt is on screen
+  askMap: true,         // re-prompt on every start (mirrors view.json)
+  widgetsOn: new Set(), // ids of the widget panels the operator has open
+  serialOpen: false,    // Serial panel expanded (≠ backend `serial_open`)
+  utilOpen: null,       // register name whose Misc panel is open, or null
   query: "",
-  searchHide: false,   // search drops the misses instead of fading them
+  searchHide: false,    // search drops the misses instead of fading them
+  searchStrict: false,  // glob matching (* ? |) instead of fuzzy
 
   //------------------------------------------------------------------------------------------ Data
 
@@ -44,6 +45,7 @@ const S = {
   //--------------------------------------------------------------------------------------- Monitor
 
   monitor: new Set(),  // register names currently charted
+  pointed: null,       // register a widget is pointing at, flashed in the grid
   chartSizes: {},      // group key → "S"|"M"|"L"
 
   //---------------------------------------------------------------------- Ignore (server-mirrored)

@@ -1,9 +1,0 @@
-{
-  "ask_map": true,
-  "monitor": [
-    {"traces": ["MeasView:Freq", "Feedback:RenderFreq", "Feedback:SetpointFreq"], "size": "M"},
-    {"traces": ["MeasView:Temp"], "size": "S"},
-    {"traces": ["MeasView:CurrAvg", "MeasView:PeakMax"], "size": "S"}
-  ],
-  "ignore": ["Journal:*", "Thresh:Temp"]
-}

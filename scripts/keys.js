@@ -16,7 +16,10 @@ const BINDINGS = {
   i: () => toggleShowDisabled(),
   o: () => toggleSerial(),
   p: () => toggleChart(),
-  w: () => toggleWidgets(),
+  // One key, so it takes the first widget this map offers. Anything past that
+  // is a click: a shortcut that guesses which panel you meant is worse than no
+  // shortcut at all.
+  w: () => { const w = Widgets.active()[0]; if(w) toggleWidget(w.id); },
 };
 
 document.addEventListener("keydown", (e) => {

@@ -40,6 +40,22 @@ ENUM_CHANCE_MAX = 0.03
 
 VER_FALLBACK = "0.1.0"
 
+#------------------------------------------------------------------------------- Coupled simulators
+
+# Simulators that model one device family instead of walking registers one by one.
+#
+# Nothing here names one. A package offers itself on import, the deployment
+# decides which packages are imported at all, and `match` is the second gate:
+# the same two gates the frontend puts in front of a widget.
+# Registration order breaks a tie between two that recognise the same map.
+REGISTRY:list[type] = []
+
+def register(cls:type) -> type:
+  """Offer a `SimulatedClient` subclass for any map its `match(id_map)` accepts.
+  Returns the class, so it reads as a decorator too."""
+  if cls not in REGISTRY: REGISTRY.append(cls)
+  return cls
+
 #---------------------------------------------------------------------------- Modbus response shims
 
 class _RR:

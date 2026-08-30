@@ -55,7 +55,9 @@
 .rb-tbtn.active { background: var(--border); border-color: var(--accent); }
 /* Destructive action (wipe history). Red border at rest, fills on hover. */
 .rb-tbtn.rb-danger { border-color: #b02a37; color: #dc3545; }
-.rb-tbtn.rb-danger:hover:not(:disabled) { background: #dc3545; border-color: #b02a37; color: #fff; }
+.rb-tbtn.rb-danger:hover:not(:disabled) {
+  background: #dc3545; border-color: #b02a37; color: #fff;
+}
 
 .rb-send:not(.off) { background: #e8a308; border-color: #c78c00; color: #fff; font-weight: 600; }
 .rb-send:not(.off):hover { background: #d49600; }

@@ -6,12 +6,13 @@ function _resolveValue(reg, inactive, disconnected) {
   return reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
 }
 
-const _rowClass = (isDirty, ghosted, oor, isIgnored, match) =>
+const _rowClass = (reg, isDirty, ghosted, oor, isIgnored, match) =>
   cls("rb-reg",
     isDirty && "rb-dirty",
     ghosted && "rb-inactive",
     oor && "rb-oor",
     isIgnored && "rb-ignored",
+    S.pointed === reg.name && "rb-pointed",
     match && ("rb-" + match));
 
 const Grid = {
@@ -37,8 +38,8 @@ const Grid = {
     const showSendBtn = !ro && !isIgnored;
     return (
       <div class="rb-row-wrap">
-        <div class={_rowClass(isDirty, ghosted, oor, isIgnored, Reg.match(reg))}
-          title={Reg.tooltip(reg)}>
+        <div class={_rowClass(reg, isDirty, ghosted, oor, isIgnored, Reg.match(reg))}
+          data-reg={reg.name} title={Reg.tooltip(reg)}>
           <span class="rb-id">{Reg.label(reg)}</span>
           <span class="rb-name">{reg.name}</span>
           <Control.For reg={reg} value={val} isDirty={isDirty} ro={ro} />

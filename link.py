@@ -125,11 +125,9 @@ class ModbusLink:
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
       f" baud:{self.mb.baudrate} timeout:{timeout}ms")
     if self._sim:
-      if self._sim_client is None:
-        from sim import SimulatedClient
-        self._sim_client = SimulatedClient(self.mb.id_map)
-      else:
-        self._sim_client.reattach(self.mb.id_map)
+      # Held across reconnects, so the simulated device does not forget its
+      # values whenever the port reopens. Which kind it is stays config's call.
+      self._sim_client = config.sim_client(self.mb, self._sim_client)
       self.mb.client = self._sim_client
 
   def _save_state(self):
@@ -321,9 +319,14 @@ class ModbusLink:
 
   def _auth_key(self) -> str|None:
     """Name to write the key under - a 32-bit `high=`/`low=` pair or a plain
-    register - or None when auto-unlock is off, the map carries no such
-    register, or the port is the simulator (which has no access control)."""
-    if config.AUTH_KEY is None or not self.mb or self._sim: return None
+    register - or None when auto-unlock is off or the map carries no such
+    register.
+
+    The simulator is not exempt. A map that declares access control declares it
+    for every port: a simulated device that hands out admin for free would let
+    a procedure pass here and fail on the bench, which is the one thing a
+    simulator must never do."""
+    if config.AUTH_KEY is None or not self.mb: return None
     name = config.AUTH_KEY_REG
     return name if (name in self.mb.pairs or name in self.mb.name_map) else None
 
@@ -344,7 +347,13 @@ class ModbusLink:
     want = next((k for k, v in enum.items() if v == config.AUTH_LEVEL), None)
     now = self.mb.cache_raw.get(level["id"]) if level else None
     if now is not None and want is not None:
-      if now >= want: return
+      # Standing at the wanted level IS the proof the key works, whenever the
+      # device got around to reporting it. Without clearing the budget here, an
+      # unlock that lands one read late counts as a failure every time, and
+      # enough re-locks would retire auto-unlock on a device it never failed on.
+      if now >= want:
+        self._auth_fails = 0
+        return
     elif self._auth_tried:
       return # nothing to watch: the blind unlock already went out
     if self._auth_at and (Time() - self._auth_at).total_seconds() < AUTH_RETRY_S: return

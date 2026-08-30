@@ -63,6 +63,12 @@ const Serial = () => {
         🙈 hide
       </button>
 
+      <button class={cls("rb-tbtn", S.searchStrict && "active")}
+        onClick={toggleSearchStrict}
+        title="Strict search: * ? patterns, | joins alternatives; off = fuzzy">
+        *? strict
+      </button>
+
       <div class="rb-cfg-sep" />
 
       <div class="rb-addr-scan">

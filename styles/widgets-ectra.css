@@ -1,0 +1,45 @@
+/* styles/widgets-ectra.css */
+/* The two ectra widgets: the tuning book and the curve tables. Sorts after
+   widget.css, so the shared chrome is in place before these. */
+
+.ec { font-size: 12px; }
+
+/* Tabs, shared: the book's stages and the tables' four names read the same,
+   because they are the same gesture - pick one, the panel below follows. */
+.ec-tabs { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; padding: 6px 8px; }
+.ec-tab {
+  font-size: 11px; padding: 2px 8px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; cursor: pointer;
+}
+.ec-tab.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.ec-tab:disabled { opacity: 0.4; cursor: default; }
+
+/* The book. Narrow on purpose: it sits beside the grid, and a column of prose
+   is read, not scanned. */
+.ec-text {
+  padding: 0 10px 8px;
+  font-size: 11px; line-height: 1.55; color: var(--text-muted);
+}
+.ec-text p { margin: 0 0 6px; }
+.ec-text p:last-child { margin-bottom: 0; }
+.ec-text b { color: var(--text); font-weight: 600; }
+/* A name that leads somewhere: hover marks its row, click goes to it. */
+.ec-ref { cursor: pointer; border-bottom: 1px dotted var(--border); }
+.ec-ref:hover { border-bottom-color: var(--accent); color: var(--accent); }
+
+/* The curve editor. */
+.ec-hover { font-size: 11px; font-family: monospace; color: var(--text-muted); }
+.ec-curve { padding: 0 8px 6px; }
+.ec-slot { min-height: 240px; }
+.ec-cv { width: 100%; height: 240px; display: block; cursor: crosshair; }
+.ec-foot {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 10px; color: var(--text-muted); padding-top: 2px;
+}
+.ec-foot em {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin: 0 3px 0 8px; vertical-align: middle;
+}
+.ec-foot .lg-edit { background: var(--accent); }
+.ec-foot .lg-ghost { background: var(--text-muted); }
+.ec-foot .lg-live { background: #2e9e5b; }

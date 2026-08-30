@@ -4,10 +4,13 @@ view.json (monitor panels + ignore list). Factory for ModbusMaster bound
 to current on-disk state.
 """
 
+import sys
 from fnmatch import fnmatchcase
+from importlib import import_module
 from modbus import ModbusMaster
 from xaeian import INI, JSON, FILE, PATH, Color
 
+APP_FILE = "app.ini" # deployment facts shared with the frontend build
 STATE_FILE = "serial.ini"
 REGS_FILE = "regs.csv"
 VIEW_FILE = "view.json"
@@ -99,9 +102,60 @@ def save_view(view:dict):
 
 #-------------------------------------------------------------------------------- ModbusMaster wire
 
-def _sim_factory(mb:ModbusMaster):
-  from sim import SimulatedClient
-  return SimulatedClient(mb.id_map)
+_sims_loaded = False
+
+def app_path() -> str:
+  """`app.ini` beside the app, never relative to the working directory: which
+  simulator a build ships cannot depend on where the app was launched from.
+  Frozen, the bundle carries its own copy."""
+  return PATH.join(getattr(sys, "_MEIPASS", None) or PATH.dirname(__file__), APP_FILE)
+
+def _load_sims():
+  """Import the coupled simulator packages this build ships, once.
+  They register themselves on import,
+  the way a bundled widget file registers when the page loads it.
+
+  Which packages exist is a deployment fact, so it lives in `app.ini` beside
+  `widgets` rather than here: another device is a new package and a new line
+  there, and a build for none is that line left empty."""
+  global _sims_loaded
+  if _sims_loaded: return
+  _sims_loaded = True
+  path = app_path()
+  try: listed = str(INI.load(path).get("sim", "") or "")
+  except Exception as e:
+    print(f"{Color.ORANGE}{path} unreadable, SIM falls back to the generic walk: {e}{Color.END}")
+    return
+  for name in (n.strip() for n in listed.split(",")):
+    if not name: continue
+    try: import_module(name)
+    except Exception as e:
+      print(f"{Color.ORANGE}sim package {name} not loaded: {e}{Color.END}")
+
+def sim_client(mb:ModbusMaster, prev=None):
+  """Simulated transport for the SIM port.
+
+  A coupled device model when one of the loaded simulators recognises the map,
+  the generic per-register walk when none does,
+  which is also what a build shipping no simulator at all gets.
+
+  The single place that choice is made, so a caller holding a client across a
+  reconnect cannot pin the wrong one. `prev` is reused while it is still the
+  right kind, keeping the simulated device's state; a map swap that changes the
+  shape builds the other kind instead."""
+  from sim import SimulatedClient, REGISTRY
+  _load_sims()
+  cls = SimulatedClient
+  for offer in REGISTRY:
+    # A throwing `match` disqualifies its simulator rather than the SIM port.
+    try:
+      if offer.match(mb.id_map): cls = offer; break
+    except Exception as e:
+      print(f"{Color.ORANGE}sim {offer.__name__} match failed: {e}{Color.END}")
+  if type(prev) is cls:
+    prev.reattach(mb.id_map)
+    return prev
+  return cls(mb.id_map)
 
 def ignore_names(patterns, mb:ModbusMaster) -> set[str]:
   """view.json entries may be globs (`Journal:*`); the map takes plain names, so
@@ -129,7 +183,7 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
     stopbits=_int(state.get("stopbits"), 1),
     timeout=_int(state.get("timeout"), 1000) / 1000,
     retries=_int(state.get("retries"), 3),
-    client_factory=_sim_factory if port == "SIM" else None,
+    client_factory=sim_client if port == "SIM" else None,
   )
   # Needs the parsed map to resolve globs against.
   mb.ignore_set = ignore_names(view.get("ignore", []), mb)

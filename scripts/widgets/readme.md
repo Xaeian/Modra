@@ -1,53 +1,48 @@
-# Widgets
+# Widgety
 
-A panel for one device family, expressing what the generic register grid cannot -
-a lookup table, a tuning curve. Frontend only: no backend, no `view.json` state,
-no persistent DOM.
+Panel dla jednej rodziny urządzeń, który pokazuje to, czego nie pokaże ogólna siatka rejestrów - tabelę przeliczeń, krzywą strojenia.
+Wyłącznie frontend: bez backendu, bez stanu w `view.json`, bez trwałego DOM.
 
-## Adding one
+## Dodawanie widgetu
 
-`scripts/widgets/<id>.jsx` ending in `Widgets.register(<Obj>)`, styles in
-`styles/widgets-<id>.css`, id listed in `app.ini`. Both files are bundled
-automatically.
+Plik `scripts/widgets/<id>.jsx` kończy się wywołaniem `Widgets.register(<Obj>)`, style leżą w `styles/widgets-<id>.css`, a id jest wpisane w `app.ini`.
+Oba pliki trafiają do bundla automatycznie.
 
 ```js
 {
-  id: "vftab",                  // must match the app.ini entry
+  id: "vftab",  // musi odpowiadać wpisowi w app.ini
   title: "Drive · V/f table",
-  match(regs),                  // does this catalog carry what we need
-  View(),                       // JSX for the panel body
+  match(regs),  // czy mapa zawiera potrzebne rejestry
+  View(),       // JSX z treścią panelu
 }
 ```
 
-Match on register names, never a device id - the catalog is the only source of
-truth about a device here.
+`match` sprawdza nazwy rejestrów, nigdy identyfikator urządzenia.
+Mapa rejestrów jest tutaj jedynym źródłem prawdy o urządzeniu.
 
-## Gates
+## Bramki
 
-A widget shows when **both** hold: listed in `app.ini`, and `match()` accepts the
-catalog. Then 🧩 (key `w`) reveals the panels; with nothing matching, the button
-is not rendered at all. `app.ini` gates activation, not compilation - an
-unlisted widget still ships, inert.
+Widget pojawia się, gdy spełnione są oba warunki: id jest wpisane w `app.ini`, a `match()` akceptuje mapę.
+Wtedy przycisk 🧩 (klawisz `w`) pokazuje panele.
+Gdy nic nie pasuje, przycisk w ogóle się nie renderuje.
+`app.ini` decyduje o aktywacji, nie o kompilacji - niewpisany widget nadal jest w paczce, tylko nieaktywny.
 
-## Rules
+## Zasady
 
-- Read `S`, never write it. Device values go through `writeNow(patch)`, UI state
-  through `actions.js`. Never call `API.write` directly.
-- `View()` is rebuilt about twice a second. Anything the render must not lose
-  belongs on the widget object.
-- `ref` fires on a detached node: good for `addEventListener` and `innerHTML`,
-  useless for layout, focus or scrolling.
-- The JSX runtime cannot make SVG nodes - inject SVG as markup via `ref`.
-- A focused button loses focus on the next render; a text input loses its caret
-  unless it carries `.wg-hold`. Prefer buttons and selects.
-- Never `stopPropagation()` a click - the render driver flushes deferred renders
-  on the document click listener.
-- Preferences live in `localStorage`, keyed `modra.<id>.*`.
+- Czytaj `S`, nigdy do niego nie pisz.
+  Wartości urządzenia idą przez `writeNow(patch)`, a stan UI przez `actions.js`.
+  Nigdy nie wołaj `API.write` bezpośrednio.
+- `View()` jest przebudowywany około dwa razy na sekundę.
+  Wszystko, czego render nie może zgubić, trzymaj na obiekcie widgetu.
+- `ref` odpala się na odłączonym węźle: nadaje się do `addEventListener` i `innerHTML`, nie nadaje się do layoutu, fokusu ani przewijania.
+- Runtime JSX nie tworzy węzłów SVG - wstaw SVG jako markup przez `ref`.
+- Przycisk traci fokus przy następnym renderze, a pole tekstowe traci kursor, jeżeli nie ma klasy `.wg-hold`.
+  Preferuj przyciski i selecty.
+- Nie używaj `stopPropagation()` na kliknięciu - sterownik renderu opróżnia odroczone rendery w listenerze kliknięć na dokumencie.
+- Preferencje trzymaj w `localStorage` pod kluczami `modra.<id>.*`.
 
-## Write cadence
+## Rytm zapisów
 
-A write reads back the registers it wrote, so `S.values` holds what the device
-stored, never an echo of the request. A control loop should batch its registers
-into one patch and await each write, so it paces itself to the link instead of
-queueing behind it, and should compute each step from `S.values` so a clamped or
-refused write is corrected rather than compounded.
+Zapis odczytuje z powrotem rejestry, które zapisał, więc `S.values` zawiera to, co urządzenie przechowało, a nie echo żądania.
+Pętla sterowania powinna łączyć swoje rejestry w jeden patch i czekać na każdy zapis - wtedy dostosowuje tempo do łącza, zamiast ustawiać się w kolejce za nim.
+Każdy krok powinna liczyć od `S.values`, żeby przycięty albo odrzucony zapis został skorygowany, a nie skumulowany.

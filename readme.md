@@ -2,9 +2,13 @@
 
 **Modbus RTU client that generates its entire UI from a single CSV file.**
 
-Modbus carries no metadata about registers. Type, unit, range and factory values live separately in firmware, client code, UI and docs. Modra closes that loop: one `regs.csv` describes every register, the entire client surface generates from it.
+Modbus carries no metadata about registers.
+Type, unit, range and factory values live separately in firmware, client code, UI and docs.
+Modra closes that loop: one `regs.csv` describes every register, the entire client surface generates from it.
 
-There is no per-device configuration UI. The grid, controls, validation rules and history schema all live in `regs.csv`. Change the file, restart, get a different device tool.
+There is no per-device configuration UI.
+The grid, controls, validation rules and history schema all live in `regs.csv`.
+Change the file, restart, get a different device tool.
 
 **Modes:**
 
@@ -22,9 +26,11 @@ py api.py # desktop window
 py serve.py # HTTP server
 ```
 
-Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases) and run it. It asks which `regs.csv` to use on startup, so the same binary serves any device - tick _don't ask again_ once you have settled on one.
+Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases) and run it.
+It asks which `regs.csv` to use on startup, so the same binary serves any device - tick _don't ask again_ once you have settled on one.
 
-First launch creates `serial.ini`, `view.json`, `data.db` next to the binary. History and UI state are keyed by register name, so an updated map keeps them; a genuinely different device wants **🧹 Clear DB**.
+First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
+History and UI state are keyed by register name, so an updated map keeps them; a genuinely different device wants **🧹 Clear DB**.
 
 ## The grid
 
@@ -72,13 +78,16 @@ First launch creates `serial.ini`, `view.json`, `data.db` next to the binary. Hi
 - 🚫 toggle show-disabled mode
 - ☰ toggle settings panel
 
-Connect flow: pick port → type address _(1-247)_ → **⚡**. Polling reads **R**/**RW**/**RWs** at the configured interval, and keeps retrying after a burst of read errors, so a transient bus glitch recovers on its own. Validation is advisory: the frontend marks out-of-range values and warns on **Send**, but the device is written whatever you typed.
+Connect flow: pick port → type address _(1-247)_ → **⚡**.
+Polling reads **R**/**RW**/**RWs** at the configured interval, and keeps retrying after a burst of read errors, so a transient bus glitch recovers on its own.
+Validation is advisory: the frontend marks out-of-range values and warns on **Send**, but the device is written whatever you typed.
 
 ## Charts
 
 ![PLT](plots-menu.png)
 
-Click **📊** on any row. Registers sharing unit + scale share a panel; `bool`, `enum` and `bits` get their own panels.
+Click **📊** on any row.
+Registers sharing unit + scale share a panel; `bool`, `enum` and `bits` get their own panels.
 
 - **range buttons**: `2m`/`10m`/`1h`/`6h`/`24h`/`7d`/`30d`/`1y`/`∞` _(all history)_
 - **`S`**/**`M`**/**`L`**: cycle panel size
@@ -87,7 +96,9 @@ Click **📊** on any row. Registers sharing unit + scale share a panel; `bool`,
 - **drag on plot**: zoom in; the window refetches at a finer resolution, so detail appears as you go deeper
 - **double-click**: back to the live edge
 
-Each chart request is a time window, served from a resolution tier: raw for recent/narrow windows, minute/hour/day archives _(downsampled off raw)_ for wider ones. A year-wide overview is a few hundred points, not millions, and zooming refetches the new window at a finer tier. History comes from the local DB, so browsing works with no device connected.
+Each chart request is a time window, served from a resolution tier: raw for recent/narrow windows, minute/hour/day archives _(downsampled off raw)_ for wider ones.
+A year-wide overview is a few hundred points, not millions, and zooming refetches the new window at a finer tier.
+History comes from the local DB, so browsing works with no device connected.
 
 ## Hiding registers
 
@@ -95,7 +106,8 @@ Each chart request is a time window, served from a resolution tier: raw for rece
 - **🚫 in toolbar**: switch to show-disabled mode _(only ignored visible)_
 - **🚫 on row in show-disabled mode**: un-ignore
 
-History column is preserved; new rows after the ignore land as `NULL`. Membership stored in `view.json`.
+History column is preserved; new rows after the ignore land as `NULL`.
+Membership stored in `view.json`.
 
 ## Settings ☰
 
@@ -130,9 +142,10 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 
 ## Simulator
 
-Pick the **SIM** port from the toolbar dropdown _(always offered, no hardware)_. Address is set automatically; simulator history is kept in separate `addr_sim*` tables.
+Pick the **SIM** port from the toolbar dropdown _(always offered, no hardware)_.
+Address is set automatically; simulator history is kept in separate `addr_sim*` tables.
 
-Each register is simulated from its own descriptor row alone _(type, rws, min/max)_, no cross-register logic:
+By default each register is simulated from its own descriptor row alone _(type, rws, min/max)_, no cross-register logic:
 
 - **numeric R**: mean-reverting random walk, edge-biased to stay in range
 - **bool R**: rare random toggle
@@ -140,6 +153,10 @@ Each register is simulated from its own descriptor row alone _(type, rws, min/ma
 - **bits R**: rare random flip of individual labeled bits
 - **hex / ver**: stable _(firmware-controlled)_
 - **RW / RWs / W**: static, only user writes change them
+
+A build can also ship a coupled device simulator.
+Packages listed under `sim =` in `app.ini` register themselves on import, and when one recognizes the map it models the whole device instead of walking registers one by one.
+The `ectra` package does this for the PMSM drive - see [`ectra/readme.md`](ectra/readme.md).
 
 ## Build
 
@@ -150,4 +167,5 @@ py -m pip install -r requirements.txt
 ./build.bat
 ```
 
-`Modra.exe` lands in `.dist/`. Place next to `regs.csv` and run.
+`Modra.exe` lands in `.dist/`.
+Place next to `regs.csv` and run.

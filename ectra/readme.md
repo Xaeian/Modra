@@ -47,7 +47,7 @@ Każdy plik ma jedno zadanie:
 - `command.py`: komenda jednego kroku w jednostkach fizycznych
 - `machine.py`: uzwojenie, mostek, wał, kąt obciążenia, szyna i termika
 - `ramp.py`: limity, derating, freeze i hold
-- `observer.py`: estymata prędkości, średni błąd kąta i jego obwiednia
+- `observer.py`: estymacja prędkości, średni błąd kąta i jego obwiednia
 - `detector.py`: warunek przejęcia i powrót do I/f z debounce
 - `protect.py`: zabezpieczenia i komparator sprzętowy
 - `plant.py`: kolejność etapów symulacji
@@ -150,7 +150,7 @@ Błędne dane silnika zmieniają pracę obserwatora i pętli, ale nie zmieniają
 Dwa parametry nie występują w mapie rejestrów:
 
 - `dtcomp`: rzeczywista strata dead-time mostka.
-  `client.py` losuje wartość z zakresu `40–76%`, więc zwykle różni się ona od domyślnego `Obs:DtComp = 60`.
+  `client.py` losuje wartość z zakresu `40-76%`, więc zwykle różni się ona od domyślnego `Obs:DtComp = 60`.
   Różnicę można znaleźć przez `Obs:Bias`.
 - `phasemap`: rzeczywiste podłączenie torów prądowych.
   Domyślnie odpowiada `Sense:PhaseMap = invV`.
@@ -213,7 +213,7 @@ Za niskie napięcie może zerwać synchronizm, a energia wirnika podnosi wtedy n
 | `Volt:50Hz` | Prąd szczytowy | Szyna DC | Wynik |
 | --- | --- | --- | --- |
 | `18V` | `11.1A` | `750V` | `Freeze:State = hv+`, potem `hv+` |
-| `33.4V` | `0.6A` | `589V` | praca do błędu `imax` od kołysania |
+| `33.4V` | `0.6A` | `589V` | praca do błędu `imax` wywołanego kołysaniem |
 | `60V` | `14.4A` | `585V` | błąd `imax` |
 | `90V` | `29.1A` | `560V` | błąd `irms` |
 
@@ -221,7 +221,7 @@ Za niskie napięcie może zerwać synchronizm, a energia wirnika podnosi wtedy n
 `imax` wykrywa rosnące kołysanie z wysoką wartością szczytową.
 
 Otwarta pętla V/f jest niestabilna w części pasma.
-Przy domyślnej tabeli `20Hz`, `90Hz` i `140Hz` są stabilne z rozrzutem kąta `1–2°`.
+Przy domyślnej tabeli `20Hz`, `90Hz` i `140Hz` są stabilne z rozrzutem kąta `1-2°`.
 Postój przy `30Hz` kończy się błędem `imax` po około minucie, a przy `50Hz` po kilku minutach.
 Przejazd rampą przez to pasmo jest stabilny w obu kierunkach.
 Strefy `Resonance:*` służą do omijania takich częstotliwości.

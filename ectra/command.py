@@ -1,12 +1,14 @@
 """
 One tick of intent, in physical units.
 
-The leaf of the package: everything downstream reads a `Command` and none of it
-knows what a register is called. `binding.py` is what fills one in.
+The leaf of the package: everything downstream reads a `Command`
+and none of it knows what a register is called.
+`binding.py` is what fills one in.
 
-Machine constants here are what the OPERATOR entered. The loops and the observer
-believe them; the shaft does not, because it carries its own truth in
-`machine.py`. That gap is what makes the nameplate worth measuring.
+Machine constants here are what the OPERATOR entered.
+The loops and the observer believe them;
+the shaft does not, because it carries its own truth in `machine.py`.
+That gap is what makes the nameplate worth measuring.
 """
 
 from dataclasses import dataclass, field
@@ -26,7 +28,6 @@ class Command:
   volt: list = field(default_factory=list)  # [(hz, V)] the V/f table
   curr: list = field(default_factory=list)  # [(hz, A)] forced-vector current
   catch_hz: float = 0.0                     # If:CatchFreq
-  max_freq_hz: float = 0.0                  # If:MaxFreq
   damp_pct: float = 100.0                   # If:Damp
   entry_hz: float = 0.0                     # Foc:EntryFreq
   entry_timeout_s: float = 0.0              # Foc:EntryTimeout
@@ -41,8 +42,8 @@ class Command:
   speed_max_hz: float = 0.0                 # Speed:Max, 0 leaves it open
   boot_delay_s: float = 0.0                 # System:BootDelay
   coast_s: float = 90.0                     # Brake:Coast, quoted at 50Hz
-  # Machine constants in SI, converted at the binding: nothing here knows a
-  # nameplate unit or a pole count it was not handed.
+  # Machine constants in SI, converted at the binding:
+  # nothing here knows a nameplate unit or a pole count it was not handed.
   rs_ohm: float = 0.0                       # Motor:Rs, 0 sheds the vector
   lq_h: float = 0.0                         # Motor:Lq
   ke_v_hz: float = 0.0                      # phase RMS volts per electrical Hz
@@ -52,8 +53,6 @@ class Command:
   deadtime_ns: float = 2500.0               # Pwm:Deadtime
   dtcomp_pct: float = 0.0                   # Obs:DtComp
   pll_bw_hz: float = 30.0                   # Pll:Bw
-  id_ref_a: float = 0.0                     # Foc:IdRef
-  iq_ref_a: float = 0.0                     # Foc:IqRef, open speed loop only
   iq_max_a: float = 10.0                    # Foc:IqMax
   curr_bw_hz: float = 300.0                 # Foc:CurrBw
   mod_ceil_pct: float = 78.0                # Foc:ModCeil

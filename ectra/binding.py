@@ -1,8 +1,8 @@
 """
 Register binding: ectra names on one side, plant units on the other.
 
-The only module that knows what a register is called, so `plant.py` stays a
-control problem and `client.py` stays transport.
+The only module that knows what a register is called,
+so `plant.py` stays a control problem and `client.py` stays transport.
 
 Reads a register cache into a `Command`, writes plant state back out.
 """
@@ -57,8 +57,8 @@ class Binding:
   def _eng(self, values:dict, name:str, fallback:float=0.0) -> float:
     rid = self.rid.get(name)
     if rid is None: return fallback
-    # The parent already decodes sign and scale per type. Reimplementing that
-    # here is exactly the duplication that drifts.
+    # The parent already decodes sign and scale per type.
+    # Reimplementing that here is exactly the duplication that drifts.
     return SimulatedClient._raw_to_eng(self.id_map[rid], values.get(rid, 0))
 
   def _label(self, values:dict, name:str, fallback:str) -> str:
@@ -91,9 +91,9 @@ class Binding:
     return None
 
   def _ke_v_hz(self, values:dict, poles:float) -> float:
-    """`Motor:Ke` is a nameplate constant: line-to-line RMS volts per MECHANICAL
-    krpm. The plant works in phase RMS per ELECTRICAL Hz, so both conversions
-    happen here, where the pole count lives."""
+    """`Motor:Ke` is a nameplate constant: line-to-line RMS volts per MECHANICAL krpm.
+    The plant works in phase RMS per ELECTRICAL Hz,
+    so both conversions happen here, where the pole count lives."""
     ke = self._eng(values, "Motor:Ke", 0.0)
     if not ke: return 0.0
     return ke / (1000.0 / 60.0 * poles) / SQRT3
@@ -101,8 +101,8 @@ class Binding:
   def _resonance(self, values:dict, hz:float, rpm_hz:float, lo:float,
     hi:float) -> float:
     """`LINK_ResonanceEscape`: leave every configured band by its nearest edge.
-    Overlapping bands are merged first, and an edge the speed limits reject is
-    never chosen, so a band reaching under `Speed:Min` is left upward."""
+    Overlapping bands are merged first, and an edge the speed limits reject is never chosen,
+    so a band reaching under `Speed:Min` is left upward."""
     zones = []
     for i in (0, 1, 2):
       low = self._eng(values, f"Resonance:{i}Low", 0.0) * rpm_hz
@@ -122,8 +122,9 @@ class Binding:
     return hz
 
   def _access(self, values:dict) -> str:
-    """The level the written secret unlocks. The halves are `hex` registers
-    holding one 32-bit key, so they are read raw and joined here."""
+    """The level the written secret unlocks.
+    The halves are `hex` registers holding one 32-bit key,
+    so they are read raw and joined here."""
     high = values.get(self.rid.get("Auth:SecretHigh"), 0)
     low = values.get(self.rid.get("Auth:SecretLow"), 0)
     return AUTH_KEYS.get((high << 16) | low, "guest")
@@ -149,13 +150,13 @@ class Binding:
     poles = max(1.0, self._eng(values, "Motor:PolePairs", 2.0))
     rpm_hz = poles / 60.0
     return Command(
-      # The resonance escape is ifc's, applied to the setpoint before sig sees
-      # it, so it belongs to the binding and the plant never learns of it.
+      # The resonance escape is ifc's, applied to the setpoint before sig sees it,
+      # so it belongs to the binding and the plant never learns of it.
       target_hz=self._resonance(values, self.target_hz(values, held_hz), rpm_hz,
         self._eng(values, "Speed:Min", 0.0) * rpm_hz,
         self._eng(values, "Speed:Max", 0.0) * rpm_hz),
-      # The device arms on the MODE, not on the number: a suppressed or
-      # below-floor command still counts as enabled.
+      # The device arms on the MODE, not on the number:
+      # a suppressed or below-floor command still counts as enabled.
       enabled=self._label(values, "Ctrl:Mode", "off") != "off",
       mode=self._label(values, "Drive:Mode", "vf"),
       poles=poles,
@@ -165,7 +166,6 @@ class Binding:
       volt=self._points(values, "Volt"),
       curr=self._points(values, "Curr"),
       catch_hz=self._eng(values, "If:CatchFreq", 0.0),
-      max_freq_hz=self._eng(values, "If:MaxFreq", 0.0),
       damp_pct=self._eng(values, "If:Damp", 100.0),
       entry_hz=self._eng(values, "Foc:EntryFreq", 0.0),
       entry_timeout_s=self._eng(values, "Foc:EntryTimeout", 0.0),
@@ -176,8 +176,9 @@ class Binding:
       fallback_high_hz=self._eng(values, "If:FallbackHigh", 3.0),
       align_ms=self._eng(values, "Drive:AlignTime", 700.0),
       init_hz=self._eng(values, "Drive:InitFreq", 0.5),
-      # The speed limits are a working window in rpm, and the low end doubles as
-      # where a stop cuts: the drive cuts rather than crawl the last of the way.
+      # The speed limits are a working window in rpm,
+      # and the low end doubles as where a stop cuts:
+      # the drive cuts rather than crawl the last of the way.
       speed_min_hz=self._eng(values, "Speed:Min", 0.0) * rpm_hz,
       speed_max_hz=self._eng(values, "Speed:Max", 0.0) * rpm_hz,
       boot_delay_s=self._eng(values, "System:BootDelay", 0.0) / 1000.0,
@@ -192,8 +193,6 @@ class Binding:
       deadtime_ns=self._eng(values, "Pwm:Deadtime", 2500.0),
       dtcomp_pct=self._eng(values, "Obs:DtComp", 0.0),
       pll_bw_hz=self._eng(values, "Pll:Bw", 30.0),
-      id_ref_a=self._eng(values, "Foc:IdRef", 0.0),
-      iq_ref_a=self._eng(values, "Foc:IqRef", 0.0),
       iq_max_a=self._eng(values, "Foc:IqMax", 10.0),
       curr_bw_hz=self._eng(values, "Foc:CurrBw", 300.0),
       mod_ceil_pct=self._eng(values, "Foc:ModCeil", 78.0),
@@ -223,18 +222,18 @@ class Binding:
   def _meters(self, put, plant, poles:float):
     """Every reading that follows from the operating point, on both tiers.
 
-    A balanced machine puts the same RMS through all three phases, so the per
-    phase registers and their average carry one number. `Estim:*` and `Foc:V*`
-    are the exceptions: they publish vector amplitude and modulation percent,
-    not phase RMS."""
+    A balanced machine puts the same RMS through all three phases,
+    so the per phase registers and their average carry one number.
+    `Estim:*` and `Foc:V*` are the exceptions:
+    they publish vector amplitude and modulation percent, not phase RMS."""
     m = plant.machine
     # `Meas` is the slow trend, `MeasCtrl` the fast one the protections read.
-    # They are two different filters over one snapshot, so on the run they
-    # disagree by exactly as much as the drive is moving.
+    # They are two different filters over one snapshot,
+    # so on the run they disagree by exactly as much as the drive is moving.
     for tier, t in zip(TIERS, (plant.meters.view, plant.meters.ctrl)):
-      # These carry the CONTROL domain, not the estimator: the ramp step, and
-      # the observer once the loop is closed. Standstill and coast fall back on
-      # the shaft, so a rotor still turning stays visible.
+      # These carry the CONTROL domain, not the estimator:
+      # the ramp step, and the observer once the loop is closed.
+      # Standstill and coast fall back on the shaft, so a rotor still turning stays visible.
       put(f"{tier}:Freq", t.freq)
       put(f"{tier}:Speed", t.freq * 60.0 / poles)
       put(f"{tier}:CurrAvg", t.curr)
@@ -254,11 +253,12 @@ class Binding:
     # Raw and filtered bus are one value here, so they cannot disagree.
     put("Bus:Lag", 0.0)
     put("Pwm:DutyPeak", sc.duty.v)
-    # The measurement the drive does NOT overwrite, so it can disagree with the
-    # command and say so. Amplitudes, not phase RMS, on the `Estim:*` axes.
+    # The measurement the drive does NOT overwrite,
+    # so it can disagree with the command and say so.
+    # Amplitudes, not phase RMS, on the `Estim:*` axes.
     put("Estim:Freq", plant.estim_hz)
-    # The applied field angle, wrapped to the register's signed degrees. Useful
-    # mostly at standstill, which is exactly when it stops moving.
+    # The applied field angle, wrapped to the register's signed degrees.
+    # Useful mostly at standstill, which is exactly when it stops moving.
     put("Estim:FieldAngle", (plant.phase_deg + 180.0) % 360.0 - 180.0)
     put("Estim:Id", m.id * V_PEAK)
     put("Estim:Iq", m.iq * V_PEAK)
@@ -268,8 +268,8 @@ class Binding:
   #------------------------------------------------------------------------------------- Write side
 
   def telemetry(self, plant, values:dict) -> dict:
-    """Plant state → `{reg_id: raw}` for the registers the plant owns, over a
-    floor of sentinels for the readings it does not."""
+    """Plant state → `{reg_id: raw}` for the registers the plant owns,
+    over a floor of sentinels for the readings it does not."""
     poles = max(1.0, self._eng(values, "Motor:PolePairs", 2.0))
     out = dict(self.dark)
     def put(name, eng):
@@ -280,9 +280,9 @@ class Binding:
     put("Feedback:RenderFreq", ramp.hz)
     put("Feedback:RenderSpeed", ramp.hz * 60.0 / poles)
     # The operator's command after the mode conversion and NOTHING else.
-    # `render.c` keeps the limited value in a local and publishes this one, so
-    # while the ramp parks at `Foc:EntryFreq` the render runs ABOVE the
-    # setpoint: a negative gap is the signature of an approach in progress.
+    # `render.c` keeps the limited value in a local and publishes this one,
+    # so while the ramp parks at `Foc:EntryFreq` the render runs ABOVE the setpoint:
+    # a negative gap is the signature of an approach in progress.
     put("Feedback:SetpointFreq", plant.target)
     put("Feedback:SetpointSpeed", plant.target * 60.0 / poles)
     put("Feedback:Volt", m.volt)
@@ -293,14 +293,14 @@ class Binding:
     put("Freeze:State", ramp.freeze)
     put("Freeze:HoldCount", ramp.holds)
     put("Brake:RegenCount", m.regens)
-    # All four are 320ms means on the device, taken on its 10ms grid, which is
-    # what makes a reading mean the same thing at 20Hz and at 55Hz.
+    # All four are 320ms means on the device, taken on its 10ms grid,
+    # which is what makes a reading mean the same thing at 20Hz and at 55Hz.
     put("Obs:OmegaHat", sc.omega.read())
     put("Obs:AngleErr", sc.theta.read())
-    # Estimate minus ramp, both from THE SAME tick before the mean. Computed,
-    # never declared: an operator who subtracts `Obs:OmegaHat` from
-    # `Feedback:RenderFreq` has to land on the same number, or the two readings
-    # teach him to trust neither.
+    # Estimate minus ramp, both from THE SAME tick before the mean.
+    # Computed, never declared: an operator who subtracts `Obs:OmegaHat`
+    # from `Feedback:RenderFreq` has to land on the same number,
+    # or the two readings teach him to trust neither.
     put("Obs:Bias", sc.bias.read())
     put("Sync:Err", sc.err.read())
     put("Sync:ErrPeak", sc.err_peak.v)
@@ -309,9 +309,9 @@ class Binding:
     put("Sync:Takeovers", det.takeovers)
     put("Sync:Fallbacks", det.fallbacks)
     put("Foc:Flags", plant.flags)
-    # "Zastosowany prad fazowy RMS: wektor w I/f albo iq w FOC" - under the
-    # forced vector the whole magnitude is the applied current, and reporting
-    # only its torque projection would read as a drive doing almost nothing.
+    # "Zastosowany prad fazowy RMS: wektor w I/f albo iq w FOC".
+    # Under the forced vector the whole magnitude is the applied current,
+    # and reporting only its torque projection would read as a drive doing almost nothing.
     put("Foc:IqCmd", m.iq if plant.vec == "closed" else m.curr)
     if plant.vec == "guard":
       for name, value in zip(("GuardVd", "GuardId", "GuardIdRef"), plant.guard):
@@ -327,8 +327,8 @@ class Binding:
     put("Link:ConfigApplied", 1)
     put("Auth:Access", self._access(values))
     for name, value in STANDING.items(): put(name, value)
-    # `Fault:Clear` is a command register: consume it here, or every later tick
-    # would re-clear a fault the moment it appeared.
+    # `Fault:Clear` is a command register: consume it here,
+    # or every later tick would re-clear a fault the moment it appeared.
     rid = self.rid.get("Fault:Clear")
     if rid is not None: out[rid] = 0
     return out

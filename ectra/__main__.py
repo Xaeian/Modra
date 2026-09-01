@@ -1,11 +1,11 @@
 """
 Scenario trace of the plant, faster than real time.
 
-`py -m ectra [vf|if|foc] [Hz] [s]` drives the factory 1500W tables and prints
-a line on every stage, state, freeze or fault edge, then the final balance.
-Halfway through, the load steps. Nothing here is scripted: every edge is the
-integrated machine answering the command, so a model change is verified by
-diffing two runs.
+`py -m ectra [vf|if|foc] [Hz] [s]` drives the factory 1500W tables
+and prints a line on every stage, state, freeze or fault edge, then the final balance.
+Halfway through, the load steps.
+Nothing here is scripted: every edge is the integrated machine answering the command,
+so a model change is verified by diffing two runs.
 """
 
 import sys
@@ -36,7 +36,7 @@ def command(mode:str, hz:float, ke:float) -> Command:
   """A commissioned drive: factory tables, and a nameplate that matches the iron."""
   return Command(target_hz=hz, mode=mode, poles=6, enabled=True, motor_type=1,
     rise=RISE, fall=FALL, volt=VOLT, curr=CURR,
-    max_freq_hz=90.0, damp_pct=100, entry_hz=55.0, entry_timeout_s=120,
+    damp_pct=100, entry_hz=55.0, entry_timeout_s=120,
     lock_err_deg=22.0, lock_speed_pct=25, fallback_low_hz=25.0, fallback_high_hz=3.0,
     align_ms=700, init_hz=0.5, speed_min_hz=0.0, speed_max_hz=165.0,
     boot_delay_s=5.0, coast_s=90, rs_ohm=0.9, lq_h=6300e-6, ke_v_hz=ke,

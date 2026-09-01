@@ -2,8 +2,8 @@
 The frequency ramp: where the command is allowed to go, and how fast.
 
 Owns the rendered frequency. Everything that can hold it back lives here too,
-because a ramp that stops is the same mechanism as a ramp that moves, and the
-operator has to be told which gate is standing on it.
+because a ramp that stops is the same mechanism as a ramp that moves,
+and the operator has to be told which gate is standing on it.
 """
 
 from .command import Command
@@ -18,8 +18,8 @@ class Ramp:
     self.reset()
 
   def reset(self):
-    """Power-on. The episode counters are boot-sticky on the device, so this is
-    the only thing that clears them."""
+    """Power-on. The episode counters are boot-sticky on the device,
+    so this is the only thing that clears them."""
     self.clear()
     self.holds = 0
 
@@ -33,12 +33,13 @@ class Ramp:
   #---------------------------------------------------------------------------------------- Ceiling
 
   def _derate(self, cmd:Command, meters:Meters, ceiling:float) -> float:
-    """A hot day means slower, not a fault. The limit slides from the command
-    toward `Speed:DerateLimit` and gets there at the trip threshold, from
-    temperature and from current independently, and the lower one wins.
+    """A hot day means slower, not a fault.
+    The limit slides from the command toward `Speed:DerateLimit`
+    and gets there at the trip threshold,
+    from temperature and from current independently, and the lower one wins.
 
-    Reads the SLOW tier: a speed limit that chased the fast one would chase the
-    load and the rotor swing with it."""
+    Reads the SLOW tier:
+    a speed limit that chased the fast one would chase the load and the rotor swing with it."""
     view = meters.view
     for now, on, off in ((view.temp, cmd.derate_temp_c, cmd.temp_max_c),
       (view.curr, cmd.derate_curr_a, cmd.curr_rms_a)):
@@ -49,8 +50,7 @@ class Ramp:
 
   def _goal(self, cmd:Command, meters:Meters, close_done:bool) -> float:
     """The command after every limit, and in `foc` the entry frequency first,
-    because the loop closes there and only then walks to the working point, up
-    or down."""
+    because the loop closes there and only then walks to the working point, up or down."""
     if cmd.target_hz <= 0.0: return 0.0
     goal = cmd.target_hz
     if cmd.speed_max_hz: goal = min(goal, cmd.speed_max_hz)
@@ -64,18 +64,17 @@ class Ramp:
 
   def slew(self, cmd:Command, dt:float, meters:Meters, blind:bool,
     close_done:bool, aligning:bool, sat:bool=False):
-    """A rate is a tempo, so the table is read at where the drive is now, not at
-    where it is going. Alignment holds the ramp at the starting frequency."""
+    """A rate is a tempo, so the table is read at where the drive is now,
+    not at where it is going.
+    Alignment holds the ramp at the starting frequency."""
     goal = self._goal(cmd, meters, close_done)
-    # The I/f ceiling caps every blind vector, `foc` on its approach as much as
-    # `if` at its working point. Only a closed loop is exempt.
-    if cmd.max_freq_hz and blind: goal = min(goal, cmd.max_freq_hz)
     # No voltage authority: a blind vector pinned to the modulation ceiling
-    # stops delivering its current, which slips the rotor and pumps the bus, so
-    # the climb stops where the bridge ran out. Descending is still allowed.
+    # stops delivering its current, which slips the rotor and pumps the bus,
+    # so the climb stops where the bridge ran out.
+    # Descending is still allowed.
     if blind and sat: goal = min(goal, self.hz)
-    # Published even while the rotor is being pulled in, because the target
-    # after every limit is known then and the distance left to it is the point.
+    # Published even while the rotor is being pulled in,
+    # because the target after every limit is known then and the distance left to it is the point.
     self.goal = goal
     if aligning: return
     up = goal > self.hz
@@ -90,8 +89,8 @@ class Ramp:
   #------------------------------------------------------------------------------------------ Gates
 
   def _hold(self, cmd:Command, goal:float, blind:bool):
-    """A blind vector stopped short of the command. A hold that blocks a CLIMB
-    is an episode; sitting at a setpoint is not."""
+    """A blind vector stopped short of the command.
+    A hold that blocks a CLIMB is an episode; sitting at a setpoint is not."""
     held = blind and cmd.target_hz > goal + 0.05 and self.hz >= goal - 0.05
     if held and not self._held: self.holds += 1
     self._held = held
@@ -99,8 +98,8 @@ class Ramp:
     elif self.freeze == "hold": self.freeze = "off"
 
   def _frozen(self, cmd:Command, ctrl, up:bool) -> bool:
-    """Bus gates: a sagging bus may not accelerate, a pumped one may not
-    decelerate. Release carries hysteresis, so a gate cannot chatter."""
+    """Bus gates: a sagging bus may not accelerate, a pumped one may not decelerate.
+    Release carries hysteresis, so a gate cannot chatter."""
     hyst = max(0.0, cmd.freeze_hyst_v)
     if up and cmd.freeze_low_v and (ctrl.vdc < cmd.freeze_low_v
       or (self.freeze == "hv-" and ctrl.vdc < cmd.freeze_low_v + hyst)):

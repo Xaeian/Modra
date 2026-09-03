@@ -7,9 +7,11 @@ so `plant.py` stays a control problem and `client.py` stays transport.
 Reads a register cache into a `Command`, writes plant state back out.
 """
 
+import math
+
 from sim import SimulatedClient
 from .command import Command
-from .machine import V_PEAK
+from .machine import V_PEAK, wrap
 from .names import (
   AUTH_KEYS, CURVE_GROUPS, CURVE_NAME, OWNED, REQUIRED, STANDING, TIERS,
 )
@@ -193,6 +195,9 @@ class Binding:
       deadtime_ns=self._eng(values, "Pwm:Deadtime", 2500.0),
       dtcomp_pct=self._eng(values, "Obs:DtComp", 0.0),
       pll_bw_hz=self._eng(values, "Pll:Bw", 30.0),
+      pll_damp=self._eng(values, "Pll:Damp", 0.71),
+      obs_hp_hz=self._eng(values, "Obs:HpHz", 1.6),
+      retry_hold_s=self._eng(values, "Foc:RetryHold", 0.0),
       iq_max_a=self._eng(values, "Foc:IqMax", 10.0),
       curr_bw_hz=self._eng(values, "Foc:CurrBw", 300.0),
       mod_ceil_pct=self._eng(values, "Foc:ModCeil", 78.0),
@@ -259,7 +264,7 @@ class Binding:
     put("Estim:Freq", plant.estim_hz)
     # The applied field angle, wrapped to the register's signed degrees.
     # Useful mostly at standstill, which is exactly when it stops moving.
-    put("Estim:FieldAngle", (plant.phase_deg + 180.0) % 360.0 - 180.0)
+    put("Estim:FieldAngle", math.degrees(wrap(plant.machine.load_angle)))
     put("Estim:Id", m.id * V_PEAK)
     put("Estim:Iq", m.iq * V_PEAK)
     put("Foc:Vd", sc.vd.read())
@@ -308,11 +313,14 @@ class Binding:
     put("Sync:LockPeak", sc.lock_peak.v)
     put("Sync:Takeovers", det.takeovers)
     put("Sync:Fallbacks", det.fallbacks)
+    put("Sync:ExitCause", det.exit_cause)
+    put("Sync:ExitTime", det.exit_ms)
+    put("Foc:TakeoverDelta", det.delta * 180.0 / 3.14159265)
     put("Foc:Flags", plant.flags)
     # "Zastosowany prad fazowy RMS: wektor w I/f albo iq w FOC".
     # Under the forced vector the whole magnitude is the applied current,
     # and reporting only its torque projection would read as a drive doing almost nothing.
-    put("Foc:IqCmd", m.iq if plant.vec == "closed" else m.curr)
+    put("Foc:IqCmd", plant.iq_ref if plant.vec == "closed" else m.curr)
     if plant.vec == "guard":
       for name, value in zip(("GuardVd", "GuardId", "GuardIdRef"), plant.guard):
         put(f"Foc:{name}", value)

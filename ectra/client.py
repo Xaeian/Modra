@@ -31,8 +31,10 @@ class EctraClient(SimulatedClient):
   """Drop-in for `SimulatedClient` on a regmap shaped like ectra's."""
   match = staticmethod(Binding.match)
 
-  def __init__(self, id_map:dict):
+  def __init__(self, id_map:dict, speed:float=1.0, legacy:bool=False):
     self.runner = None
+    self.speed = max(0.01, speed)
+    self.legacy = legacy
     super().__init__(id_map)
     self._attach(id_map)
 
@@ -50,7 +52,7 @@ class EctraClient(SimulatedClient):
     self._curr_rms_rid = self.bind.rid.get("Thresh:CurrRms")
     if self.runner is None:
       # Seeded off the map: stable across ticks, different between deployments.
-      self.runner = Runner(Plant(Machine(dtcomp=DTCOMP_LOW + sum(id_map) % DTCOMP_SPAN)))
+      self.runner = Runner(Plant(Machine(), legacy=self.legacy), scale=self.speed)
 
   def close(self):
     self.runner.close()
@@ -90,7 +92,7 @@ class EctraClient(SimulatedClient):
     does not need a reader to make progress."""
     self._push()
     now = time.time()
-    if now - self._last_tick < SNAP_MIN_s: return
+    if now - self._last_tick < SNAP_MIN_s / self.speed: return
     self._last_tick = now
     with self.runner.lock:
       out = self.bind.telemetry(self.runner.plant, self.values)

@@ -29,10 +29,14 @@ STEP_MAX_s = 0.2
 #------------------------------------------------------------------------------------------- Runner
 
 class Runner:
-  """Owns the plant and the thread that turns it."""
-  def __init__(self, plant:Plant=None, period:float=PERIOD_s):
+  """Owns the plant and the thread that turns it. `scale` is model seconds per
+  wall second: the physics does not care, the sub-step is fixed, and a bench that
+  waits in model time gets its answers that many times sooner."""
+  def __init__(self, plant:Plant=None, period:float=PERIOD_s, scale:float=1.0):
     self.plant = plant or Plant()
     self.period = period
+    self.scale = max(0.01, scale)
+    self.elapsed = 0.0  # model seconds since the runner started
     # Reentrant, because the transport takes it once and then calls back in to
     # hand over a command while it still holds it.
     self.lock = threading.RLock()
@@ -56,8 +60,9 @@ class Runner:
     last = time.monotonic()
     while not self._stop.wait(self.period):
       now = time.monotonic()
-      dt = min(now - last, STEP_MAX_s)
+      dt = min(now - last, STEP_MAX_s) * self.scale
       last = now
       with self.lock:
         self.plant.step(self._cmd, dt)
+        self.elapsed += dt
         self.ticks += 1

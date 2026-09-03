@@ -53,6 +53,9 @@ class Command:
   deadtime_ns: float = 2500.0               # Pwm:Deadtime
   dtcomp_pct: float = 0.0                   # Obs:DtComp
   pll_bw_hz: float = 30.0                   # Pll:Bw
+  pll_damp: float = 0.71                    # Pll:Damp
+  obs_hp_hz: float = 1.6                    # Obs:HpHz
+  retry_hold_s: float = 0.0                 # Foc:RetryHold
   iq_max_a: float = 10.0                    # Foc:IqMax
   curr_bw_hz: float = 300.0                 # Foc:CurrBw
   mod_ceil_pct: float = 78.0                # Foc:ModCeil

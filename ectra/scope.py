@@ -3,48 +3,24 @@ Publication layer: how a fast value reaches a slow register.
 
 Mirrors `foc-sig/diag/scope.c`. Sources push their natural quantity in at their
 natural rate; this decides the shape a Modbus reader sees, and it is the only
-thing that does. Scattering that decision across the modules that produce the
-values is how a peak ends up decaying at one pace in one register and another
-pace in the next.
+thing that does.
 
-Three shapers, as the device has them:
-
-- `Env` is instant attack and steady decay, never below the live feed. A meter a
-  one-second poll cannot miss.
-- `Max` is latched until an explicit reset, the forensic value around a fault.
-- `Mean` is an exponential average for tuning signals that swing.
+Three shapers, as the device has them: `Env` is instant attack and steady decay,
+`Max` is latched until an explicit reset, `Mean` is an exponential average.
 """
 
-from math import pi as PI, sin
+from math import asin, pi as PI
 
 #-------------------------------------------------------------------------------------------- Rates
 
 # `SCOPE_Env_t` carries `value << 5` and decays `decay` accumulator units per
-# feed, so a channel falls `decay / 32` of its own unit per feed. The feed rates
-# differ per channel and that is the whole subtlety: bus and duty ride the 10kHz
-# ISR, the takeover meters ride the 10ms detector.
-#   bus:   decay 3 at 10kHz over [V x10]
-#   duty:  decay 1 at 10kHz over CCR counts, `ARR` 3200 for full scale
-#   err:   decay 700 at 100Hz over [deg x100]
-#   lock:  decay 6 at 100Hz over raw bucket ticks
+# feed, so a channel falls `decay / 32` of its own unit per feed.
 BUS_PEAK_Vs = 93.75
 DUTY_PEAK_pcts = 9.77
 ERR_PEAK_degs = 21.875
 LOCK_PEAK_ticks = 18.75
-
-# Every mean feeds on the fixed 10ms grid with `shift 5`, so a reading means the
-# same thing at 20Hz and at 55Hz. That is also why the registers carrying these
-# say `srednia z 320ms` and why tuning against them is stable.
+# Every mean feeds on the fixed 10ms grid with `shift 5`
 MEAN_s = 0.32
-
-# `err_deg = (err_n * 5730) >> 15` converts the Q15 SINE the discriminator holds
-# as if it were the angle itself. True below about ten degrees and increasingly
-# short above: a real 40 degrees publishes as 37, a real 60 as 50. The gate is
-# unaffected, because it compares sines with sines, but a reader who trusts the
-# register at a large error is reading a compressed number.
-def small_angle(deg:float) -> float:
-  """Degrees as the device publishes them."""
-  return sin(min(abs(deg), 90.0) * PI / 180.0) * 180.0 / PI
 
 #------------------------------------------------------------------------------------------ Shapers
 
@@ -61,8 +37,7 @@ class Env:
     self.v = v
 
 class Mean:
-  """Exponential average. Takes the first sample whole, so a fresh drive does
-  not spend a filter length climbing out of zero."""
+  """Exponential average. Takes the first sample whole."""
   def __init__(self, tau:float=MEAN_s):
     self.tau = tau
     self.v = None
@@ -86,7 +61,7 @@ class Scope:
     self.err_peak = Env(ERR_PEAK_degs)
     self.lock_peak = Env(LOCK_PEAK_ticks)
     self.theta = Mean()   # `Obs:AngleErr`
-    self.err = Mean()     # `Sync:Err`, the gate's own discriminant
+    self.err = Mean()     # `Sync:Err`
     self.bias = Mean()    # `Obs:Bias`
     self.omega = Mean()   # `Obs:OmegaHat`
     self.vd = Mean()
@@ -95,33 +70,28 @@ class Scope:
     self.reset()
 
   def reset(self):
-    """Power-on."""
     for ch in (self.duty, self.bus, self.err_peak, self.lock_peak): ch.reset()
     for ch in (self.theta, self.err, self.bias, self.omega, self.vd, self.vq): ch.reset()
     self.bus_max = 0.0
 
   def restart(self, vdc:float):
-    """`SCOPE_MaxReset` at every start: `Bus:Max` answers for the run that is
-    beginning, not for everything the link has seen since power-on."""
+    """`SCOPE_MaxReset` at every start."""
     self.bus_max = vdc
 
   def feed(self, dt:float, plant):
-    """One pass over every channel. Taken from one instant of the plant, so no
-    two registers can describe different moments of the same machine."""
+    """One pass over every channel, from one instant of the plant."""
     m, o = plant.machine, plant.obs
     self.bus.feed(m.vdc, dt)
     self.bus_max = max(self.bus_max, m.vdc)
     self.duty.feed(m.mod_index, dt)
-    # The gate compares the crest, so that is what the peak meter witnesses.
-    self.err_peak.feed(small_angle(o.crest), dt)
+    # The gate reads the discriminant tick by tick; the peak meter must not miss
+    # the sub-step that refused it, so it takes the tick's maximum
+    peak = asin(min(1.0, o.tick_peak())) * 180.0 / PI
+    self.err_peak.feed(peak, dt)
     self.lock_peak.feed(float(plant.det.lock), dt)
-    # Two different angles, and the device keeps them apart: `Obs:AngleErr` is
-    # the observer against the applied field, `Sync:Err` is the gate's own
-    # discriminant. Feeding both from one number is what makes a reader think
-    # the load angle gates a takeover.
-    self.theta.feed(small_angle(o.field), dt)
-    self.err.feed(small_angle(o.err), dt)
-    self.bias.feed(o.w - plant.ramp.hz, dt)
-    self.omega.feed(o.w, dt)
+    self.theta.feed(o.angle_vs(plant.theta_applied), dt)
+    self.err.feed(o.err_deg, dt)
+    self.bias.feed(o.hz - plant.ramp.hz, dt)
+    self.omega.feed(abs(o.hz), dt)
     self.vd.feed(plant.vd, dt)
     self.vq.feed(plant.vq, dt)

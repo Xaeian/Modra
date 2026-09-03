@@ -1,5 +1,9 @@
 # Changes `modra`
 
+## `1.3.4` Ectra
+
+- Ectra takeover model and commissioning guide aligned with bench behavior
+
 ## `1.3.3` Ectra, Search
 
 - 🧩 Ectra widgets and simulator for PMSM drives

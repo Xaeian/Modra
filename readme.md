@@ -82,6 +82,14 @@ Connect flow: pick port → type address _(1-247)_ → **⚡**.
 Polling reads **R**/**RW**/**RWs** at the configured interval, and keeps retrying after a burst of read errors, so a transient bus glitch recovers on its own.
 Validation is advisory: the frontend marks out-of-range values and warns on **Send**, but the device is written whatever you typed.
 
+## Search
+
+The search field matches register names and descriptions, ignores letter case and diacritics, and fades non-matching rows in place.
+The settings panel provides two optional modes:
+
+- **`*? strict`**: use `*` and `?` wildcards; join alternatives with `|`
+- **`🙈 hide`**: hide non-matching rows instead of fading them
+
 ## Charts
 
 ![PLT](plots-menu.png)
@@ -109,6 +117,20 @@ History comes from the local DB, so browsing works with no device connected.
 History column is preserved; new rows after the ignore land as `NULL`.
 Membership stored in `view.json`.
 
+## Device widgets
+
+When an enabled widget recognizes the loaded register map, its icon appears in the toolbar.
+Widgets can focus the grid, select chart traces or provide a device-specific control panel without adding device logic to the core UI.
+
+Enable widgets in `app.ini` by listing their IDs:
+
+```ini
+widgets = ectra-guide, ectra-tables
+```
+
+The bundled Ectra widgets provide a guided PMSM commissioning procedure and editors for the `Volt`, `Curr`, `Rise` and `Fall` tables.
+Press `w` to toggle the first widget available for the current map; additional widgets have their own toolbar buttons.
+
 ## Settings ☰
 
 - **Baud** / **Parity** / **Stop** / **Timeout**: wire-level, changing forces reconnect
@@ -127,12 +149,14 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 - **`i`**: **i**gnore mode _(toggle show-disabled)_
 - **`o`**: **o**ptions _(toggle settings panel)_
 - **`p`**: **p**lots _(toggle chart panel)_
+- **`w`**: device **w**idget _(toggle the first widget available for the current map)_
 
 ## Files
 
 | File | Role | Edited by |
 |---|---|---|
 | [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you, or picked on first run |
+| `app.ini` | build metadata and bundled simulator/widget selection | build author |
 | `serial.ini` | connection state | app + you |
 | `view.json` | UI state _(monitor panels, ignored list)_ | app + you |
 | `data.db` | SQLite poll history, one table per addr | app |

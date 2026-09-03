@@ -63,7 +63,7 @@ OWNED = (
   "Estim:Freq", "Estim:FieldAngle", "Estim:Id", "Estim:Iq",
   "Obs:OmegaHat", "Obs:AngleErr", "Obs:Bias",
   "Sync:Err", "Sync:ErrPeak", "Sync:Lock", "Sync:LockPeak",
-  "Sync:Takeovers", "Sync:Fallbacks",
+  "Sync:Takeovers", "Sync:Fallbacks", "Sync:ExitCause", "Sync:ExitTime", "Foc:TakeoverDelta",
   "Foc:Flags", "Foc:Vd", "Foc:Vq", "Foc:IqCmd",
   "Freeze:State", "Freeze:HoldCount", "Brake:RegenCount",
   "Fault:Code", "Fault:PeakEvents", "Counter:Hours",

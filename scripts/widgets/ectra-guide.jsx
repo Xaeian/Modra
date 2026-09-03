@@ -460,7 +460,7 @@ const Ectra = {
     const { Name } = Ectra;
     const stage = EC_STAGES.find(s => s.id === this._stage);
     return (
-      <div class="ec">
+      <div class="ec ec-book">
         <div class="ec-tabs">
           {EC_STAGES.map(s =>
             <button class={cls("ec-tab", s.id === this._stage && "on")}

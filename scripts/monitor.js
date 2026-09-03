@@ -322,8 +322,9 @@ const MonitData = {
 
   //------------------------------------------------------------------------ Prepare data for chart
 
-  // Buffer -> uPlot `[xs, ...series]`. Edges are padded with empties so a fresh
-  // chart still spans the full requested window.
+  // Buffer -> uPlot `[xs, ...series]`. The window edges are not padded: the
+  // x-scale is set explicitly by the chart, and an empty point at the live edge
+  // would sit under the pointer instead of the last sample.
   prepare(names) {
     const [xMin, xMax] = this.window();
     const maps = {};
@@ -353,16 +354,13 @@ const MonitData = {
         vals[s].push(nil ? null : (maps[names[s]]?.get(t) ?? null));
       }
     };
-    emit(xMin, !times.length || times[0] > xMin + 0.01);
     for(let i = 0; i < times.length; i++) {
-      const prev = i === 0 ? xMin : times[i - 1];
-      if(gap > 0 && times[i] - prev > gap) {
-        emit(prev + 0.001, true);
+      if(i > 0 && gap > 0 && times[i] - times[i - 1] > gap) {
+        emit(times[i - 1] + 0.001, true);
         emit(times[i] - 0.001, true);
       }
       emit(times[i], false);
     }
-    if(!times.length || times[times.length - 1] < xMax - 0.01) emit(xMax, true);
     return [ts, ...vals];
   },
 

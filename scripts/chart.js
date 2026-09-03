@@ -69,12 +69,26 @@ function csClosestIdx(data0, ts) {
   return lo;
 }
 
+// The x array carries synthetic points that break a line across a hole; they
+// hold no values. A readout lands on the nearest index where some series has one.
+function csRealIdx(data, idx) {
+  const has = (i) => i >= 0 && i < data[0].length && data.some((s, k) => k > 0 && s[i] != null);
+  for(const d of [0, -1, 1, -2, 2]) if(has(idx + d)) return idx + d;
+  return null;
+}
+
 //---------------------------------------------------------------------------------- Tooltip plugin
 
 // Hijacks uPlot's built-in legend as a floating tooltip. Styled inline so
 // the plugin carries no stylesheet dependency.
+//
+// Visibility comes from the cursor alone: the panel that owns the pointer event
+// shows the tooltip, a synced sibling does not, and no cursor means none.
+// Hiding waits a frame, because a page rebuild under the pointer lets the
+// browser report a leave and an enter in one go; acting on the leave at once
+// would blink the tooltip at the render rate.
 function csTipPlugin(stack) {
-  let legend, over, isHovered = false;
+  let legend, over, hide = 0;
   return {
     hooks: {
       init(u) {
@@ -95,22 +109,22 @@ function csTipPlugin(stack) {
         });
         over.style.overflow = "visible";
         over.appendChild(legend);
-        over.addEventListener("mouseenter", () => {
-          isHovered = true;
-          if(legend) legend.style.display = "";
-        });
-        over.addEventListener("mouseleave", () => {
-          isHovered = false;
-          if(legend) legend.style.display = "none";
-        });
       },
       setCursor(u) {
-        if(!legend || !over || !isHovered) return;
+        if(!legend || !over) return;
         const { left, top, idx } = u.cursor;
-        if(idx == null || !u.data?.[0]?.length) {
-          legend.style.display = "none";
+        const owner = u.cursor.event != null;
+        if(!owner || idx == null || left < 0 || !u.data?.[0]?.length) {
+          if(!hide) hide = requestAnimationFrame(() => {
+            hide = 0;
+            legend.style.display = "none";
+            stack._hover(u, false);
+          });
           return;
         }
+        if(hide) { cancelAnimationFrame(hide); hide = 0; }
+        stack._hover(u, true);
+        legend.style.display = "";
         legend.innerHTML = stack._buildTipHTML(u, idx);
         const lw = legend.offsetWidth || 120;
         const lh = legend.offsetHeight || 40;
@@ -156,6 +170,7 @@ class ChartStack {
   //   formatX - x-axis tick formatter (bottom panel only)
   //   formatXValue - tooltip header formatter (full timestamp)
   //   onZoom - (min, max) on drag-zoom, (null, null) on dblclick reset
+  //   onHover - (true) when a pointer settles on a panel, (false) when it leaves
   constructor(container, opts = {}) {
     this._el = container;
     this._cfg = { ...CS_DEFAULTS, ...opts };
@@ -163,6 +178,8 @@ class ChartStack {
     this._formatX = opts.formatX || null;
     this._formatXValue = opts.formatXValue || null;
     this._onZoom = opts.onZoom || null;
+    this._onHover = opts.onHover || null;
+    this.hovered = false;   // a pointer rests on one of the panels
     this._xMin = null;
     this._xMax = null;
     this._panels = [];
@@ -257,6 +274,13 @@ class ChartStack {
 
   //------------------------------------------------------------------------------------- Internals
 
+  // Hover is per stack: the panels share one cursor, so one pointer at a time.
+  _hover(u, on) {
+    if(on === this.hovered) return;
+    this.hovered = on;
+    this._onHover?.(on);
+  }
+
   _currentRange() {
     if(!this._autoScroll && this._zoomMin != null) return [this._zoomMin, this._zoomMax];
     if(this._xMin != null) return [this._xMin, this._xMax];
@@ -265,8 +289,9 @@ class ChartStack {
 
   // One row per series across every panel, timestamps aligned to plot `u`.
   _buildTipHTML(u, idx) {
+    idx = csRealIdx(u.data, idx);
+    if(idx == null) return "";
     const ts = u.data[0][idx];
-    if(ts == null) return "";
     let html = "<div class=\"cs-tip-ts\">"
       + (this._formatXValue ? this._formatXValue(ts) : String(ts))
       + "</div>";
@@ -275,7 +300,8 @@ class ChartStack {
       if(!pe?.plot?.data?.[0]?.length) continue;
       const panel = this._panels[p];
       if(panel.noTip) continue; // discrete bool/enum: state reads off the y-axis
-      const pidx = (pe.plot === u) ? idx : csClosestIdx(pe.plot.data[0], ts);
+      const pidx = (pe.plot === u) ? idx
+        : csRealIdx(pe.plot.data, csClosestIdx(pe.plot.data[0], ts));
       if(pidx == null) continue;
       for(let s = 0; s < panel.series.length; s++) {
         const val = pe.plot.data[s + 1]?.[pidx];

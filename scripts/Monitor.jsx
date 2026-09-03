@@ -2,7 +2,10 @@
 
 // Chart pane glue. `_stack` and `_el` outlive renders because the chart
 // canvas is expensive to rebuild; `Bar()` emits an empty `.rb-monitor-slot`
-// and `mount()` reparents the persistent `_el` into it.
+// and `mount()` moves the persistent `_el` into it right after the swap.
+// The chart must not enter the new tree any earlier: building it reads layout
+// (`gridColumnCount` measures the grid), and a chart already pulled out of the
+// live page would shrink it at that flush, so every render jumped the scroll.
 
 const Monitor = {
 
@@ -12,6 +15,7 @@ const Monitor = {
   _sig: null,         // built layout signature (keys + names per group)
   _rangeBusy: false,  // guards a window fetch against overlapping round-trips
   _zoomTimer: null,   // debounces drag-zoom into a single refetch
+  _pending: false,    // rows ingested while a chart was hovered, not yet drawn
 
   //--------------------------------------------------------------------------------------- JSX bar
 
@@ -53,20 +57,28 @@ const Monitor = {
 
   //----------------------------------------------------------------------------- Mount / lifecycle
 
-  // Class lookup: `Bar()` re-renders the slot, so no ref to it survives.
-  mount() {
-    const slot = document.querySelector(".rb-monitor-slot");
-    if(!slot) return;
+  // The one chart host, created on first use.
+  _host() {
     if(!this._el) {
       this._el = document.createElement("div");
       this._el.className = "rb-charts";
     }
-    slot.appendChild(this._el);
+    return this._el;
+  },
+
+  // Class lookup: `Bar()` re-renders the slot, so no ref to it survives. The
+  // page around the chart may have moved, and uPlot caches the pointer origin.
+  mount() {
+    const slot = document.querySelector(".rb-monitor-slot");
+    if(!slot) return;
+    const el = this._host();
+    if(el.parentNode !== slot) slot.appendChild(el);
     this._stack?.syncRect();
   },
 
-  // A frozen (zoomed) window sends no rows from poll, so ingest no-ops and
-  // the view stays put.
+  // Called on every poll, but rows arrive once a second and a frozen (zoomed)
+  // window sends none: the chart is redrawn only when there is something new,
+  // so the point under a resting pointer does not change ten times a second.
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
     // Rebuild BEFORE ingest. A rule-slot flip can drop a member while the key
@@ -77,7 +89,17 @@ const Monitor = {
       this.mount();
       return;
     }
+    if(!Array.isArray(rows)) return;
     MonitData.ingest(rows);
+    this._pending = true;
+    this._flush();
+  },
+
+  // A hovered chart holds still: the buffer keeps filling, the drawing waits
+  // for the pointer to leave, then catches up in one step.
+  _flush() {
+    if(!this._pending || this._stack?.hovered) return;
+    this._pending = false;
     this._applyWindow();
     this._feedAll();
   },
@@ -95,16 +117,13 @@ const Monitor = {
       if(this._el) this._el.innerHTML = "";
       return;
     }
-    if(!this._el) {
-      this._el = document.createElement("div");
-      this._el.className = "rb-charts";
-    }
-    this._el.innerHTML = "";
+    this._host().innerHTML = "";
     const groups = MonitData.groups();
     this._stack = new ChartStack(this._el, {
       formatX: chartFmtAxisX(),
       formatXValue: chartFmtFull,
       onZoom: (a, b) => Monitor.onZoom(a, b),
+      onHover: (on) => { if(!on) Monitor._flush(); },
     });
     for(const [key, grp] of Object.entries(groups)) {
       this._keys.push(key);

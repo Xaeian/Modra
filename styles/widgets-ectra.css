@@ -15,10 +15,18 @@
 .ec-tab:disabled { opacity: 0.4; cursor: default; }
 
 /* The book. Narrow on purpose: it sits beside the grid, and a column of prose
-   is read, not scanned. */
+   is read, not scanned. Beside the grid it takes the height the other widgets
+   leave and scrolls its own prose, so the stage tabs never leave the screen. */
+.rb-side > .wg:has(> .ec-book) {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.ec-book { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.ec-book .ec-tabs { flex: none; }
 .ec-text {
   padding: 0 10px 8px;
   font-size: 11px; line-height: 1.55; color: var(--text-muted);
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
 }
 .ec-text p { margin: 0 0 6px; }
 .ec-text p:last-child { margin-bottom: 0; }

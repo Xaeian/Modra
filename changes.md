@@ -2,6 +2,7 @@
 
 ## `1.3.4` Ectra
 
+- Steady chart tooltip, guide scrolls on its own
 - Updated Ectra model and guide
 
 ## `1.3.3` Ectra, Search

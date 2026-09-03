@@ -12,7 +12,7 @@ it is on the device: a window. A read samples the machine, a write moves the
 command, and the shaft keeps turning between them.
 """
 
-import threading, time
+import threading, time, traceback
 from .command import Command
 from .plant import Plant
 
@@ -41,6 +41,7 @@ class Runner:
     # hand over a command while it still holds it.
     self.lock = threading.RLock()
     self.ticks = 0
+    self.error = None  # the traceback that stopped the thread, if one did
     self._cmd = Command()
     self._stop = threading.Event()
     self._thread = threading.Thread(target=self._loop, name="ectra-motor", daemon=True)
@@ -57,12 +58,22 @@ class Runner:
     self._stop.set()
 
   def _loop(self):
-    last = time.monotonic()
+    """A crash in the physics stops the shaft and is kept for the transport to
+    report; a daemon thread that dies quietly leaves a drive frozen mid-ramp with
+    every register still answering."""
+    # `perf_counter`, not `monotonic`: on Windows before Python 3.13 the latter
+    # ticks every 15ms, so two wakeups can read the same instant and the plant
+    # would be handed a step of zero length
+    last = time.perf_counter()
     while not self._stop.wait(self.period):
-      now = time.monotonic()
+      now = time.perf_counter()
       dt = min(now - last, STEP_MAX_s) * self.scale
       last = now
+      if dt <= 0.0: continue
       with self.lock:
-        self.plant.step(self._cmd, dt)
+        try: self.plant.step(self._cmd, dt)
+        except Exception:
+          self.error = traceback.format_exc()
+          return
         self.elapsed += dt
         self.ticks += 1

@@ -91,6 +91,7 @@ class EctraClient(SimulatedClient):
     is throttled, because rebuilding it is the expensive half and the machine
     does not need a reader to make progress."""
     self._push()
+    if self.runner.error: raise RuntimeError(f"model stopped: {self.runner.error}")
     now = time.time()
     if now - self._last_tick < SNAP_MIN_s / self.speed: return
     self._last_tick = now

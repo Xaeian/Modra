@@ -306,6 +306,8 @@ class Plant:
     m = self.machine
     if self.vec == "align" and self._align_s <= 0.0: self.vec = "forced"
     if self.vec == "catch" and self.ramp.hz >= self._catch_at: self.vec = "forced"
+    # A step of no length moves nothing and would divide the winding by zero
+    if dt <= 0.0: return
     n = min(SUB_MAX, max(1, int(round(dt / SUB_s))))
     h = dt / n
     hz = self.ramp.hz

@@ -2,7 +2,7 @@
 
 ## `1.3.4` Ectra
 
-- Ectra takeover model and commissioning guide aligned with bench behavior
+- Updated Ectra model and guide
 
 ## `1.3.3` Ectra, Search
 

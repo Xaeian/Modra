@@ -1,6 +1,6 @@
 # Changes `modra`
 
-## `1.3.4` Ectra
+## `1.3.4` Tooltip
 
 - Steady chart tooltip, guide scrolls on its own
 - Updated Ectra model and guide

@@ -305,7 +305,10 @@ class Plant:
     detector all move inside it, in the order the ISR and the thread run them."""
     m = self.machine
     if self.vec == "align" and self._align_s <= 0.0: self.vec = "forced"
-    if self.vec == "catch" and self.ramp.hz >= self._catch_at: self.vec = "forced"
+    if self.vec == "catch" and self.ramp.hz >= self._catch_at:
+      # `FOC_Catch`: the references take the measured current, in the control frame
+      self.vec = "forced"
+      self.id_ref, self.iq_ref = rotate(m.id, m.iq, wrap(self.theta_render - m.theta_r))
     # A step of no length moves nothing and would divide the winding by zero
     if dt <= 0.0: return
     n = min(SUB_MAX, max(1, int(round(dt / SUB_s))))
@@ -323,7 +326,7 @@ class Plant:
           forced=False)
       else:
         v_ab, i_ab = m.step_vector(cmd, h, self.theta_render,
-          (m.forced_mag(cmd, hz), 0.0), forced=self.vec == "forced")
+          (self.id_ref, self.iq_ref), forced=self.vec == "forced")
       if self.vec not in VERDICT_VEC: self.obs.step(h, v_ab, i_ab, m.signs)
       if closed: self.theta_render = self.obs.theta_hat
       else: self.theta_render = wrap(self.theta_render + TWO_PI * field * h)
@@ -333,7 +336,12 @@ class Plant:
         if out.hz is not None: hz = self.ramp.hz = out.hz
         if out.vec == "closed": self._takeover(out.delta)
         if out.resync:
-          self.theta_render = wrap(self.obs.theta_hat + (0.0 if self.legacy else self.det.delta))
+          # The frame turns by the takeover delta and the references turn with
+          # it (`FOC_Rotate`), so the applied vector is continuous; the thread
+          # then slews them onto the I/f profile
+          delta = 0.0 if self.legacy else self.det.delta
+          self.theta_render = wrap(self.obs.theta_hat + delta)
+          self.id_ref, self.iq_ref = rotate(self.id_ref, self.iq_ref, delta)
           self.glide_s = 0.0
         if out.vec: self.vec = out.vec
         if out.fault:
@@ -349,11 +357,11 @@ class Plant:
   #--------------------------------------------------------------------------------------- Takeover
 
   def _takeover(self, delta:float):
-    """`FOC_Takeover` + the seed of `FOC_Targets`: references and integrators
-    rotate into the observer frame, torque is seeded at the entry vector's
-    magnitude, motoring-signed, and the glide starts from the rotated pair."""
+    """`FOC_Takeover` + the seed of `FOC_Targets`: the references, as they are
+    at the switch, rotate into the observer frame, torque is seeded at the entry
+    vector's magnitude, motoring-signed, and the glide starts from the rotated pair."""
     m = self.machine
-    id0, iq0 = rotate(self._forced_mag, 0.0, -delta)
+    id0, iq0 = rotate(self.id_ref, self.iq_ref, -delta)
     m.lean = 0.0
     mag = max(abs(id0), abs(iq0)) + min(abs(id0), abs(iq0)) / 2.0
     self.id_ref, self.iq_ref = id0, iq0
@@ -372,7 +380,10 @@ class Plant:
     if self._targets_s < TARGETS_s: return
     dt, self._targets_s = self._targets_s, 0.0
     if self.vec != "closed":
+      # Align and I/f: the table's current on the aligned axis, reached by the slew
       self.limit = self.regen = False
+      self.id_tgt, self.iq_tgt = self._forced_mag, 0.0
+      self._slew()
       return
     m = self.machine
     err = hz - abs(self.obs.hz)
@@ -393,9 +404,12 @@ class Plant:
       k = 1.0 - self.glide_s / max(self.glide_len, 1e-6)
       self.id_ref = self.glide[0] + (self.id_tgt - self.glide[0]) * k
       self.iq_ref = self.glide[1] + (self.iq_tgt - self.glide[1]) * k
-    else:
-      self.id_ref += clamp(self.id_tgt - self.id_ref, -REF_SLEW_A, REF_SLEW_A)
-      self.iq_ref += clamp(self.iq_tgt - self.iq_ref, -REF_SLEW_A, REF_SLEW_A)
+    else: self._slew()
+
+  def _slew(self):
+    """The thread's reference slew toward the targets, one pass."""
+    self.id_ref += clamp(self.id_tgt - self.id_ref, -REF_SLEW_A, REF_SLEW_A)
+    self.iq_ref += clamp(self.iq_tgt - self.iq_ref, -REF_SLEW_A, REF_SLEW_A)
 
   def _fade(self, cmd:Command) -> float:
     """`regen_fade_q15`: braking authority tapers as the raw bus nears its ceiling."""

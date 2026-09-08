@@ -21,6 +21,7 @@ Example:
   29.0
 """
 
+from random import Random
 from math import atan2, cos, exp, pi as PI, sin, sqrt
 from .command import Command
 from .curve import clamp, interp
@@ -44,23 +45,23 @@ POLES = 6
 PHASEMAP = 2
 # What the bridge keeps for itself along each phase current: the dead time
 # `td/T x Vdc` the register `Pwm:Deadtime` describes, plus the forward drop of the
-# conducting leg. The drive shows it only above a current: at the V/f start (3A at
-# 2Hz, `Volt:2Hz` 19.4V) it measured 3.1A, which is the full 16V off the table, while
-# at the I/f steps of 03.09 the loops' output (`Foc:Vd`, `Foc:Vq`, `Feedback:ModIndex`)
-# equalled the back-EMF, 23V at 40Hz and 0.8A, so the bridge kept nothing there.
-# Below `LOSS_A0` the loss is absent, above `LOSS_A1` it is whole; between them it
-# rises with the current. The observer still subtracts a full square wave when
-# `Obs:DtComp` says so, which is why every percent of it adds ripple the bridge never
-# made and the drive read its smallest `Sync:ErrPeak` at zero.
+# conducting leg. Its size comes from the V/f start (3A at 2Hz, `Volt:2Hz` 19.4V:
+# the 3.1A measured is the full 16V off the table), its shape from the I/f steps
+# of 03.09: `Feedback:ModIndex` read 10% at 25Hz and 0.5A, 15% at 40Hz and 0.8A,
+# 28% at 80Hz and 2.2A, which is the back-EMF plus the loss's fundamental: a loss
+# rising from zero and whole above `LOSS_A1` puts the modulation of every step
+# where the drive reads it. The observer still subtracts a full square wave when
+# `Obs:DtComp` says so, which is why every percent of it adds ripple the bridge
+# never made and the drive read its smallest `Sync:ErrPeak` at zero.
 # The whole loss, phase RMS scale: 2500ns of dead time at 10kHz on a 590V link is
 # 10.4V, the rest is gate delays and the forward drops, and 3.1A at the start is
 # what 15V off the table leaves in a 0.9 ohm winding
 LOSS_V = 15.0
-LOSS_A0, LOSS_A1 = 0.9, 1.6  # phase current, RMS scale
-DTCOMP_pct = 100.0           # the share of the nominal dead time the guard reports
+LOSS_A0, LOSS_A1 = 0.0, 0.8  # phase current, RMS scale: absent under A0, whole above A1
+DTCOMP_pct = 100.0 # the share of the nominal dead time the guard reports
 
 # The shaft. The load curve is the fan as the bench of 03.09 bounds it: the drive
-# rode the old `Curr` table through its 20-25Hz dip with the ramp still climbing, so
+# rode the `Curr` table of that day through its 20-25Hz dip with the ramp still climbing, so
 # the load at every step sits under `kt x I_table` with room for the ramp, and the
 # powers on the higher steps close the curve. Torque from the current and the
 # angle the observer reported would run over the table at 25Hz, which says the
@@ -81,12 +82,26 @@ INERTIA_kgm2 = 0.05
 SUB_s = 0.5e-3
 SUB_MAX = 2000
 # `If:Damp`, as `FOC_Step` implements it: not a torque, a lean of the CONTROL
-# FRAME against the swing velocity of the q voltage, clamped to +-8 degrees.
-DAMP_GAIN_s = 0.09
+# frame against the swing velocity of the rotor. The firmware reads that swing
+# off the q voltage the loops apply, through a 51ms high-pass, a 6.4ms low-pass
+# and a difference every 6.4ms; `damp_pct x 1.2` angle units per count, clamped
+# to 8 degrees. The rotor angle itself is not available to it, so not used here
+DAMP_HP_s = 0.0512
+DAMP_LP_s = 0.0064
+DAMP_VEL_s = 0.0064
+DAMP_VEL_MAX = 4096.0
+DAMP_V_PER_COUNT = 580.0 / 3200.0 / 1.4142136  # one vq count at the reference bus, RMS scale
+DAMP_RAD_PER_COUNT = 120.0 * 2.0 * PI / 65536.0  # at 100%, per count of velocity
 DAMP_MAX_rad = 8.0 * PI / 180.0
-DAMP_HP_s = 0.05
-# Eddy currents in the magnets and the sleeve: a weak induction cage with a low
-# pull-out slip. Below `ROTOR_SLIP` the torque is a viscous drag on the slip.
+# `damp_th = -vel x k` in the firmware, and the q axis means the same thing in
+# both frames (90 degrees ahead of the current in the direction of rotation), so
+# the sign carries over; the other sign excites a limit cycle here
+DAMP_SIGN = -1.0
+# Current measurement noise the loops and the observer see, per alpha/beta sample
+# [A RMS scale, one sigma]. The bridge's own ADC chain is not silent: through
+# `If:Damp`'s difference it becomes a jitter of the applied angle, which is why
+# more damping reads as a larger `Sync:ErrPeak` on the bench
+NOISE_A = 0.0
 ROTOR_DAMP_Nms = 5e-4
 ROTOR_SLIP_rads = 9.4
 
@@ -197,9 +212,10 @@ class Machine:
     self.mod_index = 0.0
     self.sat = False
     self.slip = False
-    self.damp_dc = 0.0
+    self.damp_ema = self.damp_lp = self.damp_hp = self.damp_vel = 0.0
+    self.damp_t = 0.0
+    self.rng = Random(1)  # seeded: a run is repeatable to the sample
     self.lean = 0.0      # `If:Damp`'s current frame tilt [rad]
-    self.phi_prev = None # frame error last sub-step, for the damper's slew
     self.curr_hi = 0.0
 
   #--------------------------------------------------------------------------------------- Readings
@@ -272,13 +288,6 @@ class Machine:
     dtpu = max(0.0, cmd.deadtime_ns) * 1e-9 * PWM_Hz
     return share / 100.0 * dtpu * self.vdc / V_PEAK
 
-  def ripple_a(self) -> float:
-    """Half the peak-to-peak switching ripple of a phase current, RMS scale.
-    Three legs near half duty leave only short line pulses, so the ripple grows
-    with the modulation index and is small where the I/f steps live."""
-    m = max(0.02, self.mod_index / 100.0)
-    return m * self.vdc / (4.0 * self.lq * PWM_Hz) / 2.0 / V_PEAK
-
   def loss_ab(self, i_a:float, i_b:float, cmd:Command) -> tuple:
     """What the bridge takes off the commanded vector, alpha-beta: dead time and
     forward drop along each phase current, absent under `LOSS_A0`, whole past
@@ -331,21 +340,32 @@ class Machine:
     there, plus what the bridge keeps for itself: that commanded vector is what the
     CCRs carry and what the observer reconstructs from. Above the voltage circle the
     loops saturate and the winding integrates the clamped vector instead.
-    Returns the commanded alpha-beta voltage and the measured alpha-beta current.
+    Returns the commanded alpha-beta voltage and the alpha-beta sample the loops
+    and the observer share, taken before the step.
     """
     if not forced: self.lean = 0.0
     theta_c = theta_ctrl + self.lean
     phi = wrap(theta_c - self.theta_r)
     g = 1.0 - exp(-h * TWO_PI * max(1.0, cmd.curr_bw_hz))
+    # One ADC sample per sub-step, taken before the bridge acts, the same one for
+    # the loops and the observer: the loops chase the reference from where the
+    # sample says the current is, so its noise walks into the voltage and,
+    # through `If:Damp`, into the angle; the observer integrates it against the
+    # voltage of this step, as `step_table` does
+    s_a, s_b = rotate(self.id, self.iq, -self.theta_r)
+    if NOISE_A: s_a, s_b = s_a + self.rng.gauss(0.0, NOISE_A), s_b + self.rng.gauss(0.0, NOISE_A)
+    id_m, iq_m = rotate(s_a, s_b, theta_c)
     id_c, iq_c = rotate(self.id, self.iq, phi)
-    id_r, iq_r = rotate(id_c + (ref[0] - id_c) * g, iq_c + (ref[1] - iq_c) * g, -phi)
+    id_r, iq_r = rotate(id_c + (ref[0] - id_m) * g, iq_c + (ref[1] - iq_m) * g, -phi)
     we = self.we
     vd = self.rs * id_r + self.lq * (id_r - self.id) / h - we * self.lq * iq_r
     vq = (self.rs * iq_r + self.lq * (iq_r - self.iq) / h + we * self.lq * id_r
       + self.emf(self.wr))
     i_a, i_b = rotate(id_r, iq_r, -self.theta_r)
-    self.signs = phase_signs(i_a, i_b)
+    # The bridge loses along the current it conducts; the observer's dead-time
+    # compensation follows the signs of the sample it holds
     d_a, d_b = self.loss_ab(i_a, i_b, cmd)
+    self.signs = phase_signs(s_a, s_b)
     v_a, v_b = rotate(vd, vq, -self.theta_r)
     c_a, c_b = v_a + d_a, v_b + d_b
     vmax = self.vmax(cmd)
@@ -360,9 +380,9 @@ class Machine:
       self.id, self.iq = id_r, iq_r
       self.curr_hi = max(self.curr_hi, self.curr)
     self.vd_c, self.vq_c = rotate(c_a, c_b, theta_c)
-    self.v_ab, self.i_ab = (c_a, c_b), (i_a, i_b)
+    self.v_ab, self.i_ab = (c_a, c_b), (s_a, s_b)
     self._shaft(h)
-    if forced: self._damp(cmd, h, wrap(theta_ctrl - self.theta_r))
+    if forced: self._damp(cmd, h)
     return self.v_ab, self.i_ab
 
   def step_table(self, cmd:Command, h:float, theta_field:float, volts:float) -> tuple:
@@ -400,15 +420,21 @@ class Machine:
     self.wm = max(0.0, self.wm + h * (torque - self.tload(self.wm)) / self.inertia)
     self.theta_r = wrap(self.theta_r + h * self.we)
 
-  def _damp(self, cmd:Command, h:float, phi:float):
-    """`If:Damp`: lean the control frame against the swing velocity of the load
-    angle, high-passed so the standing slip of a ramp never enters the lean."""
-    if self.phi_prev is None: self.phi_prev = phi
-    slew = wrap(phi - self.phi_prev) / h
-    self.phi_prev = phi
-    gain = DAMP_GAIN_s * max(0.0, cmd.damp_pct) / 100.0
-    self.damp_dc += (slew - self.damp_dc) * h / (DAMP_HP_s + h)
-    self.lean = clamp(gain * (slew - self.damp_dc), -DAMP_MAX_rad, DAMP_MAX_rad)
+  def _damp(self, cmd:Command, h:float):
+    """`If:Damp` as `FOC_Step` runs it: the pendulum modulates the q voltage the
+    loops apply; high-passed, band-limited and differenced it is the swing
+    velocity, and the frame leans against it."""
+    vq = self.vq_c / DAMP_V_PER_COUNT
+    self.damp_ema += (vq - self.damp_ema) * h / DAMP_HP_s
+    hp = vq - self.damp_ema
+    self.damp_lp += (hp - self.damp_lp) * h / DAMP_LP_s
+    self.damp_t += h
+    if self.damp_t >= DAMP_VEL_s:
+      self.damp_t = 0.0
+      self.damp_vel = clamp(self.damp_lp - self.damp_hp, -DAMP_VEL_MAX, DAMP_VEL_MAX)
+      self.damp_hp = self.damp_lp
+    k = DAMP_RAD_PER_COUNT * max(0.0, cmd.damp_pct) / 100.0
+    self.lean = clamp(DAMP_SIGN * self.damp_vel * k, -DAMP_MAX_rad, DAMP_MAX_rad)
 
   def coast(self, dt:float):
     """Bridge off: the shaft carries on against its own load alone."""

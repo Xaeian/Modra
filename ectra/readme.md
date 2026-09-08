@@ -58,6 +58,8 @@ Napięcie potrzebne do uzyskania zadanej zmiany prądu wynika z modelu uzwojenia
 
 Obserwator otrzymuje te same sygnały co firmware: napięcie odtworzone ze sterowania mostkiem i zmierzony prąd.
 Nie zna rzeczywistej straty mostka; uwzględnia jedynie kompensację ustawioną w `Obs:DtComp`.
+`If:Damp` działa jak w `FOC_Step`: z napięcia osi q, przez ten sam łańcuch filtrów, bez dostępu do rzeczywistego kąta wirnika.
+Wektor wymuszony przechodzi przez referencje ze slew jak w firmware: przy catch przejmuje zmierzony prąd, przy powrocie z FOC obraca się razem z ramką.
 
 Parametry rzeczywistej maszyny są niezależne od nastaw `Motor:*`.
 Domyślnie model używa między innymi `KE_V_Hz = 0.55`, krzywej obciążenia `LOAD_CURVE`, bezwładności `INERTIA_kgm2` oraz zależnej od prądu straty mostka `LOSS_V`.

@@ -5,7 +5,7 @@
 // and `mount()` moves the persistent `_el` into it right after the swap.
 // The chart must not enter the new tree any earlier: building it reads layout
 // (`gridColumnCount` measures the grid), and a chart already pulled out of the
-// live page would shrink it at that flush, so every render jumped the scroll.
+// live page would shrink it at that flush and move the scroll position.
 
 const Monitor = {
 

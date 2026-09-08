@@ -115,20 +115,23 @@ class Detector:
 
   def _gate(self, cmd:Command, obs:Observer, hz:float, theta_render:float, out:Verdict):
     """Takeover arms only in `foc`; `if` rides the forced vector for good."""
-    speed_ok = abs(abs(obs.hz) - hz) < hz * max(0.0, cmd.lock_speed_pct) / 100.0
+    # Signed like `obs.c`: an estimate turning the other way is as far from the
+    # field as one standing still, and a collapsed flux is no evidence at all
+    speed_ok = abs(obs.hz - hz) < hz * max(0.0, cmd.lock_speed_pct) / 100.0
     locked_now = abs(obs.err) < obs.lock_sin
+    sync_now = locked_now and speed_ok and not obs.weak
     freq_ok = hz > cmd.fallback_low_hz + TAKEOVER_GAP_Hz
     if cmd.entry_hz and hz < cmd.entry_hz - 0.005: freq_ok = False
     enabled = cmd.mode == "foc" and cmd.lock_err_deg > 0
     held = self._hold_s > 0.0
     if held: self._hold_s = max(0.0, self._hold_s - DET_s)
-    if enabled and freq_ok and locked_now and speed_ok and not held:
+    if enabled and freq_ok and sync_now and not held:
       self.lock = min(LOCK_MAX, self.lock + 1)
     elif not enabled or not freq_ok or held:
       self.lock = 0
     else:
       self.lock = max(0, self.lock - LOCK_DRAIN)
-    if self.lock >= LOCK_FULL and abs(obs.err) < obs.lock_sin / 2.0:
+    if self.lock >= LOCK_FULL and sync_now and abs(obs.err) < obs.lock_sin / 2.0:
       self.delta = wrap(theta_render - obs.theta_hat)
       out.vec = "closed"
       out.delta = self.delta

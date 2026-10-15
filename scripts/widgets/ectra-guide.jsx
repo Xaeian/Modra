@@ -87,7 +87,7 @@ const EC_BIG = ["Feedback:RenderFreq"];
 // What each `Sync:ExitCause` means, worded to follow "przyczynę: <cause>, gdy".
 // The takeover page lists them and the live note names the one standing.
 const EC_EXIT = {
-  slip: "estymata prędkości przekroczyła częstotliwość rampy o więcej niż Foc:SlipMax "
+  slip: "częstotliwość obserwatora przekroczyła częstotliwość rampy o więcej niż Foc:SlipMax "
     + "albo spadła poniżej jej połowy",
   unlock: "obserwator utracił synchronizację kąta",
   weak: "zapadł się strumień",
@@ -95,77 +95,85 @@ const EC_EXIT = {
 };
 
 // Every `Fault:Code`, what tripped it and the first thing to check.
-// The faults page reads them in this order, and the live note quotes the one that is active.
+// Each is listed on its `stage` in this order, and the live note quotes the one that is active.
 const EC_FAULTS = [
   {
-    codes: ["peak"],
+    codes: ["peak"], stage: "bledy",
     text:
       "Licznik komparatora prądu Fault:PeakEvents osiągnął Thresh:PeakCount. "
       + "Za wysokie wartości tabeli albo za duże obciążenie.",
   },
   {
-    codes: ["imax"],
+    codes: ["imax"], stage: "bledy",
     text:
       "Amplituda prądu fazy (połowa MeasCtrl:PeakMax) ponad Thresh:CurrPeak. "
       + "Sprawdź tabelę i obciążenie.",
   },
   {
-    codes: ["irms"],
+    codes: ["irms"], stage: "bledy",
     text:
       "MeasCtrl:CurrAvg ponad Thresh:CurrRms. Sprawdź tabelę, obciążenie i Speed:DerateCurr.",
   },
   {
-    codes: ["stall"],
+    codes: ["stall"], stage: "bledy",
     text:
       "Wirnik nie ruszył na tabeli V/f. Sprawdź Drive:AlignTime i Volt:2Hz.",
   },
   {
-    codes: ["temp"],
-    text:
-      "Temperatura stopnia mocy ponad Thresh:Temp. Sprawdź chłodzenie.",
-  },
-  {
-    codes: ["hv-"],
-    text:
-      "Napięcie szyny DC poniżej Thresh:DcBusMin. Sprawdź zasilanie.",
-  },
-  {
-    codes: ["hv+"],
-    text:
-      "Napięcie szyny DC ponad Thresh:DcBusMax, a przy zwrocie energii już 30V niżej: "
-      + "za szybkie zwalnianie, utrata synchronizmu albo rozruch przy wirującym wentylatorze.",
-  },
-  {
-    codes: ["lv-", "lv+"],
-    text:
-      "Napięcie zasilacza pomocniczego (Meas:Flyback) poza zakresem od Thresh:FlybackMin "
-      + "do Thresh:FlybackMax.",
-  },
-  {
-    codes: ["sync"],
-    text:
-      "Utrata synchronizacji w pętli zamkniętej, brak przejęcia w czasie Foc:EntryTimeout "
-      + "albo faza bez prądu. Sync:ExitCause (etap 5) opisuje tylko utratę synchronizacji.",
-  },
-  {
-    codes: ["spin"],
+    codes: ["spin"], stage: "bledy",
     text:
       "Wirnik nie nadąża za wymuszonym polem (etap 3). Sprawdź, czy wał kręci się swobodnie "
       + "i we właściwą stronę (Motor:Invert).",
   },
   {
-    codes: ["feed"],
+    codes: ["sync"], stage: "bledy",
+    text:
+      "Utrata synchronizacji w pętli zamkniętej, brak przejęcia w czasie Foc:EntryTimeout "
+      + "albo faza bez prądu. Sync:ExitCause (etap 5) opisuje tylko utratę synchronizacji.",
+  },
+  {
+    codes: ["hv-"], stage: "naped",
+    text:
+      "Napięcie szyny DC poniżej Thresh:DcBusMin. Sprawdź zasilanie.",
+  },
+  {
+    codes: ["hv+"], stage: "naped",
+    text:
+      "Napięcie szyny DC ponad Thresh:DcBusMax, a przy zwrocie energii już 30V niżej: "
+      + "za szybkie zwalnianie, utrata synchronizmu albo rozruch przy wirującym wentylatorze.",
+  },
+  {
+    codes: ["lv-", "lv+"], stage: "naped",
+    text:
+      "Napięcie zasilacza pomocniczego (Meas:Flyback) poza zakresem od Thresh:FlybackMin "
+      + "do Thresh:FlybackMax.",
+  },
+  {
+    codes: ["temp"], stage: "naped",
+    text:
+      "Temperatura stopnia mocy ponad Thresh:Temp. Sprawdź chłodzenie.",
+  },
+  {
+    codes: ["feed"], stage: "naped",
     text:
       "Tylko wpis w dzienniku: przy starcie napęd odrzucił pomiar prądu "
       + "i pracuje w V/f (etap 1).",
   },
   {
-    codes: ["link"],
+    codes: ["link"], stage: "naped",
     text:
       "Utrata komunikacji wewnętrznej napędu. "
       + "Gdy się powtarza (Counter:Link), wskazuje na problem sprzętowy.",
   },
 ];
+
+// The faults one stage lists, a paragraph each
+function ecFaultLines(stage) {
+  return EC_FAULTS
+    .filter(f => f.stage === stage)
+    .map(f => "\n" + f.codes.join(" i ") + ": " + f.text)
+    .join("");
+}
 
 // `Drive:Stage` values that say why the table drives the bridge in `if` or `foc`.
 // `off` is missing: it answers `Drive:Mode = vf`, which is no news.
@@ -312,9 +320,9 @@ const EC_STAGES = [
       + "jedno ustawienie lub połączenie naraz i po każdej zmianie wykonaj krótki rozruch."
       + "\n"
       + "Sprawdź Sense:ShuntRes i Sense:ShuntGain. Błędna skala nie wywoła błędu, ale "
-      + "zafałszuje tabelę Curr, progi prądu i wszystkie późniejsze pomiary. Rejestry "
-      + "prądowe podają skuteczny prąd fazowy, czyli wartość, którą pokazują cęgi na "
-      + "przewodzie fazowym. Niewielką różnicę skoryguj Trim:CurrScale."
+      + "zafałszuje tabelę Curr, progi prądu i wszystkie późniejsze pomiary. MeasCtrl:CurrAvg "
+      + "i Meas:CurrAvg podają skuteczny prąd fazowy, czyli wartość, którą pokazują cęgi "
+      + "na przewodzie fazowym. Niewielką różnicę skoryguj Trim:CurrScale."
       + "\n"
       + "Obs:DtMeas to czas martwy mostka zmierzony podczas ustawiania wirnika, czyli przy "
       + "starcie z If:CatchFreq = 0 i Drive:AlignTime nie krótszym niż około 210ms. Na "
@@ -354,9 +362,10 @@ const EC_STAGES = [
       + "irms albo stall. Mapa, czyli domyślne nastawy wariantu 1.5kW, ma Volt:2Hz = 19.4V, "
       + "a przy 25V każdy start na stanowisku kończył się błędem irms."
       + "\n"
-      + "Startuj na stojącym wirniku. Start na obracający się wentylator pompuje szynę DC "
-      + "i kończy się błędem hv+. Brake:Coast jest również najkrótszą przerwą przed ponownym "
-      + "startem, więc nie powinien być krótszy niż wybieg wentylatora."
+      + "W trybie vf startuj na stojącym wirniku: start V/f na obracający się wentylator pompuje "
+      + "szynę DC i kończy się błędem hv+. Start przez catch w if i foc opisuje etap 3. "
+      + "Brake:Coast jest również najkrótszą przerwą przed ponownym startem, więc nie powinien "
+      + "być krótszy niż wybieg wentylatora."
       + "\n"
       + "Zakończ etap, gdy silnik pewnie rusza, a prąd w zakresie V/f pozostaje niski "
       + "i powtarzalny.",
@@ -396,7 +405,7 @@ const EC_STAGES = [
       + "stan B (etap 5)."
       + "\n"
       + "Błąd spin oznacza wirnik, który nie nadąża za polem. Od 15Hz napęd porównuje "
-      + "estymatę prędkości z połową częstotliwości rampy, także gdy wirnik obraca się wstecz. "
+      + "częstotliwość obserwatora z połową częstotliwości rampy, także przy obrotach wstecz. "
       + "Gdy Curr:40Hz nie jest mniejsze niż Curr:15Hz, sprawdza również, czy moc pozorna rośnie "
       + "między tymi częstotliwościami. Mapa 1.5kW ma Curr:15Hz nieco powyżej Curr:40Hz, więc "
       + "kontrola mocy jest tam wyłączona. Po zmianie tej części tabeli wykonaj pełny rozruch "
@@ -434,10 +443,10 @@ const EC_STAGES = [
       + "nominalnych 2.5µs, dlatego mapa ma 80% dla startu przez catch. Przy starcie "
       + "z ustawieniem wirnika wpisz 100%."
       + "\n"
-      + "Nastawy obserwatora oceniaj próbami przejęcia, nie odczytami z I/f. Słabsza "
-      + "kompensacja obniża Sync:ErrPeak w I/f, choć w pętli zamkniętej kompensacja 0 wypadała "
-      + "gorzej niż 100%. Różnice Sync:ErrPeak między nastawami bywały "
-      + "mniejsze niż między dwoma pomiarami tych samych nastaw."
+      + "Nastawy obserwatora oceniaj próbami przejęcia po przełączeniu Drive:Mode na foc "
+      + "(etap 5), nie odczytami z I/f. Słabsza kompensacja obniża Sync:ErrPeak w I/f, choć "
+      + "w pętli zamkniętej kompensacja 0 wypadała gorzej niż 100%. Różnice Sync:ErrPeak "
+      + "między nastawami bywały mniejsze niż między dwoma pomiarami tych samych nastaw."
       + "\n"
       + "Stały Obs:Bias, którego nie usuwa rozsądna kompensacja, wskazuje błędne Motor:Ke, "
       + "Sense:PhaseMap albo skalę prądu. Nie poszerzaj warunków przejęcia, aby ukryć błędną "
@@ -464,11 +473,12 @@ const EC_STAGES = [
       + "wartość zadana jest niższa. Do celu napęd przechodzi dopiero w pętli zamkniętej."
       + "\n"
       + "Sync:Lock zbiera potwierdzenia co 10ms: zgodna próbka dodaje 1, a niezgodna odejmuje "
-      + "4. Próbka jest zgodna, gdy chwilowy błąd kąta mieści się w Foc:LockErr, a prędkość "
-      + "obserwatora odbiega od częstotliwości rampy o mniej niż Foc:LockSpeed procent. "
-      + "Po osiągnięciu Sync:Lock = " + EC_LOCK_FULL + " przejęcie następuje, gdy błąd kąta "
-      + "spadnie poniżej połowy Foc:LockErr, najwcześniej po 400ms. Oceniaj je według "
-      + "Sync:ErrPeak, nie Sync:Err: średnia może wyglądać poprawnie mimo chwilowych skoków."
+      + "4. Próbka jest zgodna, gdy chwilowy błąd kąta mieści się w Foc:LockErr, a różnica "
+      + "częstotliwości obserwatora i rampy jest mniejsza niż Foc:LockSpeed procent "
+      + "częstotliwości rampy. Po osiągnięciu Sync:Lock = " + EC_LOCK_FULL + " przejęcie "
+      + "następuje, gdy błąd kąta spadnie poniżej połowy Foc:LockErr, najwcześniej po 400ms. "
+      + "Oceniaj je według Sync:ErrPeak, nie Sync:Err: średnia może wyglądać poprawnie mimo "
+      + "chwilowych skoków."
       + "\n"
       + "Foc:LockErr ustaw około 8° powyżej Sync:ErrPeak zmierzonego w punkcie przejęcia; mapa "
       + "1.5kW ma 60°. Foc:LockSpeed pozostaw na 40%. Jeżeli Sync:Lock nie dochodzi do końca, "
@@ -586,19 +596,30 @@ const EC_STAGES = [
   },
 
   {
-    id: "bledy", label: "8 Błędy",
-    find: "Fault:|Thresh:|Bus:Max",
+    id: "bledy", label: "8 Błędy silnika",
+    find: "Fault:|Thresh:Curr|Thresh:Peak|Thresh:Stall",
     mute: EC_MUTE,
-    plot: ["Fault:Code", "Fault:PeakEvents", "MeasCtrl:DcBus", "Bus:Max"], big: [],
+    plot: ["Fault:Code", "Fault:PeakEvents"], big: [],
     text:
-      "Cel: rozpoznać błąd z Fault:Code. Fault:Freq, Fault:Curr, Fault:Vdc i Fault:Temp "
+      "Cel: rozpoznać błąd prądu albo wirnika z Fault:Code. Fault:Freq i Fault:Curr "
       + "przechowują wartości z chwili błędu."
-      + EC_FAULTS.map(f => "\n" + f.codes.join(" i ") + ": " + f.text).join("")
+      + ecFaultLines("bledy")
       + "\n"
-      + "Fault:Clear kasuje błąd; jeśli przyczyna trwa, błąd wróci. Napęd sam ponawia start "
-      + "najwyżej Fault:RetryCount razy."
+      + "Nie podnoś progów, aby błąd zniknął. Kasowanie i ponawianie startu opisuje etap 9.",
+  },
+
+  {
+    id: "naped", label: "9 Błędy napędu",
+    find: "Fault:|Thresh:DcBus|Thresh:Ripple|Thresh:Flyback|Thresh:Temp|Bus:Max|Meas:Flyback",
+    mute: EC_MUTE,
+    plot: ["Fault:Code", "MeasCtrl:DcBus", "Bus:Max", "Meas:Flyback"], big: [],
+    text:
+      "Cel: rozpoznać błąd zasilania, temperatury albo sprzętu napędu. Fault:Vdc i Fault:Temp "
+      + "przechowują wartości z chwili błędu."
+      + ecFaultLines("naped")
       + "\n"
-      + "Nie podnoś progów, aby błąd zniknął.",
+      + "Fault:Clear kasuje każdy błąd, także silnika; jeśli przyczyna trwa, błąd wróci. "
+      + "Napęd sam ponawia start najwyżej Fault:RetryCount razy.",
   },
 ];
 

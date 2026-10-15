@@ -3,7 +3,7 @@
 ## `1.3.5` Status, Faults
 
 - Updated Ectra model; guide shows what holds the drive back now
-- Faults stage: each `Fault:Code` with the first thing to check
+- Motor and drive faults stages: each `Fault:Code` with the first thing to check
 
 ## `1.3.4` Tooltip
 

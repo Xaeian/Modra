@@ -2,45 +2,46 @@
 
 // The four curve tables, as curves.
 //
-// `Volt:40Hz` is one number in the grid and one point on a shape; the grid can
-// show the number and never the shape, which is the only reason this panel
-// exists. Drag a dot, and the write lands when the mouse comes up.
+// `Volt:40Hz` is one number in the grid and one point on a shape;
+// the grid can show the number and never the shape, which is the only reason this panel exists.
+// Drag a dot, and the write lands when the mouse comes up.
 //
 // The four are not interchangeable and the editor does not pretend they are.
-// `Volt` and `Curr` are QUANTITIES: below their first anchor they fall linearly
-// to zero, because a machine at standstill needs no volts and no amps, and a
-// live reading rides on each of them. `Rise` and `Fall` are RATES on a coarser
-// grid: below their first anchor they hold it flat, because a tempo faded
-// toward zero would make leaving standstill take a logarithm, and nothing
-// reports a tempo back, so they carry no working point.
+// `Volt` and `Curr` are QUANTITIES, and a live reading rides on each of them.
+// `Rise` and `Fall` are RATES on a coarser grid, and nothing reports a tempo back,
+// so they carry no working point.
+// All four hold their first anchor from standstill up to it:
+// a field faded toward zero would leave the rotor's start position to chance,
+// and a tempo faded toward zero would make leaving standstill take a logarithm.
 //
-// The guide lives in `ectra-guide.jsx`. Nothing here knows about stages: a
-// table is a table whichever step of the procedure is open.
+// The guide is `Ectra`.
+// Nothing here knows about stages: a table is a table whichever step of the procedure is open.
 
 const EC_TABLES = ["Volt", "Curr", "Rise", "Fall"];
 const EC_TAB_KEY = "modra.ectra.tab";
 const EC_HIST_MAX = 20;
 
-// How much of the x axis is the anchor grid rather than the frequency. A plain
-// log axis crowds the top: this table gives its first three anchors a third of
-// the width and its last fourteen barely more. Ordinal spacing spreads them
-// evenly but stops being a frequency axis, so the working point would no longer
-// sit where the drive is. 0 is pure log, 1 is pure grid.
+// How much of the x axis is the anchor grid rather than the frequency.
+// A plain log axis crowds the top:
+// this table gives its first three anchors a third of the width and its last fourteen barely more.
+// Ordinal spacing spreads them evenly but stops being a frequency axis,
+// so the working point would no longer sit where the drive is.
+// 0 is pure log, 1 is pure grid.
 const EC_X_EVEN = 0.65;
 
-// The live reading that rides on a table, where one exists. Measured, not
-// commanded: `Feedback:Volt` is the phase voltage the modulation actually put
-// out and `MeasCtrl:CurrAvg` is the current three phases actually drew, so the
-// dot sits where the machine is rather than where it was told to be. Comparing
-// the table against its own command would only ever prove arithmetic.
+// The live reading that rides on a table, where one exists.
+// Measured, not commanded: `Feedback:Volt` is the phase voltage the modulation actually put out
+// and `MeasCtrl:CurrAvg` is the current three phases actually drew,
+// so the dot sits where the machine is rather than where it was told to be.
+// Comparing the table against its own command would only ever prove arithmetic.
 const EC_LIVE = { Volt: "Feedback:Volt", Curr: "MeasCtrl:CurrAvg" };
 
-const ecNum = (name) => {
+function ecNum(name) {
   const v = S.values[name];
   return typeof v === "number" ? v : null;
-};
+}
 
-// Clamp to the register's bounds and snap to its quantum: what a write can hold.
+// Clamp to the register's bounds and snap to its quantum: what a write can hold
 const ecQuant = (reg, v) =>
   Reg.snap(Math.max(Reg.min(reg), Math.min(Reg.max(reg), v)), Reg.step(reg));
 
@@ -79,9 +80,9 @@ const EctraTables = {
     if(this._ptsTab !== this._tab || this._ptsSrc !== S.regs) {
       this._ptsTab = this._tab;
       this._ptsSrc = S.regs;
+      const prefix = this._tab + ":";
       this._pts = S.regs
-        .map(r => ({ r, m: r.name.startsWith(this._tab + ":")
-          && /:(\d+(?:\.\d+)?)Hz$/.exec(r.name) }))
+        .map(r => ({ r, m: r.name.startsWith(prefix) && /:(\d+(?:\.\d+)?)Hz$/.exec(r.name) }))
         .filter(x => x.m)
         .map(x => ({ name: x.r.name, reg: x.r, hz: +x.m[1] }))
         .sort((a, b) => a.hz - b.hz);
@@ -94,21 +95,23 @@ const EctraTables = {
     this._tab = t;
     this._preview = null;
     this._drag = -1;
-    try { localStorage.setItem(EC_TAB_KEY, t); } catch(e) { /* per-session */ }
+    try { localStorage.setItem(EC_TAB_KEY, t); }
+    catch(e) { /* per-session */ }
     render();
   },
 
-  // What a point stands at: the staged edit where there is one, the device value
-  // otherwise. The same precedence a grid row shows, so a pending change is a
-  // curve you can see rather than a number hidden in another panel.
-  _at(name) { return name in S.dirty ? S.dirty[name] : ecNum(name); },
+  // What a point stands at: the staged edit where there is one, the device value otherwise.
+  // The same precedence a grid row shows,
+  // so a pending change is a curve you can see rather than a number hidden in another panel.
+  _at(name) { return Object.hasOwn(S.dirty, name) ? S.dirty[name] : ecNum(name); },
 
   _shown(pts) { return pts.map(p => this._at(p.name)); },
 
-  // What the device reports, staging ignored. Drawn under the editable curve so
-  // a pending edit is a distance you can see rather than a claim: with auto-send
-  // off the two part company the moment you move a dot, and the gap between them
-  // is exactly what `Send` is about to close.
+  // What the device reports, staging ignored.
+  // Drawn under the editable curve,
+  // so a pending edit is a distance you can see rather than a claim:
+  // with auto-send off the two part company the moment you move a dot,
+  // and the gap between them is exactly what `Send` is about to close.
   _device(pts) { return pts.map(p => ecNum(p.name)); },
 
   toggleGhost() {
@@ -116,13 +119,14 @@ const EctraTables = {
     render();
   },
 
-  // The one path a curve edit takes, so dragging a dot behaves like typing in a
-  // grid row: stage it, and let `auto-send` decide whether it also goes out now.
-  // With auto-send off the change waits with every other pending edit and
-  // leaves on the next Send, which is the whole point of having the switch.
+  // The one path a curve edit takes,
+  // so dragging a dot behaves like typing in a grid row:
+  // stage it, and let `auto-send` decide whether it also goes out now.
+  // With auto-send off the change waits with every other pending edit and leaves on the next Send,
+  // which is the whole point of having the switch.
   //
-  // Returns false only when a send was tried and refused, so the caller knows
-  // whether the edit is really standing.
+  // Returns `false` only when a send was tried and refused,
+  // so the caller knows whether the edit is really standing.
   async _apply(patch) {
     for(const [name, val] of Object.entries(patch)) {
       const reg = Reg.byName(name);
@@ -133,7 +137,7 @@ const EctraTables = {
     render();
     try {
       if(!await writeNow(patch)) return false;
-      // The device now holds these, so they are no longer pending.
+      // The device now holds these, so they are no longer pending
       for(const name of Object.keys(patch)) delete S.dirty[name];
       return true;
     }
@@ -143,7 +147,7 @@ const EctraTables = {
     }
   },
 
-  // One batch per gesture; its pre-image arms undo only once the edit stands.
+  // One batch per gesture; its pre-image arms undo only once the edit stands
   async _commit(pts, from, target) {
     const patch = {}, prev = {};
     pts.forEach((p, i) => {
@@ -163,10 +167,10 @@ const EctraTables = {
     render();
   },
 
-  // One gentle pass toward the neighbours' chord, weighted by the real Hz
-  // spacing of the non-uniform grid. Endpoints never move - they anchor
-  // standstill and top-end behaviour on the live drive - and each point stays
-  // inside the span of its neighbours, so a pass cannot mint a new extreme.
+  // One gentle pass toward the neighbours' chord,
+  // weighted by the real Hz spacing of the non-uniform grid.
+  // Endpoints never move - they anchor standstill and top-end behaviour on the live drive -
+  // and each point stays inside the span of its neighbours, so a pass cannot mint a new extreme.
   // Repeated clicks smooth further, each one written and undoable.
   smooth() {
     const pts = this.pts();
@@ -184,9 +188,9 @@ const EctraTables = {
   async _step(fromStack, toStack) {
     const patch = fromStack.pop();
     if(!patch || this._busy) return;
-    // The inverse is what is standing now, staged or written alike: undoing a
-    // pending edit has to put back what the curve showed, not what the device
-    // happens to still hold.
+    // The inverse is what is standing now, staged or written alike:
+    // undoing a pending edit has to put back what the curve showed,
+    // not what the device happens to still hold.
     const inverse = {};
     for(const n of Object.keys(patch)) inverse[n] = this._at(n);
     if(await this._apply(patch)) toStack.push(inverse);
@@ -194,10 +198,10 @@ const EctraTables = {
     render();
   },
 
-  // One persistent canvas reparented into each render's slot - the same trick
-  // Monitor uses. A fresh canvas per render is blank until painted, and with
-  // the ref firing on a detached 0x0 node that blank frame flickers twice a
-  // second. The old bitmap stays on screen until the deferred repaint lands.
+  // One persistent canvas reparented into each render's slot - the same trick `Monitor` uses.
+  // A fresh canvas per render is blank until painted,
+  // and with the ref firing on a detached 0x0 node that blank frame flickers twice a second.
+  // The old bitmap stays on screen until the deferred repaint lands.
   _slot(el) {
     if(!el) return;
     if(!this._cv) {
@@ -214,7 +218,7 @@ const EctraTables = {
   },
 
   _cancel() {
-    // Leaving mid-drag discards the gesture - nothing was written yet.
+    // Leaving mid-drag discards the gesture - nothing was written yet
     this._drag = -1;
     this._preview = null;
     if(this._cv) this._cv.style.cursor = "crosshair";
@@ -280,7 +284,7 @@ const EctraTables = {
     const el = this._cv;
     if(!el) return;
     const rect = el.getBoundingClientRect();
-    if(!rect.width) return;  // still detached: keep the last frame
+    if(!rect.width) return; // still detached: keep the last frame
     const pts = this.pts();
     if(!pts.length) return;
     const ctx = el.getContext("2d");
@@ -307,11 +311,11 @@ const EctraTables = {
 
     // The x axis is the table's own grid blended with frequency.
     //
-    // Pure log still crowds the top: this table gives its first three anchors a
-    // third of the width and the last fourteen barely more. Pure ordinal spacing
-    // spreads every anchor equally but stops being a frequency axis, so the
-    // working point would no longer sit where the drive actually is. Mixing them
-    // keeps both: anchors you can hit, on an axis that still reads as Hz.
+    // Pure log still crowds the top: this table gives its first three anchors a third of the width
+    // and the last fourteen barely more.
+    // Pure ordinal spacing spreads every anchor equally but stops being a frequency axis,
+    // so the working point would no longer sit where the drive actually is.
+    // Mixing them keeps both: anchors you can hit, on an axis that still reads as Hz.
     const x0 = Math.log(pts[0].hz), x1 = Math.log(pts.at(-1).hz);
     const pw = W - P.l - P.r, ph = H - P.t - P.b;
     const last = pts.length - 1;
@@ -328,7 +332,7 @@ const EctraTables = {
     const toX = (hz) => P.l + pw * (EC_X_EVEN * ord(hz)
       + (1 - EC_X_EVEN) * (Math.log(hz) - x0) / (x1 - x0));
 
-    // Y always fits everything drawn, live point included.
+    // Y always fits everything drawn, live point included
     let lo = Infinity, hi = -Infinity;
     for(const v of [...cur, ...(this._ghost ? dev : []), liveY]) {
       if(v == null) continue;
@@ -341,6 +345,13 @@ const EctraTables = {
     const toY = (v) => H - P.b - (v - yMin) / (yMax - yMin) * ph;
     const fromY = (py) => yMin + (H - P.b - py) / ph * (yMax - yMin);
     this._geo = { pts, cur, toX, toY, fromY };
+    // Grid lines and the working point's marker: one straight stroke each
+    const segment = (ax, ay, bx, by) => {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    };
 
     ctx.clearRect(0, 0, W, H);
     ctx.lineWidth = 1;
@@ -353,19 +364,18 @@ const EctraTables = {
     const dec = gy >= 1 ? 0 : gy >= 0.1 ? 1 : 2;
     ctx.textAlign = "right";
     for(let v = Math.ceil(yMin / gy) * gy; v <= yMax + gy / 1e6; v += gy) {
-      ctx.beginPath(); ctx.moveTo(P.l, toY(v)); ctx.lineTo(W - P.r, toY(v)); ctx.stroke();
+      segment(P.l, toY(v), W - P.r, toY(v));
       ctx.fillText(v.toFixed(dec), P.l - 5, toY(v) + 3);
     }
-    // Vertical grid on the anchors themselves - they are the axis that matters.
+    // Vertical grid on the anchors themselves - they are the axis that matters
     ctx.textAlign = "center";
     pts.forEach((p, i) => {
-      ctx.beginPath(); ctx.moveTo(toX(p.hz), P.t); ctx.lineTo(toX(p.hz), H - P.b); ctx.stroke();
+      segment(toX(p.hz), P.t, toX(p.hz), H - P.b);
       if(i % 2 === 0) ctx.fillText(String(p.hz), toX(p.hz), H - 5);
     });
 
     // One polyline, twice: the device underneath and the editable one on top.
-    // Identical curves hide one another, so this costs nothing until an edit is
-    // actually standing.
+    // Identical curves hide one another, so this costs nothing until an edit is actually standing.
     const line = (vals, colour, width, dash) => {
       ctx.strokeStyle = colour;
       ctx.lineWidth = width;
@@ -385,12 +395,12 @@ const EctraTables = {
     }
     line(cur, C.edit, 2, []);
 
-    // The working point: where the drive sits on this table right now.
+    // The working point: where the drive sits on this table right now
     if(liveX != null && liveX >= pts[0].hz && liveX <= pts.at(-1).hz) {
       ctx.strokeStyle = C.live;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
-      ctx.beginPath(); ctx.moveTo(toX(liveX), P.t); ctx.lineTo(toX(liveX), H - P.b); ctx.stroke();
+      segment(toX(liveX), P.t, toX(liveX), H - P.b);
       ctx.setLineDash([]);
       if(liveY != null) {
         ctx.fillStyle = C.live;
@@ -414,9 +424,9 @@ const EctraTables = {
   View() {
     const busy = this._busy;
     const editable = S.connected && !this.pts().some(p => S.values[p.name] == null);
-    // Undo holds values read from ONE drive. Reconnecting elsewhere would let
-    // the arrow write device A's curve into device B, so the history ends with
-    // the connection it came from.
+    // Undo holds values read from ONE drive.
+    // Reconnecting elsewhere would let the arrow write device A's curve into device B,
+    // so the history ends with the connection it came from.
     const bound = S.port + "/" + S.addr;
     if(this._bound !== bound) {
       this._bound = bound;
@@ -431,21 +441,31 @@ const EctraTables = {
         <div class="wg-row ec-tabs">
           {EC_TABLES.map(t =>
             <button class={cls("ec-tab", t === this._tab && "on")}
-              onClick={() => EctraTables.setTab(t)}>{t}</button>)}
+              onClick={() => EctraTables.setTab(t)}>
+              {t}
+            </button>)}
           <span class="wg-gap" />
           <button class="ec-tab" disabled={!this._hist.length || busy}
             onClick={() => EctraTables._step(EctraTables._hist, EctraTables._redo)}
-            title="Cofnij ostatni zapis">↶</button>
+            title="Cofnij ostatni zapis">
+            ↶
+          </button>
           <button class="ec-tab" disabled={!this._redo.length || busy}
             onClick={() => EctraTables._step(EctraTables._redo, EctraTables._hist)}
-            title="Ponów">↷</button>
+            title="Ponów">
+            ↷
+          </button>
           <button class="ec-tab" disabled={!editable || busy}
             onClick={() => EctraTables.smooth()}
             title={"Punkty skrajne zostają; każdy wewnętrzny w połowie drogi do "
-              + "cięciwy sąsiadów - bez nowych ekstremów"}>Wygładź</button>
+              + "cięciwy sąsiadów - bez nowych ekstremów"}>
+            Wygładź
+          </button>
           <button class={cls("ec-tab", this._ghost && "on")}
             onClick={() => EctraTables.toggleGhost()}
-            title="Pokaż pod spodem krzywą, która stoi na urządzeniu">urządzenie</button>
+            title="Pokaż pod spodem krzywą, która stoi na urządzeniu">
+            urządzenie
+          </button>
           <span class="ec-hover" ref={el => EctraTables._hoverEl = el} />
         </div>
         <div class="ec-curve">
@@ -455,9 +475,11 @@ const EctraTables = {
             {this._ghost && <span><em class="lg-ghost" /> na urządzeniu</span>}
             {EC_LIVE[this._tab] && <span><em class="lg-live" /> punkt pracy</span>}
             <span class="wg-gap" />
-            <span>{S.serial?.autosend
-              ? "ciągnij kropkę; zapis po puszczeniu"
-              : "ciągnij kropkę; zmiana czeka na Send"}</span>
+            <span>
+              {S.serial?.autosend
+                ? "ciągnij kropkę; zapis po puszczeniu"
+                : "ciągnij kropkę; zmiana czeka na Send"}
+            </span>
           </div>
         </div>
       </div>
@@ -470,6 +492,7 @@ const EctraTables = {
 try {
   const saved = localStorage.getItem(EC_TAB_KEY);
   if(EC_TABLES.includes(saved)) EctraTables._tab = saved;
-} catch(e) { /* the first table stands */ }
+}
+catch(e) { /* the first table stands */ }
 
 Widgets.register(EctraTables);

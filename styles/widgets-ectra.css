@@ -31,6 +31,16 @@
 .ec-text p { margin: 0 0 6px; }
 .ec-text p:last-child { margin-bottom: 0; }
 .ec-text b { color: var(--text); font-weight: 600; }
+/* What holds the drive back right now. Between the tabs and the prose, so it never scrolls
+   away, and only there while something does. */
+.ec-now {
+  flex: none; margin: 0 10px 8px; padding: 5px 8px;
+  font-size: 11px; line-height: 1.5; color: var(--text);
+  background: var(--bg-alt); border-left: 2px solid var(--accent);
+}
+.ec-now p { margin: 0 0 4px; }
+.ec-now p:last-child { margin-bottom: 0; }
+.ec-now b { font-weight: 600; }
 /* A name that leads somewhere: hover marks its row, click goes to it. */
 .ec-ref { cursor: pointer; border-bottom: 1px dotted var(--border); }
 .ec-ref:hover { border-bottom-color: var(--accent); color: var(--accent); }

@@ -3,11 +3,11 @@ One tick of intent, in physical units.
 
 The leaf of the package: everything downstream reads a `Command`
 and none of it knows what a register is called.
-`binding.py` is what fills one in.
+`Binding` is what fills one in.
 
 Machine constants here are what the OPERATOR entered.
 The loops and the observer believe them;
-the shaft does not, because it carries its own truth in `machine.py`.
+the shaft does not, because it carries its own truth in `Machine`.
 That gap is what makes the nameplate worth measuring.
 """
 
@@ -33,9 +33,7 @@ class Command:
   entry_timeout_s: float = 0.0              # Foc:EntryTimeout
   lock_err_deg: float = 22.0                # Foc:LockErr, 0 inhibits takeover
   lock_speed_pct: float = 25.0              # Foc:LockSpeed
-  entry_glide_ms: float = 400.0             # Foc:EntryGlide
-  fallback_low_hz: float = 2.0              # If:FallbackFreq
-  fallback_high_hz: float = 3.0             # If:FallbackHigh
+  slip_max_hz: float = 3.0                  # Foc:SlipMax
   align_ms: float = 700.0                   # Drive:AlignTime
   init_hz: float = 0.5                      # Drive:InitFreq
   speed_min_hz: float = 0.0                 # Speed:Min, also the stop cutoff
@@ -55,7 +53,6 @@ class Command:
   pll_bw_hz: float = 30.0                   # Pll:Bw
   pll_damp: float = 0.71                    # Pll:Damp
   obs_hp_hz: float = 1.6                    # Obs:HpHz
-  retry_hold_s: float = 0.0                 # Foc:RetryHold
   iq_max_a: float = 10.0                    # Foc:IqMax
   curr_bw_hz: float = 300.0                 # Foc:CurrBw
   mod_ceil_pct: float = 78.0                # Foc:ModCeil
@@ -74,7 +71,6 @@ class Command:
   derate_temp_c: float = 0.0                # Speed:DerateTemp
   derate_curr_a: float = 0.0                # Speed:DerateCurr
   derate_hz: float = 0.0                    # Speed:DerateLimit
-  regen_band_v: float = 0.0                 # Brake:RegenBand
   freeze_low_v: float = 0.0                 # Freeze:VdcLow
   freeze_high_v: float = 0.0                # Freeze:VdcHigh
   freeze_hyst_v: float = 5.0                # Freeze:VdcHyst

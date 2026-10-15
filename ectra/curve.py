@@ -1,24 +1,22 @@
 """
-Table lookup, the way `shared.c` does it.
+Table lookup, the way the drive looks its tables up.
 
-A leaf: the anchor tables and the ramp rates are both read through `interp`, and
-they part ways only below the first anchor.
+A leaf: the anchor tables and the ramp rates are both read through `interp`.
 """
 
 #-------------------------------------------------------------------------------------------- Curve
 
-def interp(anchors:list, x:float, to_zero:bool=False) -> float|None:
+def interp(anchors:list, x:float) -> float|None:
   """
-  Piecewise-linear lookup on a sorted `(x, y)` list, flat past the last anchor.
+  Piecewise-linear lookup on a sorted `(x, y)` list, flat past both ends.
 
-  Below the FIRST anchor the two table families part ways. A quantity falls
-  linearly to zero, because a machine at standstill needs no volts and no amps.
-  A rate holds its first anchor flat, because a tempo faded toward zero would
-  make leaving standstill take a logarithm.
+  Below the first anchor volts and amps hold it, standstill included:
+  the rotor is held and pulled off with the full field,
+  and a weaker one would sink under the bridge's dead-time loss.
   """
   if not anchors: return None
   x0, y0 = anchors[0]
-  if x <= x0: return y0 * x / x0 if to_zero and x0 else y0
+  if x <= x0: return y0
   if x >= anchors[-1][0]: return anchors[-1][1]
   for (xa, ya), (xb, yb) in zip(anchors, anchors[1:]):
     if xa <= x <= xb: return ya + (yb - ya) * (x - xa) / (xb - xa)

@@ -121,6 +121,14 @@ NOISE_A = 0.0
 # SVPWM reaches a given phase voltage at less modulation than a sine.
 PWM_Hz = 10000.0
 SHAPE_K = (1.0, 0.8660254, 0.873) # sine | svpwm | trapezoid
+# The vector core renders min-max SVPWM whatever `Pwm:Shape` says, its ceiling counts half the bus,
+# and the bus holds a sine up to the circle inscribed in the bridge hexagon: 2/√3 of that half.
+SVPWM_LINEAR = 1.1547005
+# Two legs tie at the hexagon vertex with the shortest low-side windows,
+# so the vector stays out of the short-pulse band there:
+# `2 × Pwm:Deadtime + Pwm:MinPulse` plus a margin, against a quarter of the carrier.
+TIMER_Hz = 64e6
+CLAMP_MARGIN_s = 16 / TIMER_Hz
 # Dead-time steals `td/T` of the bus from every phase along the sign of ITS OWN current:
 # a square wave in phase with the current, nothing sinusoidal about it.
 # That is what puts six steps per electrical turn into everything downstream.
@@ -315,19 +323,33 @@ class Machine:
     """
     return max(0.0, interp(cmd.volt, hz) or 0.0)
 
-  def modulate(self, cmd:Command, f:float, ceiling:float) -> bool:
-    """The applied vector against what the bus can render."""
-    shape = SHAPE_K[int(clamp(cmd.shape, 0, len(SHAPE_K) - 1))]
+  def modulate(self, cmd:Command, f:float, ceiling:float, vector:bool) -> bool:
+    """
+    The applied vector against what the bus can render.
+    The vector core speaks half the bus; the table reads through `Pwm:Shape`.
+    """
+    shape = 1.0 if vector else SHAPE_K[int(clamp(cmd.shape, 0, len(SHAPE_K) - 1))]
     per_volt = V_PEAK * shape * 2.0 / max(1.0, self.vdc) * 100.0
     mod = 0.0 if f <= 0.0 else self.volt * per_volt
     self.mod_index = min(ceiling, mod)
     if mod > ceiling: self.volt = self.mod_index / per_volt
     return mod >= ceiling
 
+  def ceiling(self, cmd:Command) -> float:
+    """
+    The vector's reach as a share of half the bus:
+    `Foc:ModCeil`, the SVPWM linear limit and, with the short-pulse clamp on,
+    the band the hexagon vertex has to stay out of.
+    """
+    ceil = min(cmd.mod_ceil_pct / 100.0, SVPWM_LINEAR)
+    if cmd.min_pulse:
+      band = 2.0 * max(0.0, cmd.deadtime_ns) * 1e-9 + cmd.min_pulse / TIMER_Hz + CLAMP_MARGIN_s
+      ceil = min(ceil, max(0.0, (1.0 - band * 4.0 * PWM_Hz) * 4.0 / 3.0))
+    return ceil
+
   def vmax(self, cmd:Command) -> float:
-    """Phase RMS volts the loops may ask for under `Foc:ModCeil`."""
-    shape = SHAPE_K[int(clamp(cmd.shape, 0, len(SHAPE_K) - 1))]
-    return cmd.mod_ceil_pct / 100.0 * self.vdc / 2.0 / (V_PEAK * shape)
+    """Phase RMS volts the loops may ask for under the vector ceiling."""
+    return self.ceiling(cmd) * self.vdc / 2.0 / V_PEAK
 
   def forced_mag(self, cmd:Command, hz:float) -> float:
     """The forced vector's magnitude off the `Curr` table, under `Foc:IqMax`."""

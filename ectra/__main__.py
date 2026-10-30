@@ -38,14 +38,14 @@ def command(mode:str, hz:float) -> Command:
     rs_ohm=0.9, lq_h=15.4e-3, ke_v_hz=0.5993, phasemap=0, shape=1, shunt_ok=True,
     deadtime_ns=2500.0, dtcomp_pct=80.0, obs_hp_hz=1.6, pll_bw_hz=15.0, pll_damp=0.71,
     damp_pct=100.0, catch_hz=12.5, init_hz=0.8, align_ms=700.0, boot_delay_s=0.0,
-    speed_min_hz=45.0, speed_max_hz=165.0, coast_s=90.0, clear_fault=False,
+    speed_min_hz=30.0, speed_max_hz=290.0, coast_s=25.0, clear_fault=False,
     entry_hz=45.0, entry_timeout_s=120.0,
     lock_err_deg=60.0, lock_speed_pct=40.0, slip_max_hz=6.0,
-    iq_max_a=4.5, mod_ceil_pct=78.0, curr_bw_hz=300.0, spd_kp=150.0, spd_ki=300.0,
+    iq_max_a=3.8, mod_ceil_pct=106.0, curr_bw_hz=300.0, spd_kp=150.0, spd_ki=300.0,
     curr_rms_a=5.0, curr_peak_a=7.1, peak_count=12.0, temp_max_c=85.0,
-    stall_curr_a=4.0, stall_freq_hz=15.0, ripple_max_v=3.5, dc_min_v=520.0, dc_max_v=780.0,
+    stall_curr_a=4.0, stall_freq_hz=15.0, ripple_max_v=3.5, dc_min_v=420.0, dc_max_v=780.0,
     derate_temp_c=80.0, derate_curr_a=3.6, derate_hz=92.5,
-    freeze_low_v=530.0, freeze_high_v=640.0, freeze_hyst_v=5.0)
+    freeze_low_v=430.0, freeze_high_v=640.0, freeze_hyst_v=5.0)
 
 #-------------------------------------------------------------------------------------------- Trace
 

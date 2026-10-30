@@ -25,7 +25,7 @@ const EC_STAGE_KEY = "modra.ectra.stage";
 // Still readable and writable, they simply stop costing a slot in every cycle,
 // so what IS being tuned comes back faster.
 //
-// `Flow` and `Journal` alone are 367 of 644 registers,
+// `Flow` and `Journal` alone are 367 of 645 registers,
 // and no other group passes twenty-four.
 // That is the whole argument for where this list ends:
 // past these, muting buys almost nothing and risks hiding a reading that turns out to matter.
@@ -238,8 +238,9 @@ function ecNow() {
     out.push(line);
   }
   else if(freeze === "hold") {
-    out.push("Rampa czeka: wektor napięcia doszedł do Foc:ModCeil, więc napęd nie przyspieszy "
-      + "wyżej. Freeze:HoldCount liczy takie wstrzymania.");
+    out.push("Rampa czeka: wektor napięcia doszedł do sufitu, więc napęd nie przyspieszy wyżej. "
+      + "Sufit to Foc:ModCeil albo niższa granica od Pwm:Deadtime i Pwm:MinPulse. "
+      + "Freeze:HoldCount liczy takie wstrzymania.");
   }
   else if(EC_FREEZE[freeze]) out.push(EC_FREEZE[freeze]);
   if(v("Feedback:State") === "run") {
@@ -268,8 +269,11 @@ const EC_INTRO =
   + "\n"
   + "Ctrl:Mode wybiera źródło i jednostkę wartości zadanej: ai to wejście analogowe, "
   + "% to procent zakresu, rpm to obroty na minutę, a Hz to częstotliwość. Wartość "
-  + "off zatrzymuje napęd. Ctrl:Setpoint podaje wartość w wybranej jednostce. "
-  + "Zapis Ctrl:Mode zeruje Ctrl:Setpoint, więc wartość zadaną wpisuj po wyborze trybu."
+  + "off odcina mostek i silnik wybiega. Ctrl:Setpoint podaje wartość w wybranej "
+  + "jednostce, a 0 zatrzymuje silnik rampą. Zmiana Ctrl:Mode odcina mostek i zeruje "
+  + "Ctrl:Setpoint, więc wartość zadaną wpisuj po wyborze trybu; ten sam tryb wpisany "
+  + "ponownie nic nie zmienia. Po zmianie trybu w biegu napęd rusza z nową wartością "
+  + "zadaną dopiero po wybiegu, którego czas ustala Brake:Coast."
   + "\n"
   + "Drive:Mode wybiera tryb sterowania: vf to sterowanie skalarne według tabeli "
   + "Volt, if to sterowanie prądowe z wymuszonym kątem, a foc po synchronizacji "
@@ -432,10 +436,11 @@ const EC_STAGES = [
       + "Obs:OmegaHat z Feedback:RenderFreq. Obs:Bias, średnia różnica prędkości obserwatora "
       + "i rampy, powinien pozostawać blisko zera."
       + "\n"
-      + "Zacznij od domyślnych nastaw; dla 1.5kW są to Obs:DtComp 80%, Obs:HpHz 1.6Hz, "
-      + "Pll:Bw 15Hz i Pll:Damp 0.71. Na stanowisku Pll:Bw 10, 15 i 20Hz dawały w pętli "
-      + "zamkniętej ten sam wynik. Szersze pasmo przenosi tętnienie estymaty na prędkość, którą "
-      + "odczytuje regulator; za szerokie Pll:Bw widać w Obs:OmegaRipple jako kilka Hz."
+      + "Zacznij od domyślnych nastaw, jednakowych dla wszystkich wariantów: Obs:DtComp 80%, "
+      + "Obs:HpHz 1.6Hz, Pll:Bw 15Hz i Pll:Damp 0.71. Na stanowisku Pll:Bw 10, 15 i 20Hz "
+      + "dawały w pętli zamkniętej ten sam wynik. Szersze pasmo przenosi tętnienie estymaty "
+      + "na prędkość, którą odczytuje regulator; za szerokie Pll:Bw widać w Obs:OmegaRipple "
+      + "jako kilka Hz."
       + "\n"
       + "Obs:DtComp kompensuje w obserwatorze stratę mostka. 100% oznacza stratę zmierzoną "
       + "przy ustawianiu wirnika (Obs:DtMeas), a bez pomiaru, czyli po starcie przez catch, "
@@ -454,7 +459,8 @@ const EC_STAGES = [
       + "\n"
       + "Sync:ErrPeak rośnie z prądem, więc samo minimum szczytu wskazuje małą częstotliwość "
       + "i mały prąd. Na stanowisku 1.5kW punkt przejęcia wybrano przy 45Hz i taką wartość "
-      + "Foc:EntryFreq ma mapa; większe warianty mają 55Hz."
+      + "Foc:EntryFreq ma mapa dla wszystkich wariantów; 4kW i 7.5kW mają przy niej "
+      + "więcej BEMF."
       + "\n"
       + "Zakończ etap, gdy Obs:OmegaHat stabilnie podąża za Feedback:RenderFreq, a Obs:Bias "
       + "pozostaje blisko zera w całym zakresie przejęcia.",
@@ -481,7 +487,7 @@ const EC_STAGES = [
       + "chwilowych skoków."
       + "\n"
       + "Foc:LockErr ustaw około 8° powyżej Sync:ErrPeak zmierzonego w punkcie przejęcia; mapa "
-      + "1.5kW ma 60°. Foc:LockSpeed pozostaw na 40%. Jeżeli Sync:Lock nie dochodzi do końca, "
+      + "ma 60°. Foc:LockSpeed pozostaw na 40%. Jeżeli Sync:Lock nie dochodzi do końca, "
       + "choć Sync:ErrPeak jest mniejszy niż Foc:LockErr, najpierw poszerz Foc:LockSpeed, "
       + "a dopiero potem Foc:LockErr. Nie rozszerzaj tolerancji wyłącznie po to, aby wymusić "
       + "przejście."
@@ -543,10 +549,13 @@ const EC_STAGES = [
       + "działa Speed:DerateTemp dla temperatury. To ograniczenie bez błędu: napęd przestaje "
       + "przyspieszać."
       + "\n"
-      + "Gdy wektor napięcia dochodzi do Foc:ModCeil, Foc:Flags pokazuje sat, a rampa "
-      + "zatrzymuje się z Freeze:State = hold, zamiast oddalać się od wirnika i dociskać "
-      + "regulator do Foc:IqMax. Freeze:HoldCount liczy takie wstrzymania. Foc:Flags "
-      + "podtrzymuje przez około 2s także flagę limit, czyli osiągnięcie Foc:IqMax."
+      + "Sufit wektora napięcia ustala Foc:ModCeil, najwyżej do granicy liniowej SVPWM "
+      + "115.47%. Pwm:Deadtime i Pwm:MinPulse obniżają go: przy 2500ns sufit wynosi 105.2%, "
+      + "więc wyższe Foc:ModCeil nic już nie daje. Gdy wektor dochodzi do sufitu, Foc:Flags "
+      + "pokazuje sat, a rampa zatrzymuje się z Freeze:State = hold, zamiast oddalać się "
+      + "od wirnika i dociskać regulator do Foc:IqMax. Freeze:HoldCount liczy takie "
+      + "wstrzymania. Foc:Flags podtrzymuje przez około 2s także flagę limit, czyli "
+      + "osiągnięcie Foc:IqMax."
       + "\n"
       + "Na stanowisku 1.5kW napęd osiągnął 190Hz przy 3.6A i mocy pozornej około 1.3kVA, "
       + "ograniczany przez Speed:DerateCurr. Szczyty prądu sięgały tam 7.0A, tuż pod progiem "
@@ -573,7 +582,7 @@ const EC_STAGES = [
       + "Przy rozpędzaniu obserwuj MeasCtrl:CurrAvg i flagę limit w Foc:Flags. Szyna DC "
       + "opada pod obciążeniem, na stanowisku 1.5kW o około 4.7V na każde 100W. Freeze:VdcLow "
       + "wstrzymuje przyspieszanie, gdy szyna spadnie poniżej progu, więc musi leżeć poniżej "
-      + "napięcia szyny w najwyższym punkcie pracy; mapa 1.5kW ma 530V, 10V powyżej "
+      + "napięcia szyny w najwyższym punkcie pracy; mapa ma 430V, 10V powyżej "
       + "Thresh:DcBusMin."
       + "\n"
       + "W pętli zamkniętej tabela Fall szybsza od naturalnego zwalniania wentylatora "
@@ -588,8 +597,9 @@ const EC_STAGES = [
       + "pojawia się przed wstrzymaniem rampy, obniż Freeze:VdcHigh. Thresh:DcBusMax to próg "
       + "błędu; nie podnoś go, aby skompensować zbyt gwałtowne hamowanie."
       + "\n"
-      + "Ctrl:Mode = off w pętli zamkniętej sprowadza napęd tabelą Fall do Speed:Min i tam "
-      + "wyłącza mostek. Bus:Max pokazuje najwyższe napięcie szyny od startu."
+      + "Ctrl:Setpoint = 0 w pętli zamkniętej sprowadza napęd tabelą Fall do Speed:Min i tam "
+      + "wyłącza mostek, a Ctrl:Mode = off odcina go od razu. Bus:Max pokazuje najwyższe "
+      + "napięcie szyny od startu."
       + "\n"
       + "Zakończ etap, gdy pełne cykle rozpędzania i zwalniania przebiegają bez błędów "
       + "i częstych wstrzymań rampy.",

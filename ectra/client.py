@@ -27,6 +27,7 @@ class EctraClient(SimulatedClient):
 
   def __init__(self, id_map:dict, speed:float=1.0, lockstep:bool=False):
     self.runner = None
+    self._cut = False # a mode change holds the bridge off until the drive stops driving
     self.speed = max(0.01, speed)
     self.lockstep = lockstep
     self._seen = None # the model time of the last register image, in lockstep
@@ -58,13 +59,18 @@ class EctraClient(SimulatedClient):
 
   async def write_registers(self, address:int, values:list, device_id:int=1):
     """
-    The drive zeroes the setpoint whenever `Ctrl:Mode` is written,
-    so a mode swap cannot inherit a number that meant something else.
-    Reproduced here, or leaving `off` would fling the drive back at a stale command.
+    A new `Ctrl:Mode` cuts the bridge and zeroes the setpoint, as the drive does:
+    the rotor coasts, and a mode swap cannot inherit a number that meant something else.
+    The same mode written again changes nothing, as a master cycling its whole block expects,
+    and a setpoint later in the same block lands after the mode, as on the drive.
     """
+    def covers(rid): return rid is not None and address <= rid < address + len(values)
+    mode_was = self.values.get(self._mode_rid)
     out = await super().write_registers(address, values, device_id)
-    touched = self._mode_rid is not None and address <= self._mode_rid < address + len(values)
-    if touched and self._setpoint_rid is not None: self.values[self._setpoint_rid] = 0
+    if covers(self._mode_rid) and self.values.get(self._mode_rid) != mode_was:
+      self._cut = True
+      if self._setpoint_rid is not None and not covers(self._setpoint_rid):
+        self.values[self._setpoint_rid] = 0
     # The current loop's clamp has to stop BELOW the trip,
     # or a loop riding its own limit overshoots into the fault on every step.
     # Written back to the register, so the operator sees the cap take.
@@ -81,7 +87,11 @@ class EctraClient(SimulatedClient):
   def _push(self):
     """Hand the machine the intent the registers now carry."""
     with self.runner.lock:
-      self.runner.send(self.bind.command(self.values, self.runner.plant.ramp.hz))
+      plant = self.runner.plant
+      cmd = self.bind.command(self.values, plant.ramp.hz)
+      if self._cut and plant.state not in ("str", "run"): self._cut = False
+      if self._cut: cmd.enabled = False
+      self.runner.send(cmd)
 
   def _tick_all(self):
     """

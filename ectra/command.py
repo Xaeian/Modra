@@ -39,7 +39,7 @@ class Command:
   speed_min_hz: float = 0.0                 # Speed:Min, also the stop cutoff
   speed_max_hz: float = 0.0                 # Speed:Max, 0 leaves it open
   boot_delay_s: float = 0.0                 # System:BootDelay
-  coast_s: float = 90.0                     # Brake:Coast, quoted at 50Hz
+  coast_s: float = 25.0                     # Brake:Coast, quoted at 50Hz
   # Machine constants in SI, converted at the binding:
   # nothing here knows a nameplate unit or a pole count it was not handed.
   rs_ohm: float = 0.0                       # Motor:Rs, 0 sheds the vector
@@ -49,13 +49,14 @@ class Command:
   shunt_ok: bool = True                     # Sense:ShuntRes and ShuntGain set
   shape: int = 1                            # Pwm:Shape
   deadtime_ns: float = 2500.0               # Pwm:Deadtime
+  min_pulse: float = 2.0                    # Pwm:MinPulse, timer ticks
   dtcomp_pct: float = 0.0                   # Obs:DtComp
   pll_bw_hz: float = 30.0                   # Pll:Bw
   pll_damp: float = 0.71                    # Pll:Damp
   obs_hp_hz: float = 1.6                    # Obs:HpHz
   iq_max_a: float = 10.0                    # Foc:IqMax
   curr_bw_hz: float = 300.0                 # Foc:CurrBw
-  mod_ceil_pct: float = 78.0                # Foc:ModCeil
+  mod_ceil_pct: float = 106.0               # Foc:ModCeil
   spd_kp: float = 0.0                       # SpeedCtrl:Kp
   spd_ki: float = 0.0                       # SpeedCtrl:Ki
   # Thresholds and derating, 0 disabling each check on its own.

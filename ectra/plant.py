@@ -183,6 +183,11 @@ class Plant:
     if self.fault or self.coasting:
       self._coast(cmd, dt)
       return
+    # A disabled command cuts the bridge on the spot, as a fault does but without one
+    if not cmd.enabled and self.vec not in ("idle", "fault"):
+      self._cut(cmd)
+      self._coast(cmd, dt)
+      return
     self.hours += dt / 3600.0
     self.target = cmd.target_hz
     self._boot(cmd, dt)
@@ -229,6 +234,12 @@ class Plant:
     self.machine.coast(dt)
     self._settle(cmd, dt)
 
+  def _cut(self, cmd:Command):
+    """The run ends with the bridge off; the rotor coasts for `Brake:Coast` scaled to its speed."""
+    ended = max(self.ramp.hz, 0.0)
+    self._clear_run()
+    self._coast_s = max(0.05, cmd.coast_s * sqrt(ended / 50.0))
+
   def _latch(self, cmd:Command):
     """The moment a run ends badly: keep the evidence, then drop everything."""
     self.trip = {"freq": self.ramp.hz, "curr": self.machine.curr,
@@ -237,7 +248,7 @@ class Plant:
     self._clear_run()
     self.fault = keep
     self.vec = "fault"
-    self._coast_s = max(remain, 0.05, cmd.coast_s * ended / 50.0)
+    self._coast_s = max(remain, 0.05, cmd.coast_s * sqrt(ended / 50.0))
 
   #--------------------------------------------------------------------------------- Start and mode
 
@@ -358,8 +369,8 @@ class Plant:
           self.fault = out.fault
           break
     m.finish_tick(cmd, hz, self.table, gain)
-    ceiling = 100.0 if self.table else cmd.mod_ceil_pct
-    sat = m.modulate(cmd, hz, ceiling)
+    ceiling = 100.0 if self.table else m.ceiling(cmd) * 100.0
+    sat = m.modulate(cmd, hz, ceiling, not self.table)
     # The loops clip inside the sub-step, onto the ceiling only to within rounding,
     # so their own flag fills the bucket
     self._sat = sat if self.table else self._sat_s > SAT_BUCKET_s / 2.0

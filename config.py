@@ -36,7 +36,7 @@ AUTH_LEVEL = "admin"             # label from that enum to hold
 STATE_DEFAULT = {
   "port": "COM3",
   "addr": 1,
-  "baudrate": 115200,
+  "baudrate": 9600,
   "parity": "N",
   "stopbits": 1,
   "timeout": 1000,

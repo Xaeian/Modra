@@ -139,7 +139,7 @@ Press `w` to toggle the first widget available for the current map; additional w
 - **History**: raw retention _(days)_; older data survives in coarser minute/hour/day archives
 - **Address scan**: enter `1-10, 12, 100-110` → **🔍 Scan**, click result to connect
 - **📂 Import**: load `.ini` / `.csv` into pending edits _(no auto-send; reads locale CSV with `;` + decimal comma)_
-- **💾 CSV** / 💾 **INI**: export current RWs values to file
+- **💾 CSV** / 💾 **INI**: export current RWs values to file, after the registers marked `info` _(serial number, versions)_; import takes back only the RWs
 - **🧹 Clear DB**: wipe stored poll history _(data.db)_
 
 ## Keyboard shortcuts

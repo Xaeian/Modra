@@ -40,7 +40,7 @@ TWO_PI = 2.0 * PI
 #------------------------------------------------------------------------------------------- Stages
 
 BLIND_VEC = ("align", "catch", "forced")
-VERDICT_VEC = ("off", "obs", "shunt", "guard", "volts")
+VERDICT_VEC = ("off", "obs", "shunt", "volts")
 TABLE_VEC = VERDICT_VEC + ("catch",)
 # The thread cadence the targets and the speed loop run on: the render update,
 # which bands with frequency on the device; one fixed value here
@@ -106,7 +106,6 @@ class Plant:
     self.fault = None
     self.target = 0.0
     self.flags = 0
-    self.guard = (0.0, 0.0, 0.0)
     self._align_s = 0.0
     self._catch_at = 0.0
     self._coast_s = 0.0
@@ -160,18 +159,6 @@ class Plant:
     if self.vec == "closed": return abs(self.obs.hz)
     return self.ramp.hz
 
-  @property
-  def vd(self) -> float:
-    return self._axis(self.machine.vd_c)
-
-  @property
-  def vq(self) -> float:
-    return self._axis(self.machine.vq_c)
-
-  def _axis(self, v:float) -> float:
-    total = sqrt(self.machine.vd_c ** 2 + self.machine.vq_c ** 2)
-    return 0.0 if total <= 0.0 else v / total * self.machine.mod_index
-
   #------------------------------------------------------------------------------------------- Step
 
   def step(self, cmd:Command, dt:float):
@@ -223,7 +210,6 @@ class Plant:
     self.machine.sense(dt, running)
     self.meters.update(dt, self.report_hz, self.machine, FLYBACK_V)
     self.scope.feed(dt, self)
-    if self.vec == "guard": self.guard = self.machine.guard_point(cmd, self.ramp.hz)
     if self.vec in ("idle", "fault") or self.fault: return
     self.fault = self.prot.check(cmd, dt, self.meters.ctrl, self.machine,
       self.ramp.hz, self.target, self.table, self.vec == "forced", self.estim_hz)
@@ -258,7 +244,6 @@ class Plant:
     if cmd.mod_ceil_pct and cmd.mod_ceil_pct < 10.0: return "volts"
     if not cmd.rs_ohm: return "obs"
     if cmd.mode == "foc" and not cmd.ke_v_hz: return "obs"
-    if cmd.phasemap != self.machine.phasemap: return "guard"
     return None
 
   def _bus_ok(self, cmd:Command) -> bool:
@@ -313,8 +298,16 @@ class Plant:
       self._catch_at = 0.0
 
   def _cutoff(self, cmd:Command):
-    if self.target > 0.0 or self.vec == "idle": return
-    if self.ramp.hz <= max(cmd.speed_min_hz, cmd.init_hz, 0.05): self._clear_run()
+    """
+    A stop cuts under the running mode's cutoff instead of crawling to 0,
+    and the rotor coasts from there as after any cut.
+    A shed vector renders V/f, so it stops on the V/f cutoff, as the drive's reset mode does.
+    """
+    if self.vec == "idle": return
+    if self.target > 0.0 and self.target >= cmd.speed_min_hz: return
+    mode = "vf" if self.vec in VERDICT_VEC else (self._mode or cmd.mode)
+    cut = {"vf": cmd.cutoff_vf_hz, "if": cmd.cutoff_if_hz, "foc": cmd.cutoff_foc_hz}[mode]
+    if self.ramp.hz <= max(cut, 0.05): self._cut(cmd)
 
   #----------------------------------------------------------------------------------------- Output
 
@@ -334,9 +327,11 @@ class Plant:
     m = self.machine
     if self.vec == "align" and self._align_s <= 0.0: self.vec = "forced"
     if self.vec == "catch" and self.ramp.hz >= self._catch_at:
-      # The catch: the references take the measured current, in the control frame
+      # The catch: the references take the measured current, in the control frame,
+      # and the observer, which sat out the table, starts on the field angle at the ramp's speed
       self.vec = "forced"
       self.id_ref, self.iq_ref = rotate(m.id, m.iq, wrap(self.theta_render - m.theta_r))
+      self.obs.reset(self.theta_render, TWO_PI * self.ramp.hz)
     # A step of no length moves nothing and would divide the winding by zero
     if dt <= 0.0: return
     n = min(SUB_MAX, max(1, int(round(dt / SUB_s))))
@@ -346,10 +341,10 @@ class Plant:
     for _ in range(n):
       table = self.table
       closed = self.vec == "closed"
-      # The alignment holds the field still, whichever vector renders it
+      # The alignment holds the field still on the table's 0Hz anchor, whichever vector renders it
       field = 0.0 if self._align_s > 0.0 else hz
       if table:
-        v_ab, i_ab = m.step_table(cmd, h, self.theta_render, m.table_volts(cmd, hz) * gain)
+        v_ab, i_ab = m.step_table(cmd, h, self.theta_render, m.table_volts(cmd, field) * gain)
       elif closed:
         v_ab, i_ab = m.step_vector(cmd, h, self.obs.theta, (self.id_ref, self.iq_ref),
           forced=False)
@@ -399,7 +394,9 @@ class Plant:
 
   def _targets(self, cmd:Command, h:float, hz:float):
     """The thread's pass: the speed loop and the slew of the references."""
-    self._forced_mag = self.machine.forced_mag(cmd, hz) * self._align_gain(cmd)
+    # The alignment holds the table's 0Hz anchor, I/f the table at the ramp
+    at = 0.0 if self._align_s > 0.0 else hz
+    self._forced_mag = self.machine.forced_mag(cmd, at) * self._align_gain(cmd)
     self._targets_s += h
     if self._targets_s < TARGETS_s: return
     dt, self._targets_s = self._targets_s, 0.0

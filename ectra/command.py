@@ -36,16 +36,18 @@ class Command:
   slip_max_hz: float = 3.0                  # Foc:SlipMax
   align_ms: float = 700.0                   # Drive:AlignTime
   init_hz: float = 0.5                      # Drive:InitFreq
-  speed_min_hz: float = 0.0                 # Speed:Min, also the stop cutoff
+  speed_min_hz: float = 0.0                 # Speed:Min, a command under it is a stop
   speed_max_hz: float = 0.0                 # Speed:Max, 0 leaves it open
   boot_delay_s: float = 0.0                 # System:BootDelay
   coast_s: float = 25.0                     # Brake:Coast, quoted at 50Hz
+  cutoff_vf_hz: float = 0.0                 # Brake:CutoffVf, where a V/f stop cuts
+  cutoff_if_hz: float = 0.0                 # Brake:CutoffIf
+  cutoff_foc_hz: float = 0.0                # Brake:CutoffFoc
   # Machine constants in SI, converted at the binding:
   # nothing here knows a nameplate unit or a pole count it was not handed.
   rs_ohm: float = 0.0                       # Motor:Rs, 0 sheds the vector
   lq_h: float = 0.0                         # Motor:Lq
   ke_v_hz: float = 0.0                      # phase RMS volts per electrical Hz
-  phasemap: float = 0.0                     # Sense:PhaseMap
   shunt_ok: bool = True                     # Sense:ShuntRes and ShuntGain set
   shape: int = 1                            # Pwm:Shape
   deadtime_ns: float = 2500.0               # Pwm:Deadtime
@@ -66,9 +68,12 @@ class Command:
   temp_max_c: float = 0.0                   # Thresh:Temp
   stall_curr_a: float = 0.0                 # Thresh:StallCurr
   stall_freq_hz: float = 0.0                # Thresh:StallFreq
+  stall_s: float = 1.5                      # Thresh:StallTime
+  spin_w: float = 60.0                      # Thresh:SpinPower, 0 turns `spin` off
+  spin_s: float = 1.5                       # Thresh:SpinTime
   ripple_max_v: float = 0.0                 # Thresh:Ripple, a start gate
   dc_min_v: float = 0.0                     # Thresh:DcBusMin
-  dc_max_v: float = 780.0                   # Thresh:DcBusMax
+  dc_max_v: float = 820.0                   # Thresh:DcBusMax
   derate_temp_c: float = 0.0                # Speed:DerateTemp
   derate_curr_a: float = 0.0                # Speed:DerateCurr
   derate_hz: float = 0.0                    # Speed:DerateLimit

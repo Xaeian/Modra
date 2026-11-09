@@ -60,7 +60,9 @@ Each is parsed into its own key (`enum` / `bits` / `ver`) and `unit` is cleared,
 so downstream `unit` always means a physical unit.
 
 Any other column is the project's own: carried through untouched and returned by `reg_info()`.
-This app adds `auth`.
+This app adds `auth` and `info`.
+`info = true` marks a read-only register the exported config file carries ahead of the RWs values,
+such as a serial number or a firmware version; a full sync reads it even when it is ignored.
 
 ### Access Modes (rws)
 

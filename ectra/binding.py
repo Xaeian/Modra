@@ -189,17 +189,17 @@ class Binding:
       slip_max_hz=self._eng(values, "Foc:SlipMax", 3.0),
       align_ms=self._eng(values, "Drive:AlignTime", 700.0),
       init_hz=self._eng(values, "Drive:InitFreq", 0.5),
-      # The speed limits are a working window in rpm,
-      # and the low end doubles as where a stop cuts:
-      # the drive cuts rather than crawl the last of the way.
+      # The speed limits are a working window in rpm; a command under its low end is a stop
       speed_min_hz=self._eng(values, "Speed:Min", 0.0) * rpm_hz,
       speed_max_hz=self._eng(values, "Speed:Max", 0.0) * rpm_hz,
       boot_delay_s=self._eng(values, "System:BootDelay", 0.0) / 1000.0,
       coast_s=self._eng(values, "Brake:Coast", 25.0),
+      cutoff_vf_hz=self._eng(values, "Brake:CutoffVf", 0.0),
+      cutoff_if_hz=self._eng(values, "Brake:CutoffIf", 0.0),
+      cutoff_foc_hz=self._eng(values, "Brake:CutoffFoc", 0.0),
       rs_ohm=self._eng(values, "Motor:Rs", 0.0) / 1000.0,
       lq_h=self._eng(values, "Motor:Lq", 0.0) / 1e6,
       ke_v_hz=self._ke_v_hz(values, poles),
-      phasemap=self._index(values, "Sense:PhaseMap", 0),
       shunt_ok=bool(self._eng(values, "Sense:ShuntRes", 1.0))
         and bool(self._eng(values, "Sense:ShuntGain", 1.0)),
       shape=self._index(values, "Pwm:Shape", 1),
@@ -220,9 +220,12 @@ class Binding:
       temp_max_c=self._eng(values, "Thresh:Temp", 0.0),
       stall_curr_a=self._eng(values, "Thresh:StallCurr", 0.0),
       stall_freq_hz=self._eng(values, "Thresh:StallFreq", 0.0),
+      stall_s=self._eng(values, "Thresh:StallTime", 1500.0) / 1000.0,
+      spin_w=self._eng(values, "Thresh:SpinPower", 60.0),
+      spin_s=self._eng(values, "Thresh:SpinTime", 1500.0) / 1000.0,
       ripple_max_v=self._eng(values, "Thresh:Ripple", 0.0),
       dc_min_v=self._eng(values, "Thresh:DcBusMin", 0.0),
-      dc_max_v=self._eng(values, "Thresh:DcBusMax", 780.0),
+      dc_max_v=self._eng(values, "Thresh:DcBusMax", 820.0),
       derate_temp_c=self._eng(values, "Speed:DerateTemp", 0.0),
       derate_curr_a=self._eng(values, "Speed:DerateCurr", 0.0),
       derate_hz=self._eng(values, "Speed:DerateLimit", 0.0) * rpm_hz,
@@ -242,8 +245,7 @@ class Binding:
 
     A balanced machine puts the same RMS through all three phases,
     so the per phase registers and their average carry one number.
-    `Estim:*` and `Foc:V*` are the exceptions:
-    they publish vector amplitude and modulation percent, not phase RMS.
+    `Estim:Id` and `Estim:Iq` are the exceptions: they publish vector amplitude, not phase RMS.
     """
     m = plant.machine
     # `Meas` is the slow trend, `MeasCtrl` the fast one the protections read.
@@ -266,16 +268,13 @@ class Binding:
       put(f"{tier}:Flyback", t.flyback)
       put(f"{tier}:Ripple", t.ripple)
       put(f"{tier}:Power", t.power)
-    sc = plant.scope
-    put("Bus:Max", sc.bus_max)
+    put("Bus:Max", plant.scope.bus_max)
     # The estimator is the measurement the drive does not overwrite,
     # so it can disagree with the command and say so.
     # Amplitudes, not phase RMS, on the `Estim:*` axes.
     put("Estim:Freq", plant.estim_hz)
     put("Estim:Id", m.id * V_PEAK)
     put("Estim:Iq", m.iq * V_PEAK)
-    put("Foc:Vd", sc.vd.read())
-    put("Foc:Vq", sc.vq.read())
 
   #------------------------------------------------------------------------------------- Write side
 
@@ -320,8 +319,6 @@ class Binding:
     put("Sync:ErrPeak", sc.err_peak.v)
     put("Sync:Lock", det.lock)
     put("Sync:Takeovers", det.takeovers)
-    put("Sync:Losses", det.losses)
-    put("Sync:Restarts", det.restarts)
     put("Sync:ExitCause", det.exit_cause)
     put("Sync:ExitTime", min(det.exit_ms, 65534)) # saturates like the drive's, never wraps
     put("Foc:TakeoverDelta", math.degrees(det.delta))
@@ -330,9 +327,6 @@ class Binding:
     # Under the forced vector the whole magnitude is the applied current,
     # and reporting only its torque projection would read as a drive doing almost nothing.
     put("Foc:IqCmd", plant.iq_ref if plant.vec == "closed" else m.curr)
-    if plant.vec == "guard":
-      for name, value in zip(("GuardVd", "GuardId", "GuardIdRef"), plant.guard):
-        put(f"Foc:{name}", value)
     put("Fault:Code", plant.fault or "ok")
     put("Fault:PeakEvents", plant.prot.peaks)
     for name, key in (("Freq", "freq"), ("Curr", "curr"), ("Vdc", "vdc"), ("Temp", "temp")):

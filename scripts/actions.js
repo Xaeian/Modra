@@ -519,15 +519,27 @@ async function importConfig() {
   render();
 }
 
-// One row per RWs register - R/W hold no user-configurable state.
+// What a config file carries: every RWs value, after the `info` registers.
+// Those name the device and firmware the values came from; import takes back only the RWs.
+function _configRegs() {
+  const info = S.regs.filter(r => Reg.isInfo(r));
+  const rws = S.regs.filter(r => r.rws === "RWs" && !Reg.isInfo(r));
+  return [...info, ...rws];
+}
+
+// A hex word as the grid shows it: a serial number or a UID in decimal reads as another number.
+function _configValue(reg) {
+  const val = S.values[reg.name];
+  return val != null && reg.type === "hex" ? Reg.display(reg, val) : val;
+}
+
 function exportConfigCSV() {
   const rows = [];
-  for(const reg of S.regs) {
-    if(reg.rws !== "RWs") continue;
+  for(const reg of _configRegs()) {
     const unit = Array.isArray(reg.unit) ? reg.unit.join("/") : (reg.unit || "");
     rows.push({
       id: reg.id, hex: reg.hex, name: reg.name,
-      value: S.values[reg.name] ?? "", unit,
+      value: _configValue(reg) ?? "", unit,
       desc: reg.desc || "",
     });
   }
@@ -536,15 +548,14 @@ function exportConfigCSV() {
   alert.ok(`Exported ${rows.length} register${rows.length === 1 ? "" : "s"} to ${name}`);
 }
 
-// Groups → [sections], leaf RWs → keys; unit rides as a trailing comment.
+// Groups -> [sections], registers -> keys; unit rides as a trailing comment.
 function exportConfigINI() {
   const data = {}, commentField = {};
-  for(const reg of S.regs) {
-    if(reg.rws !== "RWs") continue;
+  for(const reg of _configRegs()) {
     const ci = reg.name.indexOf(":");
     const group = ci >= 0 ? reg.name.slice(0, ci) : null;
     const name = ci >= 0 ? reg.name.slice(ci + 1) : reg.name;
-    const val = S.values[reg.name];
+    const val = _configValue(reg);
     const unit = Array.isArray(reg.unit) ? reg.unit.join("/") : (reg.unit || "");
     if(group) {
       if(!data[group]) { data[group] = {}; commentField[group] = {}; }

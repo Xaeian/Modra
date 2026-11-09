@@ -20,7 +20,6 @@ from .machine import Machine
 # The boost at the bottom of a voltage table is real current
 # and the ramp passes through it on every start, so an instant trip would refuse to run.
 TRIP_s = 1.0
-STALL_s = 1.5
 # The under-fluxed stall slips beneath the current envelope:
 # the field climbs and the current vector does not rotate.
 # `EST_RENDER_Hz` is the field floor,
@@ -37,9 +36,6 @@ SPIN_REF_Hz = 15.0
 SPIN_ARM_Hz = 40.0
 # A baseline latched above this has no loss in it, so the guard stands down for that episode.
 SPIN_LATCH_Hz = SPIN_REF_Hz + 10.0
-SPIN_s = 1.5 # 150 on the 10ms tick
-# The increment the bench measured per product variant, over the latched loss.
-SPIN_STEP_W = {1: 60.0, 2: 160.0, 3: 300.0}
 
 #------------------------------------------------------------------------------------------ Protect
 
@@ -121,10 +117,10 @@ class Protect:
     """
     rising = table and cmd.stall_freq_hz and hz < target
     armed = rising and cmd.stall_curr_a and hz < cmd.stall_freq_hz
-    if self._hold("stall", bool(armed) and ctrl.curr > cmd.stall_curr_a, dt, STALL_s):
+    if self._hold("stall", bool(armed) and ctrl.curr > cmd.stall_curr_a, dt, cmd.stall_s):
       return True
     est = rising and hz >= EST_RENDER_Hz and estim_hz < EST_STAND_Hz
-    return self._hold("stall_est", bool(est), dt, STALL_s)
+    return self._hold("stall_est", bool(est), dt, cmd.stall_s)
 
   def _spin(self, cmd:Command, dt:float, ctrl, hz:float, forced:bool) -> bool:
     """
@@ -141,7 +137,7 @@ class Protect:
     No rising ramp anywhere:
     a decoupled rotor at a steady setpoint is exactly the case this exists for.
     """
-    if not forced or hz < SPIN_REF_Hz:
+    if not cmd.spin_w or not forced or hz < SPIN_REF_Hz:
       self._over_s["spin"] = 0.0
       self._spin_latched = False
       return False
@@ -160,5 +156,5 @@ class Protect:
     if not self._spin_armed or hz < SPIN_ARM_Hz:
       self._over_s["spin"] = 0.0
       return False
-    step = SPIN_STEP_W.get(int(cmd.motor_type), SPIN_STEP_W[1])
-    return self._hold("spin", ctrl.power < self._spin_ref_w + step, dt, SPIN_s)
+    # `Thresh:SpinPower` over the latched loss, as the device compares it
+    return self._hold("spin", ctrl.power < self._spin_ref_w + cmd.spin_w, dt, cmd.spin_s)

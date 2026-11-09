@@ -5,7 +5,6 @@
 
 //------------------------------------------------------------------------------------- DOM helpers
 
-// Falsy mods drop out, so callers can write `cls("btn", on && "on")`.
 // `*` and `?` as they read in a file name, escaped into a regex body.
 //
 // The search box and the ignore list both take these, and two copies of the
@@ -16,6 +15,7 @@ function globSource(pattern) {
     .replace(/\*/g, ".*").replace(/\?/g, ".");
 }
 
+// Falsy mods drop out, so callers can write `cls("btn", on && "on")`.
 function cls(base, ...mods) {
   let out = base;
   for(const m of mods) if(m) out += " " + m;
@@ -227,6 +227,9 @@ const Reg = (() => {
   // has no numeric order to plot ("1.10.0" would sit below "1.2.3").
   const isTelemetry = (reg) => !["ver", "hex"].includes(reg.type);
 
+  // The map's `info` column: a read-only register the config file carries beside the settings.
+  const isInfo = (reg) => String(reg.info ?? "").trim().toLowerCase() === "true";
+
   // Renders the free-text Input control (Control.For's fallthrough).
   const isScalar = (reg) => !isEnum(reg) && !isBool(reg) && !isVer(reg) && !isBits(reg);
 
@@ -426,7 +429,7 @@ const Reg = (() => {
     unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
-    isEnum, isBool, isVer, isBits, isScalar, isNA, isTelemetry,
+    isEnum, isBool, isVer, isBits, isScalar, isNA, isTelemetry, isInfo,
     outOfRange, willWrap, wrapPreview,
     tooltip, filter, match, visibility, blocks, columns,
   };

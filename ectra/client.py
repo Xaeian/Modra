@@ -8,7 +8,7 @@ Physics lives in `Machine`, control in `Plant`, the clock in `Runner`, register 
 import time
 from sim import SimulatedClient, register
 from .binding import Binding
-from .machine import Machine
+from .machine import IRON, Machine
 from .plant import Plant
 from .runner import Runner
 
@@ -25,7 +25,13 @@ class EctraClient(SimulatedClient):
   """Drop-in for `SimulatedClient` on a regmap shaped like ectra's."""
   match = staticmethod(Binding.match)
 
-  def __init__(self, id_map:dict, speed:float=1.0, lockstep:bool=False):
+  def __init__(self, id_map:dict, speed:float=1.0, lockstep:bool=False, motor:str="1500W"):
+    if motor not in IRON: raise ValueError(f"no {motor} machine: {', '.join(IRON)}")
+    self.motor = motor
+    # The map's column for this motor seeds the registers, as a drive built for it boots
+    entry = next((e for e in id_map.values() if e.get("fullname") == "Motor:Type"), {})
+    labels = list(entry.get("enum", {}).values())
+    self.slot = labels.index(motor) if motor in labels else 0
     self.runner = None
     self._cut = False # a mode change holds the bridge off until the drive stops driving
     self.speed = max(0.01, speed)
@@ -51,7 +57,16 @@ class EctraClient(SimulatedClient):
     self._iq_max_rid = self.bind.rid.get("Foc:IqMax")
     self._curr_rms_rid = self.bind.rid.get("Thresh:CurrRms")
     if self.runner is None:
-      self.runner = Runner(Plant(Machine()), scale=self.speed, lockstep=self.lockstep)
+      self.runner = Runner(Plant(Machine(**IRON[self.motor])), scale=self.speed,
+        lockstep=self.lockstep)
+
+  def _initial(self, entry:dict) -> int:
+    """A register's first value: the default in this motor's column of the map."""
+    default = entry.get("default")
+    if isinstance(default, list) and self.slot < len(default):
+      try: return self._to_raw(entry, default[self.slot])
+      except Exception: pass # a cell the encoder refuses falls back to the generic seed
+    return super()._initial(entry)
 
   def close(self):
     self.runner.close()

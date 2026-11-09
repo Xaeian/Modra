@@ -7,13 +7,7 @@ A leaf: the anchor tables and the ramp rates are both read through `interp`.
 #-------------------------------------------------------------------------------------------- Curve
 
 def interp(anchors:list, x:float) -> float|None:
-  """
-  Piecewise-linear lookup on a sorted `(x, y)` list, flat past both ends.
-
-  Below the first anchor volts and amps hold it, standstill included:
-  the rotor is held and pulled off with the full field,
-  and a weaker one would sink under the bridge's dead-time loss.
-  """
+  """Piecewise-linear lookup on a sorted `(x, y)` list, flat past both ends."""
   if not anchors: return None
   x0, y0 = anchors[0]
   if x <= x0: return y0

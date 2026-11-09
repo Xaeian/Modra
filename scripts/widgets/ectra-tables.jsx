@@ -10,9 +10,9 @@
 // `Volt` and `Curr` are QUANTITIES, and a live reading rides on each of them.
 // `Rise` and `Fall` are RATES on a coarser grid, and nothing reports a tempo back,
 // so they carry no working point.
-// All four hold their first anchor from standstill up to it:
-// a field faded toward zero would leave the rotor's start position to chance,
-// and a tempo faded toward zero would make leaving standstill take a logarithm.
+// All four start at standstill:
+// `Volt:0Hz` and `Curr:0Hz` are what sets the rotor before the ramp,
+// `Rise:0Hz` the tempo that leaves standstill and `Fall:0Hz` the one that reaches it.
 //
 // The guide is `Ectra`.
 // Nothing here knows about stages: a table is a table whichever step of the procedure is open.
@@ -22,8 +22,7 @@ const EC_TAB_KEY = "modra.ectra.tab";
 const EC_HIST_MAX = 20;
 
 // How much of the x axis is the anchor grid rather than the frequency.
-// A plain log axis crowds the top:
-// this table gives its first three anchors a third of the width and its last fourteen barely more.
+// A log axis crowds the top: it spreads the few anchors near standstill and squeezes the rest.
 // Ordinal spacing spreads them evenly but stops being a frequency axis,
 // so the working point would no longer sit where the drive is.
 // 0 is pure log, 1 is pure grid.
@@ -309,14 +308,10 @@ const EctraTables = {
     const liveX = ecNum("Feedback:RenderFreq");
     const liveY = EC_LIVE[this._tab] ? ecNum(EC_LIVE[this._tab]) : null;
 
-    // The x axis is the table's own grid blended with frequency.
-    //
-    // Pure log still crowds the top: this table gives its first three anchors a third of the width
-    // and the last fourteen barely more.
-    // Pure ordinal spacing spreads every anchor equally but stops being a frequency axis,
-    // so the working point would no longer sit where the drive actually is.
-    // Mixing them keeps both: anchors you can hit, on an axis that still reads as Hz.
-    const x0 = Math.log(pts[0].hz), x1 = Math.log(pts.at(-1).hz);
+    // The x axis blends the table's own grid with frequency, by `EC_X_EVEN`:
+    // anchors you can hit, on an axis that still reads as Hz.
+    // The log is of `1 + f`, because every table has a point at standstill.
+    const x0 = Math.log1p(pts[0].hz), x1 = Math.log1p(pts.at(-1).hz);
     const pw = W - P.l - P.r, ph = H - P.t - P.b;
     const last = pts.length - 1;
     // Ordinal position of any frequency, interpolated between its two anchors,
@@ -330,7 +325,7 @@ const EctraTables = {
       return (i + (span ? (hz - pts[i].hz) / span : 0)) / last;
     };
     const toX = (hz) => P.l + pw * (EC_X_EVEN * ord(hz)
-      + (1 - EC_X_EVEN) * (Math.log(hz) - x0) / (x1 - x0));
+      + (1 - EC_X_EVEN) * (Math.log1p(hz) - x0) / (x1 - x0));
 
     // Y always fits everything drawn, live point included
     let lo = Infinity, hi = -Infinity;

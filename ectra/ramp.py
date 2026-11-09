@@ -56,10 +56,11 @@ class Ramp:
     The command after every limit, and in `foc` the entry frequency first,
     because the loop closes there and only then walks to the working point, up or down.
     """
-    if cmd.target_hz <= 0.0: return 0.0
+    # A command under `Speed:Min` is a stop: the ramp heads for 0, the plant cuts on the way
+    if cmd.target_hz <= 0.0 or cmd.target_hz < cmd.speed_min_hz: return 0.0
     goal = cmd.target_hz
     if cmd.speed_max_hz: goal = min(goal, cmd.speed_max_hz)
-    goal = max(goal, min(cmd.speed_min_hz, cmd.target_hz))
+    goal = max(goal, cmd.speed_min_hz)
     goal = self._derate(cmd, meters, goal)
     if cmd.mode == "foc" and cmd.entry_hz and cmd.lock_err_deg and not close_done:
       return cmd.entry_hz

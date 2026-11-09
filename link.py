@@ -20,6 +20,12 @@ write_log = logger("write", file="write.log", stream=False)
 # config.READBACK_W is set; the regular poll reads "R".
 SYNC_RWS = ["R", "RW", "RWs"] + (["W"] if config.READBACK_W else [])
 
+def _kept(entry:dict) -> bool:
+  """Synced and cached even when ignored.
+  A writable, since a value you cannot see is one you cannot edit,
+  and an `info` register, since the config file carries it."""
+  return entry["rws"] != "R" or config.is_info(entry["extra"].get("info"))
+
 # Trickle rides the idle tail of a poll: whatever the interval has left once the
 # telemetry read is paid for, less a margin for jitter. MIN keeps RWs refreshing
 # even when that read alone overruns the interval; MAX bounds how long one packet
@@ -164,11 +170,11 @@ class ModbusLink:
     log.inf("Read loop stopped")
 
   def _sync_ids(self) -> list[int]:
-    """Full-read set. Ignore drops a register from the poll cycle; a writable one
-    is still read here, since a value you cannot see is one you cannot edit."""
+    """Full-read set.
+    Ignore drops a register from the poll cycle; a `_kept` one is still read here."""
     ignored = self.mb.resolved_ignored_ids()
     return [rid for rid, e in self.mb.id_map.items()
-      if e["rws"] in SYNC_RWS and not (rid in ignored and e["rws"] == "R")]
+      if e["rws"] in SYNC_RWS and (rid not in ignored or _kept(e))]
 
   async def _read_loop(self):
     errors = 0
@@ -467,10 +473,10 @@ class ModbusLink:
     def _apply():
       if not self.mb: return
       self.mb.ignore_set = new_ignore
-      # Telemetry drops its cached raw so history takes a gap, not a frozen
-      # repeat. A writable keeps its value - it is still synced, and editable.
+      # Telemetry drops its cached raw so history takes a gap, not a frozen repeat.
+      # A `_kept` register keeps its value: it is still synced.
       for rid in self.mb.resolved_ignored_ids():
-        if self.mb.id_map[rid]["rws"] == "R": self.mb.cache_raw[rid] = None
+        if not _kept(self.mb.id_map[rid]): self.mb.cache_raw[rid] = None
       self._trickle_built = False
       log.inf(f"Poll filter updated: {len(new_ignore)} ignored")
     self._loop.call_soon_threadsafe(_apply)

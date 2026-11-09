@@ -1,5 +1,9 @@
 # Changes `modra`
 
+## `1.3.6` Info
+
+- Config export opens with `info` registers _(serial, versions, UID)_, in the app and `mb_ctrl`
+
 ## `1.3.5` Status, Faults
 
 - Updated Ectra model; guide shows what holds the drive back now

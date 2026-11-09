@@ -44,7 +44,7 @@ METERS = (
 # Readings with no model behind them that still have a sensible standing value.
 # The version this model follows: a bench checks it as on the drive.
 STANDING = {
-  "Version:Software": "0.13.1", "Version:Abi": 35, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
+  "Version:Software": "0.13.3", "Version:Abi": 38, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
   "Counter:RS485": 0, "Counter:Link": 0, "Journal:Count": 0,
   "Digital:InputState": 0, "Digital:RelayState": 0,
   "AnalogInput:Value": 0, "AnalogInput:SensValue": 0, "Flow:Value": 0,
@@ -55,8 +55,8 @@ STANDING = {
 # the device says "no reading" rather than a number that looks valid,
 # and a value frozen where a generic walk left it is exactly such a number.
 #
-# `Foc:Guard*` and the `Fault:*` snapshots are deliberately absent.
-# Both hold the evidence of something that happened,
+# The `Fault:*` snapshots are deliberately absent.
+# They hold the evidence of something that happened,
 # and before it does the device has no reading to give;
 # a zero there would read as a verdict of its own.
 OWNED = (
@@ -66,9 +66,8 @@ OWNED = (
   "Estim:Freq", "Estim:Id", "Estim:Iq",
   "Obs:OmegaHat", "Obs:OmegaRipple", "Obs:AngleErr", "Obs:Bias",
   "Sync:Err", "Sync:ErrPeak", "Sync:Lock",
-  "Sync:Takeovers", "Sync:Losses", "Sync:Restarts", "Sync:ExitCause", "Sync:ExitTime",
-  "Foc:TakeoverDelta",
-  "Foc:Flags", "Foc:Vd", "Foc:Vq", "Foc:IqCmd",
+  "Sync:Takeovers", "Sync:ExitCause", "Sync:ExitTime",
+  "Foc:TakeoverDelta", "Foc:Flags", "Foc:IqCmd",
   "Freeze:State", "Freeze:HoldCount",
   "Fault:Code", "Fault:PeakEvents", "Counter:Hours",
   "Link:ConfigTarget", "Link:ConfigApplied", "Auth:Access",

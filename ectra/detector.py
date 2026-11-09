@@ -43,12 +43,9 @@ class Detector:
     self.reset()
 
   def reset(self):
-    """Power-on. The episode counters are boot-sticky on the device."""
+    """Power-on. `Sync:Takeovers` is boot-sticky on the device."""
     self.clear()
     self.takeovers = 0
-    self.losses = 0
-    # New run-ups from state B: the plant has no state B, so this stays 0
-    self.restarts = 0
     self.exit_cause = "none"
     self.exit_ms = 0.0
     self.delta = 0.0 # `Foc:TakeoverDelta` [rad]
@@ -159,5 +156,4 @@ class Detector:
     """The one way out of closed: the cause and the episode length stay, the drive faults."""
     self.exit_cause = cause
     self.exit_ms = self._closed_s * 1000.0
-    self.losses = min(self.losses + 1, 65534)
     out.fault = "sync"

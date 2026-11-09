@@ -25,7 +25,7 @@ TRICKLE = True
 
 # Auto-unlock: with AUTH_KEY_REG in the map, AUTH_KEY goes out on connect,
 # and again whenever the level drops below AUTH_LEVEL (it boots to guest).
-# The key is a firmware constant: ectra SECRET_KEY_ADMIN in iv-ifc/reg.h.
+# The key is a firmware constant, ectra's `SECRET_KEY_ADMIN`.
 # `AUTH_KEY = None`, or a map without that register, leaves access untouched.
 AUTH_KEY = 0x5D8E41B3
 AUTH_KEY_REG = "Auth:SecretKey"  # 32-bit `high=`/`low=` pair or a single reg
@@ -166,6 +166,10 @@ def ignore_names(patterns, mb:ModbusMaster) -> set[str]:
     if not p: continue
     out |= {n for n in known if fnmatchcase(n, p)} if "*" in p or "?" in p else {p}
   return out
+
+def is_info(cell) -> bool:
+  """The map's `info` column: `true` on a read-only register the config file carries."""
+  return str(cell or "").strip().lower() == "true"
 
 def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   """ModbusMaster bound to current state + `view.ignore`. Ignore is applied

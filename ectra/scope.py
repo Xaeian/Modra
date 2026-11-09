@@ -64,15 +64,12 @@ class Scope:
     self.omega = Mean()   # `Obs:OmegaHat`
     self.center = Mean(RIPPLE_CENTER_s)
     self.ripple = Env(RIPPLE_PEAK_Hzs) # `Obs:OmegaRipple`
-    self.vd = Mean()
-    self.vq = Mean()
     self.bus_max = 0.0
     self.reset()
 
   def reset(self):
     for ch in (self.err_peak, self.ripple): ch.reset()
-    for ch in (self.theta, self.err, self.bias, self.omega, self.center, self.vd, self.vq):
-      ch.reset()
+    for ch in (self.theta, self.err, self.bias, self.omega, self.center): ch.reset()
     self.bus_max = 0.0
 
   def restart(self, vdc:float):
@@ -93,5 +90,3 @@ class Scope:
     self.omega.feed(abs(o.hz), dt)
     self.center.feed(o.hz, dt)
     self.ripple.feed(abs(o.hz - self.center.read()), dt)
-    self.vd.feed(plant.vd, dt)
-    self.vq.feed(plant.vq, dt)

@@ -66,6 +66,20 @@ Parametry rzeczywistej maszyny są niezależne od nastaw `Motor:*`.
 Domyślnie model używa między innymi `KE_V_Hz = 0.55`, krzywej obciążenia `LOAD_CURVE`, bezwładności `INERTIA_kgm2` oraz zależnej od prądu straty mostka `LOSS_V`.
 Stałe służące do kalibracji modelu znajdują się na początku `machine.py`.
 
+## Wariant 4kW
+
+`SIM 4kW` sieje rejestry kolumną 4000W mapy i jedzie maszyną 4kW z `IRON` w `machine.py`, a sam `SIM` to nadal 1.5kW.
+Z karty silnika: Rs `0.32Ω`, Lq `6.6mH` i Ke `0.83V` na Hz elektryczny.
+Ze startów z 30 października: strata mostka `13V`, przy której catch z mapy ma `PeakMax` około `22A` wobec zmierzonych `20A`, obciążenie wentylatora z tego, co moment rozbiegu I/f zostawia ponad przyspieszenie, rosnące z kwadratem prędkości, szyna `60µF` i komparator `12A` amplitudy.
+Bezwładność `0.4kg·m²` jest z wybiegu: align na napędzie czytał stojący wirnik `90s` po biegu z `45Hz` i `43–63s` po biegu z `10–21Hz`, a model staje w `82s` i `27–52s`.
+
+Przy przejęciu prądu obserwator rusza od kąta pola, z prędkością rampy, tak jak w napędzie, więc przez pierwsze ułamki sekundy kąt do pola jest bliski zera.
+
+Model nie odtwarza porażek startu napędu 4kW.
+Napęd przy przejęciu `12.5Hz` z mapy padał `hv+` przy `18–29Hz`, a model dojeżdża czysto.
+Prąd V/f przy `5–12Hz` to w modelu około `1A` wobec `7–9A` na napędzie, ta sama słabość straty mostka co w 1.5kW, więc catch w modelu jest łagodniejszy niż na napędzie.
+`SIM 4kW` sprawdza więc ławkę, a nie nastawy startu.
+
 ## Odwzorowane zachowania
 
 Model obejmuje:

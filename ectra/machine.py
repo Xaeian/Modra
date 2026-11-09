@@ -34,21 +34,16 @@ RS_ohm = 0.898
 LQ_H = 0.0154
 # Phase RMS volts per ELECTRICAL Hz, the unit the whole package works in.
 # The nameplate 100.6 V/krpm line-to-line RMS is 0.58.
-# The loops' output at 40Hz on the bench (`Foc:Vd` 12.7% with a vanishing `Foc:Vq`)
+# The loops' output at 40Hz on the bench (12.7% modulation on d with a vanishing q)
 # reads the back-EMF at 22V, a touch under it,
 # and the powers on the I/f steps (65W at 40Hz, 215W at 60Hz, 407W at 90Hz) sit between the two.
 # A smaller constant cannot reach those powers.
 KE_V_Hz = 0.55
 POLES = 6
-# How this board's current channels are really wired, in the map register's terms.
-# The drive reads the board as drawn with `Sense:PhaseMap` at `norm`,
-# so the guard stays silent until somebody changes it,
-# which is what makes the guard worth reading.
-PHASEMAP = 0
 # What the bridge keeps for itself along each phase current:
 # the dead time `td/T × Vdc` the register `Pwm:Deadtime` describes,
 # plus the forward drop of the conducting leg.
-# Its size comes from the V/f start: at 2Hz and `Volt:2Hz` 19.4V,
+# Its size comes from the V/f start at 2Hz on the table's 19.4V:
 # the measured 3.1A is the full 16V off the table.
 # Its shape comes from the I/f steps on the bench:
 # `Feedback:ModIndex` read 10% at 25Hz and 0.5A, 15% at 40Hz and 0.8A, 28% at 80Hz and 2.2A,
@@ -63,7 +58,6 @@ PHASEMAP = 0
 # and 3.1A at the start is what 15V off the table leaves in a 0.9Ω winding
 LOSS_V = 15.0
 LOSS_A0, LOSS_A1 = 0.0, 0.8 # phase current, RMS scale: absent under A0, whole above A1
-DTCOMP_pct = 100.0 # the share of the nominal dead time the guard reports
 
 # The shaft: the fan as the speed loop measures it.
 # In closed the loop holds the torque current `iq`, so every step reads the load as `kt × iq`:
@@ -159,9 +153,6 @@ VCE_V = 1.5
 FLYBACK_V = 17.0
 PEAK_FACTOR = 2.828 # sine phase RMS to peak-to-peak
 PEAK_TRIP_A = 40.0
-GUARD_SWAP = 0.45
-GUARD_HALF = 0.5
-GUARD_PUSH = 3.0
 
 #------------------------------------------------------------------------------------------ Helpers
 
@@ -190,24 +181,59 @@ def dead_ab(signs:tuple, v_dt:float) -> tuple:
   su, sv, sw = signs
   return (2.0 * su - sv - sw) / 3.0 * v_dt, (sv - sw) / 1.7320508 * v_dt
 
+#-------------------------------------------------------------------------------- The 4000W machine
+
+# The 4kW motor on its fan: the card, and its first starts on the bench, 30.10.
+# Card: Rs 0.320Ω, Lq 6.60mH, Ke 144.0V/krpm line-to-line RMS, 0.83 per electrical Hz.
+RS_4000W_ohm = 0.320
+LQ_4000W_H = 0.0066
+KE_4000W_V_Hz = 0.83
+# The V/f start on the map's table, 18.3V at standstill, peaked at about 20A peak-to-peak:
+# over a 0.32Ω winding every volt is 3A, and 13V kept by the bridge puts the model there
+LOSS_4000W_V = 13.0
+# The coast on the load below: the align reading found the fan standing 90s after 45Hz
+# and 43-63s after 10-21Hz, and 0.4kgm² stops it in 82s and 27-52s.
+# The I/f climb's load angle read ≈0.6, through the current's torque, a coarser way
+INERTIA_4000W_kgm2 = 0.4
+# The fan: what the I/f torque leaves over the climb, ≈0.15Nm at 10Hz and ≈0.4Nm at 45Hz,
+# carried on as the square of speed to ≈14Nm at 2700rpm, the nameplate's torque there
+#   mechanical rad/s → Nm
+LOAD_4000W = [(0.0, 0.12), (25.0, 0.23), (50.0, 0.55), (100.0, 1.82), (150.0, 3.95),
+  (200.0, 6.92), (250.0, 10.75), (300.0, 15.42)]
+# Its comparator, an amplitude: two catch starts of five tripped `peak` at 0.8Hz,
+# the other three peaked at about 10A
+PEAK_TRIP_4000W_A = 12.0
+# Its link: tens of µF, what the stream read on the 1.5kW board.
+# A rotor swinging past the field gives back a few joules, and that is 100V and more here,
+# the 50-130V the bus jumped by between two samples before every `hv+` at 10-22Hz
+BUS_C_4000W_F = 60e-6
+
+# Every machine the simulator knows, by `Motor:Type`: the 1500W one is the constants up top
+IRON = {
+  "1500W": {},
+  "4000W": {"rs": RS_4000W_ohm, "lq": LQ_4000W_H, "ke": KE_4000W_V_Hz,
+    "inertia": INERTIA_4000W_kgm2, "load": LOAD_4000W, "loss": LOSS_4000W_V,
+    "peak_trip": PEAK_TRIP_4000W_A, "bus_c": BUS_C_4000W_F},
+}
+
 #------------------------------------------------------------------------------------------ Machine
 
 class Machine:
   """Iron, shaft and link. Integrated, not solved."""
   def __init__(
     self, rs:float = RS_ohm, lq:float = LQ_H, ke:float = KE_V_Hz, poles:int = POLES,
-    phasemap:int = PHASEMAP, dtcomp:float = DTCOMP_pct, peak_trip:float = PEAK_TRIP_A,
-    inertia:float = INERTIA_kgm2, load:list|None = None,
+    peak_trip:float = PEAK_TRIP_A, inertia:float = INERTIA_kgm2, load:list|None = None,
+    loss:float = LOSS_V, bus_c:float = BUS_C_F,
   ):
     self.rs = rs
     self.lq = lq
     self.ke = ke
     self.poles = poles
-    self.phasemap = phasemap
-    self.dtcomp_true = dtcomp # the observer's nominal, for `guard_point`
     self.peak_trip = peak_trip
     self.inertia = inertia
     self.load = list(load or LOAD_CURVE)
+    self.loss = loss
+    self.bus_c = bus_c
     self.reset()
 
   def reset(self):
@@ -306,7 +332,7 @@ class Machine:
     dead time and forward drop along each phase current, absent under `LOSS_A0`,
     whole past `LOSS_A1`, a square wave of the phase current's sign in between them.
     """
-    v = LOSS_V
+    v = self.loss
     iu = i_a
     iv = -0.5 * i_a + 0.8660254 * i_b
     iw = -0.5 * i_a - 0.8660254 * i_b
@@ -503,9 +529,9 @@ class Machine:
       + self.bridge_loss(running) + LINK_DRAIN_W) / max(self.vdc, 1.0)
     if self.vdc < BUS_VRECT_V:
       aim = BUS_VRECT_V - i_inv * BUS_RSRC_ohm
-      self.vdc += (aim - self.vdc) * min(1.0, dt / (BUS_RSRC_ohm * BUS_C_F))
+      self.vdc += (aim - self.vdc) * min(1.0, dt / (BUS_RSRC_ohm * self.bus_c))
     else:
-      self.vdc -= i_inv * dt / BUS_C_F
+      self.vdc -= i_inv * dt / self.bus_c
     self.vdc = max(100.0, self.vdc)
     if not cmd.dc_max_v: return False
     return self.vdc > cmd.dc_max_v - (0.0 if closed else BUS_MARGIN_V)
@@ -514,17 +540,3 @@ class Machine:
     loss = 3.0 * self.rs * self.curr ** 2 + self.bridge_loss(running)
     aim = AMBIENT_C + TEMP_RTH_CW * loss
     self.temp += (aim - self.temp) * dt / (TEMP_TAU_s + dt)
-
-  def guard_point(self, cmd:Command, hz:float) -> tuple:
-    """
-    What the start feed guard caught:
-    the volts the d-axis asked for, the current that answered, and what it asked of it.
-    """
-    want = self.forced_mag(cmd, max(hz, 0.0))
-    wrong = int(cmd.phasemap) ^ int(self.phasemap)
-    seen = want
-    if wrong & 0b100: seen *= GUARD_SWAP
-    flipped = (wrong & 0b001 != 0) + (wrong & 0b010 != 0)
-    if flipped == 1: seen *= -GUARD_HALF
-    elif flipped == 2: seen *= -1.0
-    return GUARD_PUSH * (self.rs * want + self.dead_v(cmd, self.dtcomp_true)), seen, want

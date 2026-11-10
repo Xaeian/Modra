@@ -128,7 +128,7 @@ Enable widgets in `app.ini` by listing their IDs:
 widgets = ectra-guide, ectra-tables
 ```
 
-The bundled Ectra widgets provide a guided PMSM commissioning procedure and editors for the `Volt`, `Curr`, `Rise` and `Fall` tables.
+The bundled Ectra widgets are a PMSM guide (basic settings by topic, what limits the drive now, what each fault means) and editors for the `Volt`, `Curr`, `Rise` and `Fall` tables.
 Press `w` to toggle the first widget available for the current map; additional widgets have their own toolbar buttons.
 
 ## Settings ☰

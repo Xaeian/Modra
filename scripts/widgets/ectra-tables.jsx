@@ -15,7 +15,7 @@
 // `Rise:0Hz` the tempo that leaves standstill and `Fall:0Hz` the one that reaches it.
 //
 // The guide is `Ectra`.
-// Nothing here knows about stages: a table is a table whichever step of the procedure is open.
+// Nothing here knows about its topics: a table is a table whichever topic is open.
 
 const EC_TABLES = ["Volt", "Curr", "Rise", "Fall"];
 const EC_TAB_KEY = "modra.ectra.tab";
@@ -63,7 +63,7 @@ const EctraTables = {
   _geo: null,         // paint-time transforms, reused for hit-testing
   _hoverEl: null,
 
-  // Another widget asking for a table by name. Still no idea what a stage is:
+  // Another widget asking for a table by name. Still no idea what a topic is:
   // this only knows how to be told which of its four to show.
   receive(msg) {
     if(!EC_TABLES.includes(msg?.table)) return false;
@@ -169,7 +169,8 @@ const EctraTables = {
   // One gentle pass toward the neighbours' chord,
   // weighted by the real Hz spacing of the non-uniform grid.
   // Endpoints never move - they anchor standstill and top-end behaviour on the live drive -
-  // and each point stays inside the span of its neighbours, so a pass cannot mint a new extreme.
+  // and each point lands between where it stood and that chord,
+  // so a pass cannot mint a new extreme.
   // Repeated clicks smooth further, each one written and undoable.
   smooth() {
     const pts = this.pts();

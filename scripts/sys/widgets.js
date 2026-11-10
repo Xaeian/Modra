@@ -206,13 +206,15 @@ const Widgets = (() => {
     point(null);
     if(S.searchStrict !== was.strict) toggleSearchStrict();
     search(was.query || "");
+    // Sizes before any save: a saved panel takes the size standing at that moment,
+    // and `plot` already saved the widget's, even where the traces end up the same
+    S.chartSizes = was.sizes || {};
     if(!_same([...S.ignore], was.ignore)) setIgnore(was.ignore);
     if(!_same([...S.monitor], was.monitor)) {
       S.monitor.clear();
       for(const name of was.monitor) S.monitor.add(name);
-      saveMonitor();
     }
-    S.chartSizes = was.sizes || {};
+    saveMonitor();
     S.showChart = was.chart;
     render();
     _remount();

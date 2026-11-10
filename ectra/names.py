@@ -44,7 +44,7 @@ METERS = (
 # Readings with no model behind them that still have a sensible standing value.
 # The version this model follows: a bench checks it as on the drive.
 STANDING = {
-  "Version:Software": "0.13.3", "Version:Abi": 38, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
+  "Version:Software": "0.13.4", "Version:Abi": 38, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
   "Counter:RS485": 0, "Counter:Link": 0, "Journal:Count": 0,
   "Digital:InputState": 0, "Digital:RelayState": 0,
   "AnalogInput:Value": 0, "AnalogInput:SensValue": 0, "Flow:Value": 0,

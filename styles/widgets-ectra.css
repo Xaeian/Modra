@@ -1,10 +1,10 @@
 /* styles/widgets-ectra.css */
-/* The two ectra widgets: the tuning book and the curve tables. Sorts after
+/* The two ectra widgets: the guide and the curve tables. Sorts after
    widget.css, so the shared chrome is in place before these. */
 
 .ec { font-size: 12px; }
 
-/* Tabs, shared: the book's stages and the tables' four names read the same,
+/* Tabs, shared: the guide's topics and the tables' four names read the same,
    because they are the same gesture - pick one, the panel below follows. */
 .ec-tabs { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; padding: 6px 8px; }
 .ec-tab {
@@ -14,9 +14,9 @@
 .ec-tab.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .ec-tab:disabled { opacity: 0.4; cursor: default; }
 
-/* The book. Narrow on purpose: it sits beside the grid, and a column of prose
+/* The guide. Narrow on purpose: it sits beside the grid, and a column of prose
    is read, not scanned. Beside the grid it takes the height the other widgets
-   leave and scrolls its own prose, so the stage tabs never leave the screen. */
+   leave and scrolls its own prose, so the topic tabs never leave the screen. */
 .rb-side > .wg:has(> .ec-book) {
   flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column;

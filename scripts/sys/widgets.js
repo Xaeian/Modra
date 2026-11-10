@@ -20,8 +20,21 @@ const Widgets = (() => {
   const _all = [];
   const _allow = new Set(WIDGETS_ENABLED.split(",").map(s => s.trim()).filter(Boolean));
 
-  // The bundler puts every `.js` before every `.jsx`, so this registry exists before
-  // widgets self-register. An unlisted widget is dropped here: it ships, but stays inert.
+  /**
+   * A device widget entered in the registry, from the last line of its own `.jsx`:
+   * every `.js` loads before any `.jsx`, so the registry is there by then.
+   * An id the `widgets` list in app.ini leaves out is dropped: the widget ships, but stays inert.
+   * @param {object} widget
+   * @param {string} widget.id  the name the `widgets` list in app.ini enables it by
+   * @param {(regs: object[]) => boolean} widget.match  whether the loaded map is its device's,
+   *   judged by register names, never by a device id
+   * @param {() => *} widget.View  panel content, built anew on every render,
+   *   so anything it must not lose lives on the widget object
+   * @param {string} [widget.title]  panel heading and toolbar tooltip, the `id` by default
+   * @param {string} [widget.icon]  glyph of its toolbar switch
+   * @param {boolean} [widget.beside]  a side panel that stays in view while the grid scrolls
+   * @param {(msg: *) => *} [widget.receive]  answers `tell`, or returns `false` to turn it down
+   */
   function register(widget) {
     if(!widget?.id || !_allow.has(widget.id)) return;
     if(_all.some(w => w.id === widget.id)) {
@@ -31,9 +44,13 @@ const Widgets = (() => {
     _all.push(widget);
   }
 
-  // Cached on the catalog reference: the backend builds it once. A throwing `match`
-  // disqualifies the widget instead of breaking render.
+  // Cached on the catalog reference: the backend builds it once
   let _active = null, _activeSrc = null;
+  /**
+   * Widgets whose `match` accepts the loaded map, panel open or not.
+   * `match` runs once per map, and a throwing one disqualifies its widget
+   * instead of breaking render.
+   */
   function active() {
     if(_activeSrc !== S.regs) {
       _activeSrc = S.regs;
@@ -46,13 +63,19 @@ const Widgets = (() => {
     return _active;
   }
 
-  // Open panels only; `active()` stays the full list, because the toolbar has to
-  // offer a switch for a widget precisely when that widget is closed. A widget
-  // that reads alongside the grid asks for `beside` and then stays in view while
-  // the grid scrolls, which is the whole point: what it highlights has to be
-  // visible at the same time as what it says.
+  /**
+   * Active widgets whose panel the operator has open.
+   * `active()` stays the full list,
+   * because the toolbar has to offer a switch for a widget precisely when that widget is closed.
+   */
   const shown = () => active().filter(w => S.widgetsOn.has(w.id));
+  /**
+   * Open widgets that read alongside the grid, having asked for `beside`.
+   * Such a panel stays in view while the grid scrolls, which is the whole point:
+   * what it highlights has to be visible at the same time as what it says.
+   */
   const beside = () => shown().filter(w => w.beside);
+  /** Open widgets without `beside`, shown above the grid. */
   const over = () => shown().filter(w => !w.beside);
 
   //------------------------------------------------------------------------------- Driving the app
@@ -79,32 +102,29 @@ const Widgets = (() => {
   };
   const _same = (a, b) => a.length === b.length && a.every(n => b.includes(n));
 
-  // The chart is one persistent element reparented into a freshly rendered host:
-  // the first mount builds that host, the second reattaches after the stack
-  // rebuilds, and the refetch backfills traces that were not there before.
-  const _remount = () => {
-    Monitor.mount();
-    Monitor.refresh();
-    Monitor.mount();
-    Monitor.refetch();
-  };
-
-  // Highlight these registers in the grid. The query is the same one the search
-  // box takes, so `|` joins alternatives; strict mode is forced because a
-  // widget's list is written as exact names, not as something to guess at.
+  /**
+   * These registers highlighted in the grid.
+   * The query is the same one the search box takes, so `|` joins alternatives;
+   * strict mode is forced, because a widget's list is written as exact names,
+   * not as something to guess at.
+   * @param {string} query  names or globs; a bare name also hits any name it is part of
+   */
   function focus(query) {
     _keep();
     if(!S.searchStrict) toggleSearchStrict();
     search(query || "");
   }
 
-  // Chart exactly these registers and nothing else. `big` names the few that
-  // earn a taller panel; everything else gets the small one, so a screenful of
-  // traces stays a screenful.
-  //
-  // An ignored register is never polled, so charting one would draw a flat line
-  // and quietly lie; the ignore is lifted for anything asked for here. A widget
-  // asking to plot is asking to be watched, so the chart opens too.
+  /**
+   * Exactly these registers charted and nothing else.
+   * A widget asking to plot is asking to be watched, so the chart opens too;
+   * an empty list closes it.
+   * An ignored register is never polled, so charting one would draw a flat line
+   * and quietly lie: the ignore is lifted for anything asked for here.
+   * @param {string[]} names  a name the map lacks is skipped
+   * @param {string[]} [big]  the few that earn a taller panel; the rest get the small one,
+   *   so a screenful of traces stays a screenful
+   */
   function plot(names, big) {
     _keep();
     const want = (names || []).filter(n => Reg.byName(n));
@@ -123,16 +143,18 @@ const Widgets = (() => {
     }
     saveMonitor();
     render();
-    _remount();
+    Monitor.rebuild(true);
   }
 
-  // One widget asking another for something.
-  //
-  // Panels are separate on purpose, so they do not reach into each other: a
-  // message names the widget it is for and says what it wants, and a widget
-  // that is not shipped, not enabled or not interested simply does not answer.
-  // The sender learns whether anyone did, and is expected to carry on either
-  // way - a panel the operator turned off is not an error.
+  /**
+   * One widget asking another for something.
+   * Panels are separate on purpose, so they do not reach into each other:
+   * a widget not shipped, not enabled or not interested simply does not answer,
+   * and the sender is expected to carry on either way. A closed panel still hears it.
+   * @param {string} id  the widget the message is for
+   * @param {*} msg  what it wants, in terms the receiving widget sets
+   * @returns {boolean} whether a widget took it
+   */
   function tell(id, msg) {
     const w = active().find(x => x.id === id);
     if(!w?.receive) return false;
@@ -143,14 +165,16 @@ const Widgets = (() => {
     }
   }
 
-  // Mark one register in the grid: a static highlight, held for as long as a
-  // name is pointed at. Nothing is written, so nothing needs undoing.
-  //
   // A pin outlives the pointing. `reveal` scrolls the grid to a row, and the
   // pointer necessarily leaves the text on the way there, so without a pin the
   // mark would go out exactly when it was finally worth looking at.
   let _pin = null;
 
+  /**
+   * One register marked in the grid, held for as long as its name is pointed at.
+   * The highlight is static and nothing is written, so nothing needs undoing.
+   * @param {string|null} name  `null` lets go, back to whatever `reveal` pinned
+   */
   function point(name) {
     const next = name || _pin;
     if(S.pointed === next) return;
@@ -158,8 +182,11 @@ const Widgets = (() => {
     render();
   }
 
-  // Take the grid to a register and leave it marked. Calling it on the row
-  // already pinned lets go again, so the same click both fetches and releases.
+  /**
+   * One register scrolled into view in the grid and left marked.
+   * Calling it on the row already pinned lets go again,
+   * so the same click both fetches and releases.
+   */
   function reveal(name) {
     _pin = _pin === name ? null : name;
     point(name);
@@ -168,20 +195,19 @@ const Widgets = (() => {
     if(row) row.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
-  // Take these out of the poll cycle: plain names or globs, added to whatever
-  // the operator already ignores. `spare` wins over all of it.
-  //
-  // Additive on purpose. Keeping only a declared list would silence every
-  // register the widget did not think of, and a grid row that quietly stopped
-  // updating is worse than a slow cycle. What belongs here is what takes no
-  // part in tuning at all - a journal, a counter, a serial-port setting - and
-  // that set is the widget's to name, because only it knows the device.
-  //
-  // `spare` is how a widget keeps its own word. A register it points at, names
-  // in an instruction or draws must keep arriving, whether a pattern here
-  // happens to cover it or the operator had ignored it earlier. Telling someone
-  // to watch a number and freezing it in the same breath is the one outcome
-  // this seam must not produce.
+  /**
+   * These registers out of the poll cycle, added to whatever the operator already ignores.
+   * Additive on purpose: keeping only a declared list would silence every register
+   * the widget did not think of, and a grid row that quietly stopped updating
+   * is worse than a slow cycle.
+   * What belongs here takes no part in tuning at all:
+   * a journal, a counter, a serial-port setting.
+   * `spare` wins over all of it, the operator's earlier ignores included:
+   * telling someone to watch a number and freezing it in the same breath
+   * is the one outcome this seam must not produce.
+   * @param {string[]} patterns  plain names or globs
+   * @param {string[]} [spare]  what the widget points at, names in an instruction or draws
+   */
   function mute(patterns, spare) {
     _keep();
     const add = new Set(S.ignore);
@@ -195,9 +221,11 @@ const Widgets = (() => {
       || [...add].some(n => !S.ignore.has(n))) setIgnore([...add]);
   }
 
-  // Put back what the operator had: their filter, their charts, their ignore
-  // list. Anything they changed in the meantime is theirs and stays, so this
-  // hands back only what it still owns.
+  /**
+   * The operator's own view put back: their filter, their charts, their ignore list,
+   * as they stood before a widget first took the view with `focus`, `plot` or `mute`.
+   * A change made in between goes with the widget's view.
+   */
   function release() {
     if(!_was) return;
     const was = _was;
@@ -217,9 +245,11 @@ const Widgets = (() => {
     saveMonitor();
     S.showChart = was.chart;
     render();
-    _remount();
+    Monitor.rebuild(true);
   }
 
-  return { register, active, shown, beside, over, any: () => active().length > 0,
-    focus, plot, mute, point, reveal, release, tell };
+  return {
+    register, active, shown, beside, over,
+    focus, plot, mute, point, reveal, release, tell,
+  };
 })();

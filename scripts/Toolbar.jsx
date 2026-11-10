@@ -22,12 +22,11 @@ const Toolbar = () => {
           if(e.target.value === "SIM") S.addrInput = "1";
           render();
         }}
-        disabled={!S.ports.length}
-        onBlur={() => _renderPending && render()}>
+        disabled={!S.ports.length}>
         {S.ports.map(p => <option value={p}>{p}</option>)}
       </select>
       <input class="rb-addr" type="text" value={S.addrInput}
-        placeholder="addr" title="Modbus device address (1-247)"
+        placeholder="addr" title={`Modbus device address (${MIN_ADDR}-${MAX_ADDR})`}
         disabled={S.portInput === "SIM"}
         onInput={(e) => { S.addrInput = e.target.value; }} />
       <button onClick={toggleConnection}

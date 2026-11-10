@@ -5,8 +5,6 @@
 //----------------------------------------------------------------------------------------- Helpers
 
 const VIEW_SAVE_DEBOUNCE_MS = 500;
-const MIN_ADDR = 1;
-const MAX_ADDR = 247;
 
 // Batches partial view.json patches into one POST, so monitor and ignore
 // edits in the same window don't clobber each other.
@@ -16,7 +14,7 @@ const _viewSaver = (() => {
   const flush = () => {
     const patch = pending; pending = {};
     if(!Object.keys(patch).length) return;
-    API.view_set(patch);
+    API.view_set(patch); // fire-and-forget: the next change saves the whole field again
   };
   const schedule = () => {
     clearTimeout(timer);
@@ -59,13 +57,14 @@ function reset() {
 
 // Setting a null counts as a pick, so autosend writes it - like an enum click.
 function toggleNull(reg) {
-  const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
+  const cur = Reg.staged(reg.name);
   if(cur == null) resetOne(reg); else editSend(reg, null);
 }
 
 //---------------------------------------------------------------------------- Send single register
 
-const shouldAutosend = (reg) => S.serial?.autosend && S.connected && reg.name in S.dirty;
+const shouldAutosend = (reg) => S.serial?.autosend && S.connected
+  && Object.hasOwn(S.dirty, reg.name);
 
 // Value already on the wire per register - collapses a blur autosend and an
 // immediate 🎯 on the same field into a single write.
@@ -73,16 +72,24 @@ const _sending = new Map();
 
 async function _writeOne(reg, val) {
   const cache = await API.write({ [reg.name]: val });
-  if(cache && !cache.error) { applyCache(cache); delete S.dirty[reg.name]; }
+  if(cache && !cache.error) { applyCache(cache); unstage({ [reg.name]: val }); }
   else alert.err(cache?.error || "Write failed");
+}
+
+// The staged edits a write carried, dropped once it landed;
+// one typed while the write was on the wire stays staged
+function unstage(batch) {
+  for(const [name, val] of Object.entries(batch)) {
+    if(Object.hasOwn(S.dirty, name) && Reg.same(S.dirty[name], val)) delete S.dirty[name];
+  }
 }
 
 // Per-row 🎯: stages the value even when it equals the cache, so an unchanged
 // value can be re-sent.
 function sendOne(reg) {
   if(!S.connected) return;
-  S.dirty[reg.name] = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
-  if(shouldAutosend(reg)) autosendOne(reg);
+  S.dirty[reg.name] = Reg.staged(reg.name);
+  if(shouldAutosend(reg)) autosendOne(reg); // fire-and-forget: it renders once the write lands
   render();
 }
 
@@ -104,7 +111,7 @@ async function autosendOne(reg) {
 
 function editSend(reg, val) {
   edit(reg, val);
-  if(shouldAutosend(reg)) autosendOne(reg);
+  if(shouldAutosend(reg)) autosendOne(reg); // fire-and-forget: it renders once the write lands
 }
 
 //-------------------------------------------------------------------------------------- UI toggles
@@ -114,13 +121,9 @@ function toggleMonitor(reg) {
   if(adding) S.monitor.add(reg.name);
   else S.monitor.delete(reg.name);
   render();
-  // First mount creates the chart host, the second reattaches after ChartStack rebuilds.
-  Monitor.mount();
-  Monitor.refresh();
-  Monitor.mount();
+  // A new trace is backfilled: offline, inside a frozen window, past the throttle
+  Monitor.rebuild(adding);
   saveMonitor();
-  // Backfill the new trace: works offline, inside a frozen window, and skips the throttle.
-  if(adding) Monitor.refetch();
 }
 
 function toggleUtil(reg) {
@@ -151,9 +154,7 @@ function restoreWidgets() {
   const live = Widgets.active().map(w => w.id);
   let saved = [];
   try { saved = (localStorage.getItem(WIDGETS_KEY) || "").split(",").filter(Boolean); }
-  catch(e) { return; }
-  // `1` is what the old single switch wrote; it meant "all of them".
-  if(saved.length === 1 && saved[0] === "1") saved = live;
+  catch(e) { return; } // storage refused: every panel starts closed
   for(const id of saved) if(live.includes(id)) S.widgetsOn.add(id);
 }
 
@@ -221,8 +222,7 @@ function toggleIgnore(reg) {
     if(S.monitor.has(reg.name)) {
       S.monitor.delete(reg.name);
       saveMonitor();
-      Monitor.refresh();
-      Monitor.mount();
+      Monitor.rebuild();
     }
   }
   _viewSaver.ignore();
@@ -251,8 +251,7 @@ function setIgnore(names) {
   _viewSaver.ignore();
   saveMonitor();
   render();
-  Monitor.refresh();
-  Monitor.mount();
+  Monitor.rebuild();
 }
 
 function toggleShowDisabled() { S.showDisabled = !S.showDisabled; render(); }
@@ -287,16 +286,34 @@ async function toggleConnection() {
       }
     }
     const addr = S.portInput === "SIM" ? 1 : parseInt(S.addrInput);
-    if(addr >= MIN_ADDR && addr <= MAX_ADDR) {
-      const s = await API.set_addr(addr);
-      applyStatus(s);
-      if(S.connected) {
-        startPoll();
-        alert.ok(S.portInput === "SIM" ? "Simulator connected" : `Connected to addr ${addr}`);
-      }
-      else alert.wrn(s?.error || `No response addr:${addr}`);
-    }
+    if(addr >= MIN_ADDR && addr <= MAX_ADDR) await _probeAddr(addr);
   }
+  finally {
+    S.busy = false;
+    render();
+  }
+}
+
+// The device at `addr` on the open port, polled once it answers.
+// The backend lets a connected one go first, so this also moves between devices.
+async function _probeAddr(addr) {
+  const s = await API.set_addr(addr);
+  applyStatus(s);
+  if(S.connected) {
+    startPoll();
+    alert.ok(S.portInput === "SIM" ? "Simulator connected" : `Connected to addr ${addr}`);
+  }
+  else alert.wrn(s?.error || `No response addr:${addr}`);
+}
+
+// A device the address scan found, picked from its list
+async function pickAddr(addr) {
+  if(S.busy || !(addr >= MIN_ADDR && addr <= MAX_ADDR)) return;
+  S.busy = true;
+  S.addrInput = String(addr);
+  stopPoll();
+  render();
+  try { await _probeAddr(addr); }
   finally {
     S.busy = false;
     render();
@@ -321,12 +338,13 @@ function _confirmWraps(batch) {
 // Adopt the returned cache instead of our edits - the backend may clamp or reject.
 async function send() {
   if(!S.connected || !Object.keys(S.dirty).length) return;
-  if(!_confirmWraps(S.dirty)) return;
-  const cache = await API.write(S.dirty);
+  const batch = { ...S.dirty };
+  if(!_confirmWraps(batch)) return;
+  const cache = await API.write(batch);
   if(cache && !cache.error) {
     applyCache(cache);
-    const n = Object.keys(S.dirty).length;
-    S.dirty = {};
+    unstage(batch);
+    const n = Object.keys(batch).length;
     alert.ok(`Saved ${n} register${n === 1 ? "" : "s"} to device`);
   }
   else alert.err(cache?.error || "Write failed");
@@ -354,6 +372,19 @@ async function writeNow(patch) {
   return true;
 }
 
+// A batch of edits staged as typing stages one: with auto-send on it goes out now, in one write,
+// and what lands is no longer pending. `false` only when a write was tried and refused.
+async function stageBatch(patch) {
+  for(const [name, val] of Object.entries(patch)) {
+    const reg = Reg.byName(name);
+    if(reg) editSilent(reg, val);
+  }
+  if(!S.serial?.autosend || !S.connected) return true;
+  if(!await writeNow(patch)) return false;
+  unstage(patch);
+  return true;
+}
+
 //------------------------------------------------------------------------------------ Address scan
 
 async function scanAddrs() {
@@ -361,9 +392,11 @@ async function scanAddrs() {
   const addrs = parseAddrRange(S.addrScanInput);
   if(!addrs.length) { alert.wrn("Enter address range (e.g. 1-10)"); return; }
   S.addrScanning = true; S.addrScanResults = null; render();
-  S.addrScanResults = await API.scan_addrs(addrs);
+  const res = await API.scan_addrs(addrs);
   S.addrScanning = false;
-  if(S.addrScanResults.length) alert.ok(`Found ${S.addrScanResults.length} device(s)`);
+  S.addrScanResults = res?.found || [];
+  if(!res || res.error) alert.err(res?.error || "Scan failed");
+  else if(S.addrScanResults.length) alert.ok(`Found ${S.addrScanResults.length} device(s)`);
   else alert.wrn("No devices found");
   render();
 }
@@ -373,7 +406,9 @@ async function scanAddrs() {
 // A wire-level change invalidates the open port, so force a UI disconnect.
 async function setSerial(params) {
   const prev = { ...S.serial };
-  S.serial = await API.set_serial(params);
+  const res = await API.set_serial(params);
+  if(!res || res.error) { alert.err(res?.error || "Serial settings not saved"); render(); return; }
+  S.serial = res;
   const WIRE_FIELDS = ["baudrate", "parity", "stopbits", "timeout"];
   const changed = WIRE_FIELDS.some(k => S.serial[k] !== prev[k]);
   if(changed && S.serial_open) {
@@ -395,9 +430,9 @@ async function deleteDatabase() {
   if(typeof confirm === "function"
     && !confirm("Delete all stored history? This wipes data.db and cannot be undone.")) return;
   const res = await API.delete_database();
-  if(res?.error) { alert.err(res.error); return; }
+  if(!res || res.error) { alert.err(res?.error || "History not deleted"); return; }
   MonitData.clear();
-  if(S.monitor.size) { Monitor.refresh(); Monitor.mount(); }
+  if(S.monitor.size) Monitor.rebuild();
   alert.ok("History database cleared");
   render();
 }
@@ -504,9 +539,7 @@ async function importConfig() {
     const rows = CSV.parse_text(text, localeCsv ? ";" : ",");
     for(const row of rows) {
       const name = row.name;
-      let val = row.value;
-      // With ';' as the separator the comma is free to be a decimal point.
-      if(localeCsv && typeof val === "string") val = val.replace(/^(-?\d+),(\d+)$/, "$1.$2");
+      const val = row.value;
       if(name && val !== null && val !== "" && rwSet.has(name)) {
         stage(name, val);
         count++;

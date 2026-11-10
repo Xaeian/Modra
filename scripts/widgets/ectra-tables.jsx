@@ -18,6 +18,9 @@
 // Nothing here knows about its topics: a table is a table whichever topic is open.
 
 const EC_TABLES = ["Volt", "Curr", "Rise", "Fall"];
+
+// A point of a table by its name: `Volt:20Hz` is the Volt curve at 20Hz
+const EC_POINT = /:(\d+(?:\.\d+)?)Hz$/;
 const EC_TAB_KEY = "modra.ectra.tab";
 const EC_HIST_MAX = 20;
 
@@ -71,8 +74,9 @@ const EctraTables = {
     return true;
   },
 
+  // A V/f curve is what makes these tables Ectra's: a `Curr:` group alone is any device's setting
   match(regs) {
-    return EC_TABLES.some(t => regs.some(r => r.name.startsWith(t + ":")));
+    return regs.some(r => r.name.startsWith("Volt:") && EC_POINT.test(r.name));
   },
 
   pts() {
@@ -81,7 +85,7 @@ const EctraTables = {
       this._ptsSrc = S.regs;
       const prefix = this._tab + ":";
       this._pts = S.regs
-        .map(r => ({ r, m: r.name.startsWith(prefix) && /:(\d+(?:\.\d+)?)Hz$/.exec(r.name) }))
+        .map(r => ({ r, m: r.name.startsWith(prefix) && EC_POINT.exec(r.name) }))
         .filter(x => x.m)
         .map(x => ({ name: x.r.name, reg: x.r, hz: +x.m[1] }))
         .sort((a, b) => a.hz - b.hz);
@@ -127,19 +131,9 @@ const EctraTables = {
   // Returns `false` only when a send was tried and refused,
   // so the caller knows whether the edit is really standing.
   async _apply(patch) {
-    for(const [name, val] of Object.entries(patch)) {
-      const reg = Reg.byName(name);
-      if(reg) editSilent(reg, val);
-    }
-    if(!S.serial?.autosend || !S.connected) { render(); return true; }
     this._busy = true;
     render();
-    try {
-      if(!await writeNow(patch)) return false;
-      // The device now holds these, so they are no longer pending
-      for(const name of Object.keys(patch)) delete S.dirty[name];
-      return true;
-    }
+    try { return await stageBatch(patch); }
     finally {
       this._busy = false;
       render();
@@ -182,12 +176,13 @@ const EctraTables = {
       const chord = from[i - 1] + (from[i + 1] - from[i - 1]) * t;
       target[i] = ecQuant(pts[i].reg, (from[i] + chord) / 2);
     }
-    this._commit(pts, from, target);
+    return this._commit(pts, from, target);
   },
 
   async _step(fromStack, toStack) {
+    if(this._busy) return;
     const patch = fromStack.pop();
-    if(!patch || this._busy) return;
+    if(!patch) return;
     // The inverse is what is standing now, staged or written alike:
     // undoing a pending edit has to put back what the curve showed,
     // not what the device happens to still hold.
@@ -277,7 +272,7 @@ const EctraTables = {
     const from = this._from, target = this._preview;
     this._drag = -1;
     this._cv.style.cursor = "crosshair";
-    if(target) this._commit(pts, from, target);
+    if(target) this._commit(pts, from, target); // fire-and-forget: it renders when the write lands
   },
 
   _paint() {
@@ -421,9 +416,9 @@ const EctraTables = {
     const busy = this._busy;
     const editable = S.connected && !this.pts().some(p => S.values[p.name] == null);
     // Undo holds values read from ONE drive.
-    // Reconnecting elsewhere would let the arrow write device A's curve into device B,
-    // so the history ends with the connection it came from.
-    const bound = S.port + "/" + S.addr;
+    // Reconnecting elsewhere, or to a drive swapped in on the same port, would let the arrow
+    // write device A's curve into device B, so the history ends with the connection it came from.
+    const bound = S.link + "/" + S.port + "/" + S.addr;
     if(this._bound !== bound) {
       this._bound = bound;
       this._hist = [];

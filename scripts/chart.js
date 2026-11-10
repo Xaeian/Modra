@@ -165,12 +165,18 @@ function csBottomLine(cfg) {
 
 class ChartStack {
 
-  // opts (over CS_DEFAULTS):
-  //   syncKey - cursor/zoom sync key (auto-generated if omitted)
-  //   formatX - x-axis tick formatter (bottom panel only)
-  //   formatXValue - tooltip header formatter (full timestamp)
-  //   onZoom - (min, max) on drag-zoom, (null, null) on dblclick reset
-  //   onHover - (true) when a pointer settles on a panel, (false) when it leaves
+  /**
+   * A stack of panels drawn into `container`, empty until `addPanel` and `build`.
+   * @param {HTMLElement} container
+   * @param {object} [opts]  any `CS_DEFAULTS` key to override, and these:
+   * @param {string} [opts.syncKey]  cursor and zoom sync key, generated when left out
+   * @param {Function} [opts.formatX]  x-axis tick formatter, bottom panel only
+   * @param {(ts: number) => string} [opts.formatXValue]  tooltip header, a full timestamp
+   * @param {Function} [opts.onZoom]  `(min, max)` on a drag-zoom,
+   *   `(null, null)` on a double-click
+   * @param {(on: boolean) => void} [opts.onHover]  `true` when a pointer settles on a panel,
+   *   `false` when it leaves
+   */
   constructor(container, opts = {}) {
     this._el = container;
     this._cfg = { ...CS_DEFAULTS, ...opts };
@@ -195,7 +201,16 @@ class ChartStack {
 
   //------------------------------------------------------------------------------------ Public API
 
-  // Queue a panel config. Call before `build()`; ignored after.
+  /**
+   * A panel queued for the next `build()`, which is what draws it.
+   * @param {object} cfg
+   * @param {string} [cfg.unit]  shown as `[unit]` on the panel and after each tooltip value
+   * @param {Array<{label: string, color: string, stepped?: boolean, width?: number}>} [cfg.series]
+   * @param {number} [cfg.height]  px, `CS_DEFAULTS.height` by default
+   * @param {number[]} [cfg.yRange]  a fixed `[min, max]` instead of the padded auto-range
+   * @param {(v: number) => string} [cfg.yFormat]  axis and tooltip values, `csFmtVal` by default
+   * @param {boolean} [cfg.noTip]  its series kept out of the tooltip
+   */
   addPanel(cfg) {
     this._panels.push({
       unit: cfg.unit || "",
@@ -207,7 +222,7 @@ class ChartStack {
     });
   }
 
-  // Idempotent: destroys and rebuilds every panel on re-call.
+  /** Every queued panel drawn; calling it again destroys and rebuilds them all. */
   build() {
     this._destroyAll();
     this._el.innerHTML = "";
@@ -215,7 +230,11 @@ class ChartStack {
     for(let i = 0; i < n; i++) this._buildOne(i, i === n - 1);
   }
 
-  // Re-clamps the x-scale to whatever range is active (auto-scroll OR zoom).
+  /**
+   * New data for panel `idx`, the x-scale clamped again to whatever range is active:
+   * the owner's window, or a user zoom.
+   * @param {number[][]} data  `[xs, ...series]`, one array per series of the panel
+   */
   setData(idx, data) {
     const e = this._entries[idx];
     if(!e?.plot || !data) return;
@@ -228,7 +247,7 @@ class ChartStack {
     this._syncing = false;
   }
 
-  // Gives empty panels a visible axis before real data arrives.
+  /** A visible x-axis, `min` to `max`, on every panel still waiting for real data. */
   seedRange(min, max) {
     for(let i = 0; i < this._entries.length; i++) {
       if(this._entries[i]?.plot?.data[0]?.length > 0) continue;
@@ -238,7 +257,26 @@ class ChartStack {
     }
   }
 
-  // Used to follow live data on the right edge.
+  /** The window its owner wants shown, any user zoom dropped; the next data drawn follows it. */
+  showWindow(min, max) {
+    this._autoScroll = true;
+    this._zoomMin = null;
+    this._zoomMax = null;
+    this._xMin = min;
+    this._xMax = max;
+  }
+
+  /** The element wrapping panel `i`, for a control hung beside it; `null` before `build()`. */
+  wrapOf(i) {
+    return this._entries[i]?.wrap ?? null;
+  }
+
+  /** How many series panel `i` was built with; `null` when there is no such panel. */
+  seriesCount(i) {
+    return this._panels[i]?.series.length ?? null;
+  }
+
+  /** Every panel set to one x window, which `onZoom` does not hear as a user zoom. */
   setXRange(min, max) {
     this._xMin = min;
     this._xMax = max;
@@ -249,13 +287,18 @@ class ChartStack {
     this._syncing = false;
   }
 
-  // uPlot caches the pointer-origin rect, refreshing only on resize, scroll
-  // or mouseenter; the chart element is re-parented on every render.
+  /**
+   * Pointer origin of every panel measured again, due whenever the stack is re-parented:
+   * uPlot caches it and refreshes it only on resize, scroll or mouseenter.
+   */
   syncRect() {
     for(const e of this._entries) e?.plot?.syncRect?.(true);
   }
 
-  // Wired to dblclick on any plot.
+  /**
+   * The owner's window back, any user zoom dropped, as a double-click on any plot does.
+   * `onZoom` hears it as `(null, null)`.
+   */
   resetZoom() {
     this._autoScroll = true;
     this._zoomMin = null;
@@ -267,6 +310,7 @@ class ChartStack {
     this._onZoom?.(null, null); // back to the live edge
   }
 
+  /** Every plot torn down and the panel queue emptied. */
   destroy() {
     this._destroyAll();
     this._panels = [];

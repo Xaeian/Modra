@@ -102,7 +102,7 @@ export function createApp({ storage = createStorage(), write = (patch) => patch,
       view_set: async (patch) => { api.push(["view_set", patch]); return {}; },
       write: async (patch) => { api.push(["write", patch]); return write(patch); },
     },
-    Monitor: { mount() {}, refresh() {}, refetch() {} },
+    Monitor: { mount() {}, rebuild() {} },
     ...globals,
   });
 

@@ -2,8 +2,15 @@
 
 // Root component. The whole tree is rebuilt on every render() - no reactive layer.
 
-// `View()` runs inside the normal render pass and must tolerate a rebuild
-// twice a second - see scripts/widgets/readme.md.
+// As many grid columns as the width takes, but not so many that each holds a few rows
+const GRID_COL_W = 460, GRID_COL_MAX = 6, GRID_COL_ROWS = 8;
+function gridColumnCount(regCount) {
+  const w = document.querySelector(".rb-grid")?.clientWidth || (window.innerWidth - 32) || 1200;
+  const byWidth = Math.max(1, Math.floor(w / GRID_COL_W));
+  const byRows = Math.max(1, Math.round(regCount / GRID_COL_ROWS));
+  return Math.max(1, Math.min(byWidth, byRows, GRID_COL_MAX));
+}
+
 // The header is sticky, so anything else that sticks has to start below it -
 // and it is not one height: opening the serial panel makes it taller. Published
 // as a variable rather than guessed at in CSS, because a guess is wrong in one
@@ -22,10 +29,20 @@ function headHeight(el) {
   });
 }
 
+// A widget's view, or one line saying why there is none.
+// The app is built in one pass, so a view that throws would stop every render, not one panel.
+function widgetBody(widget) {
+  try { return widget.View(); }
+  catch(e) {
+    console.error("Widget view failed:", widget.id, e);
+    return <div class="wg-row">Widget failed: {String(e?.message || e)}</div>;
+  }
+}
+
 const WidgetPanel = ({ widget }) => (
   <section class="wg">
     <div class="wg-head">{widget.title || widget.id}</div>
-    {widget.View()}
+    {widgetBody(widget)}
   </section>
 );
 

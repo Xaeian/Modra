@@ -8,7 +8,8 @@ CLI: quick motor control.
   mb_set 50hz - frequency setpoint
 """
 
-import sys, asyncio
+import sys, asyncio, math
+from pymodbus.exceptions import ModbusException
 from xaeian import Print, Color as c
 import config
 
@@ -27,17 +28,26 @@ def parse_arg(value:str) -> tuple:
 
 async def main():
   if len(sys.argv) < 2:
-    log.wrn(USAGE); return
-  mode, setpoint = parse_arg(sys.argv[1])
-  if mode is None:
-    log.wrn(USAGE); return
+    log.err(USAGE); sys.exit(1)
+  try: mode, setpoint = parse_arg(sys.argv[1])
+  except ValueError: mode = setpoint = None
+  if mode is None or not math.isfinite(setpoint):
+    log.err(USAGE); sys.exit(1)
   state = config.load_state()
   mb = config.create_mb(state)
-  await mb.write({"Ctrl": {"Mode": mode, "Setpoint": setpoint}})
+  data = {"Ctrl": {"Mode": mode, "Setpoint": setpoint}}
+  if not await mb.write(data):
+    log.err(f"No writable Ctrl:Mode in {config.regs_path()}"); sys.exit(1)
+  back = await mb.read(data, grouped=False)
+  if back.get("Ctrl:Mode") != mode:
+    log.err(f"Motor mode {back.get('Ctrl:Mode')}, not {mode}"); sys.exit(1)
   if mode in ("off", "ai"):
     log.inf(f"Motor mode {c.SKY}{mode}{c.END}")
   else:
-    log.inf(f"Motor setpoint {c.SKY}{setpoint}{mode}{c.END}")
+    log.inf(f"Motor setpoint {c.SKY}{back['Ctrl:Setpoint']}{mode}{c.END}")
 
 if __name__ == "__main__":
-  asyncio.run(main())
+  # Only what the user can fix: a bad file or value, a dead port, a silent or refusing device
+  try: asyncio.run(main())
+  except (OSError, RuntimeError, ValueError, ModbusException) as e:
+    log.err(str(e)); sys.exit(1)

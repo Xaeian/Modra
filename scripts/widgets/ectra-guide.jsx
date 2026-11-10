@@ -440,7 +440,7 @@ const EC_TOPICS = [
       + "Gdy wirnik obraca się wolno, napęd hamuje go zwarciem i rusza; "
       + "gdy szybko, czeka w wybiegu i co sekundę sprawdza obroty ponownie."
       + "\n"
-      + "Brake:ShortCurr ogranicza prąd zwarcia przy sprawdzaniu obrotów i hamowaniu, "
+      + "Brake:ShortCurr ogranicza amplitudę prądu zwarcia przy sprawdzaniu obrotów i hamowaniu, "
       + "najwyżej do Thresh:CurrPeak; 0 wyłącza sprawdzenie. "
       + "Gdy w czasie Brake:WaitMax wybiegu wirnik nie zwolni na tyle, by go zahamować zwarciem, "
       + "napęd zgłasza błąd rpm."
@@ -641,6 +641,14 @@ const EC_TOPICS = [
   },
 ];
 
+// Every register the guide names, charts or reads, gathered from its own text and lists,
+// so the line about a map that lacks some of them cannot fall behind the text
+const EC_USES = [...new Set([
+  ...EC_TOPICS.flatMap(t => [...ecNamed(t.text), ...t.plot, ...t.big]),
+  ...[...Object.values(EC_WHY), ...Object.values(EC_FREEZE)].flatMap(ecNamed),
+  ...EC_ALWAYS, ...EC_BIG, ...EC_WATCH, ...EC_FIND_ALWAYS.split("|"),
+])];
+
 //------------------------------------------------------------------------------------------- Guide
 
 const Ectra = {
@@ -711,6 +719,9 @@ const Ectra = {
     const { Now, Para } = Ectra;
     const topic = EC_TOPICS.find(t => t.id === this._topic);
     const now = ecNow();
+    const missing = EC_USES.filter(name => !Reg.byName(name));
+    const gap = missing.length > 0
+      && `Tej mapie brakuje rejestrów, których używa przewodnik: ${missing.join(", ")}.`;
     return (
       <div class="ec ec-book">
         <div class="ec-tabs">
@@ -722,6 +733,7 @@ const Ectra = {
         </div>
         {now.length > 0 && <Now lines={now} />}
         <div class="ec-text" onMouseLeave={() => Widgets.point(null)}>
+          {gap && <Para text={gap} />}
           {(topic ? topic.text : EC_INTRO).split("\n").map(par => <Para text={par} />)}
         </div>
       </div>

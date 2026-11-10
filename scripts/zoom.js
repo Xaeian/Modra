@@ -5,11 +5,15 @@
 const ZOOM = (() => {
   const KEY = "modra.zoom";
   const MIN = 0.5, MAX = 2.5, STEP = 0.1;
-  let z = parseFloat(localStorage.getItem(KEY)) || 1.0;
+  // Every file is one script in the build, so a storage refusal here would take the app down
+  let z = 1.0;
+  try { z = parseFloat(localStorage.getItem(KEY)) || 1.0; }
+  catch(e) { /* storage refused: the zoom lasts the session */ }
 
   const apply = () => {
     document.body.style.zoom = z;
-    localStorage.setItem(KEY, z.toFixed(2));
+    try { localStorage.setItem(KEY, z.toFixed(2)); }
+    catch(e) { /* the zoom still applies, it is just not kept */ }
   };
   const set = (v) => { z = Math.max(MIN, Math.min(MAX, Math.round(v * 10) / 10)); apply(); };
 

@@ -40,18 +40,7 @@ class Api:
       return {"error": str(e)}
 
   def serial(self) -> dict:
-    return {
-      "port": link.state.get("port", ""),
-      "addr": link.state.get("addr", 1),
-      "baudrate": link.state.get("baudrate", 9600),
-      "parity": link.state.get("parity", "N"),
-      "stopbits": link.state.get("stopbits", 1),
-      "timeout": link.state.get("timeout", 1000),
-      "retries": link.state.get("retries", 3),
-      "interval": link.state.get("interval", 500),
-      "history": link.state.get("history", 14),
-      "autosend": config._bool(link.state.get("autosend"), False),
-    }
+    return {key: config.setting(link.state, key) for key in config.STATE_DEFAULT}
 
   #------------------------------------------------------------------------------------- Connection
 
@@ -153,14 +142,9 @@ class Api:
     if frm is None or to is None or not names or not addr: return {}
     try: max_points = int(params.get("max_points") or 2000)
     except (ValueError, TypeError): max_points = 2000
-    rows = link.run_async(
-      link.store.query(addr, names, frm, to, max_points, link.history_days()),
-      timeout=10,
-    )
-    return {
-      "rows": rows or [],
-      "tier": link.store.tier_label(frm, to, max_points, link.history_days()),
-    }
+    keep = (link.history_days(), link.poll_period_s())
+    rows = link.run_async(link.store.query(addr, names, frm, to, max_points, *keep), timeout=10)
+    return {"rows": rows or [], "tier": link.store.tier_label(frm, to, max_points, *keep)}
 
   def sync(self) -> dict:
     if not link.connected:

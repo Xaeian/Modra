@@ -6,6 +6,7 @@
 // a save, which folds names into patterns and back,
 // and a widget, which borrows the view for a topic and promises to hand it back.
 // Either one slipping shows as rows that quietly stop updating, or as charts gone missing.
+// A widget that breaks may take its own panel with it, never the rest of the screen.
 
 import { createApp, createStorage, LOGIC, ok, eq, done } from "./harness.mjs";
 
@@ -149,6 +150,19 @@ function topic(Widgets) {
   Widgets.release();
   ok("released, both are ignored again",
     S.ignore.has("Journal:Count") && S.ignore.has("Motor:Ke"));
+}
+
+//-------------------------------------------------------------------------------------------- Host
+
+{
+  const errors = [];
+  const quiet = { ...console, error: (...args) => errors.push(args) };
+  const app = createApp({ globals: { console: quiet } });
+  const { WidgetPanel } = app.load(["scripts/App.jsx"], ["WidgetPanel"]);
+  const broken = { id: "broken", View() { throw new Error("no such register"); } };
+  const panel = WidgetPanel({ widget: broken });
+  ok("a widget that throws fails in its own panel, and says why in the console",
+    JSON.stringify(panel).includes("no such register") && errors.length === 1);
 }
 
 done();

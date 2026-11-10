@@ -11,15 +11,19 @@ const Monitor = {
 
   _stack: null,       // ChartStack instance
   _el: null,          // <div class="rb-charts"> hosting the stack
-  _keys: [],          // group keys aligned with _stack._entries
+  _keys: [],          // group keys, one per panel of the stack
   _sig: null,         // built layout signature (keys + names per group)
   _rangeBusy: false,  // guards a window fetch against overlapping round-trips
+  _rangeAgain: false, // a window asked for while a fetch was in flight
   _zoomTimer: null,   // debounces drag-zoom into a single refetch
   _pending: false,    // rows ingested while a chart was hovered, not yet drawn
 
   //--------------------------------------------------------------------------------------- JSX bar
 
-  // Returns null when nothing is monitored - upstream uses that as a hide signal.
+  /**
+   * Chart pane: the tag bar, the range buttons and an empty slot for `mount()` to fill.
+   * `null` while nothing is charted, which hides the pane.
+   */
   Bar() {
     if(!S.monitor.size) return null;
     const colors = chartTagColors();
@@ -37,7 +41,7 @@ const Monitor = {
             );
           })}
           <span class="rb-monitor-sep" />
-          {chartRanges().map(r => (
+          {CHART_RANGE_PRESETS.map(r => (
             <button class={"rb-range-btn"
               + (MonitData.live && MonitData.range === r.s ? " active tier-" + MonitData.tier : "")
               + (Monitor._rangeBusy ? " busy" : "")}
@@ -66,27 +70,32 @@ const Monitor = {
     return this._el;
   },
 
-  // Class lookup: `Bar()` re-renders the slot, so no ref to it survives. The
-  // page around the chart may have moved, and uPlot caches the pointer origin.
+  /**
+   * The persistent chart moved into the empty slot `Bar()` leaves,
+   * due right after every render has swapped its tree in.
+   */
   mount() {
+    // Class lookup: `Bar()` re-renders the slot, so no ref to it survives
     const slot = document.querySelector(".rb-monitor-slot");
     if(!slot) return;
     const el = this._host();
     if(el.parentNode !== slot) slot.appendChild(el);
+    // The page around the chart may have moved, and uPlot caches the pointer origin
     this._stack?.syncRect();
   },
 
-  // Called on every poll, but rows arrive once a second and a frozen (zoomed)
-  // window sends none: the chart is redrawn only when there is something new,
-  // so the point under a resting pointer does not change ten times a second.
+  /**
+   * Rows of one poll fed to the chart, which redraws only when there is something new:
+   * rows arrive once a second and a frozen (zoomed) window sends none,
+   * so the point under a resting pointer does not change ten times a second.
+   */
   update(rows) {
     if(!S.monitor.size || !this._stack) return;
     // Rebuild BEFORE ingest. A rule-slot flip can drop a member while the key
     // stays, so compare key+names; otherwise the fed series count desyncs from
     // the panel and uPlot throws.
     if(this._groupSig() !== this._sig) {
-      this.refresh();
-      this.mount();
+      this.rebuild();
       return;
     }
     if(!Array.isArray(rows)) return;
@@ -102,6 +111,19 @@ const Monitor = {
     this._pending = false;
     this._applyWindow();
     this._feedAll();
+  },
+
+  /**
+   * The chart rebuilt for the traces charted now, the one way anything outside asks for it.
+   * @param {boolean} [backfill]  also fetch what the new traces lack, drawn whenever it lands
+   */
+  rebuild(backfill = false) {
+    // The host goes in first so the panels measure a real width,
+    // then the rebuilt stack is reattached.
+    this.mount();
+    this.refresh();
+    this.mount();
+    if(backfill) this.refetch(); // fire-and-forget: it draws the window once its rows land
   },
 
   // Tear down + rebuild the stack from monitor membership. Preserves user zoom.
@@ -132,7 +154,7 @@ const Monitor = {
     this._stack.build();
     // Per-panel S/M/L cycle button; hung after `build()`, which creates the wrap.
     this._keys.forEach((key, i) => {
-      const wrap = this._stack._entries[i]?.wrap;
+      const wrap = this._stack.wrapOf(i);
       if(!wrap) return;
       const sz = S.chartSizes[key] || CHART_SIZE_DEFAULT;
       const btn = document.createElement("button");
@@ -144,8 +166,7 @@ const Monitor = {
         const cur = S.chartSizes[key] || CHART_SIZE_DEFAULT;
         const idx = CHART_SIZE_CYCLE.indexOf(cur);
         S.chartSizes[key] = CHART_SIZE_CYCLE[(idx + 1) % CHART_SIZE_CYCLE.length];
-        Monitor.refresh();
-        Monitor.mount();
+        Monitor.rebuild();
         saveMonitor();
       };
       wrap.appendChild(btn);
@@ -153,10 +174,10 @@ const Monitor = {
     // Seed the axis so empty panels still render with a visible range.
     this._applyWindow();
     this._feedAll();
-    this._stack.seedRange(this._stack._xMin, this._stack._xMax);
+    this._stack.seedRange(...MonitData.window());
   },
 
-  // Range button: a live window of length `s`, refetched at whatever tier fits.
+  /** A live window of `s` seconds from a range button, refetched at whatever tier fits. */
   async changeRange(s) {
     MonitData.setRange(s);
     render();
@@ -166,25 +187,38 @@ const Monitor = {
     this.mount();
   },
 
-  // Drag-zoom (a,b set) freezes the window and refetches at a finer tier;
-  // double-click (a == null) returns to the live edge.
+  /**
+   * A zoom from the chart, refetched once it settles.
+   * A drag (`a`, `b` set, in seconds) freezes the window at a finer tier;
+   * a double-click (`a == null`) returns to the live edge.
+   */
   onZoom(a, b) {
     if(a == null) MonitData.setRange(MonitData.range);
     else MonitData.setWindow(a, b);
     clearTimeout(this._zoomTimer);
-    this._zoomTimer = setTimeout(() => { this.refetch(); render(); this.mount(); }, 150);
+    this._zoomTimer = setTimeout(async () => {
+      await this.refetch();
+      render();
+      this.mount();
+    }, 150);
   },
 
-  // Queries the DB directly, so it works with no device connected.
+  /**
+   * The current window read from stored history and drawn, with or without a device.
+   * A call that finds one in flight returns at once and asks it for one more pass,
+   * so the window drawn is the last one asked for, never an earlier one's answer.
+   */
   async refetch() {
-    if(this._rangeBusy) return;
+    if(this._rangeBusy) { this._rangeAgain = true; return; }
     this._rangeBusy = true;
-    const params = MonitData.fetchParams();
-    if(params) {
+    do {
+      this._rangeAgain = false;
+      const params = MonitData.fetchParams();
+      if(!params) break;
       const res = await API.read(params);
       MonitData.ingest(res?.rows);
-      if(res && "tier" in res) MonitData.tier = res.tier;
-    }
+      if(res && Object.hasOwn(res, "tier")) MonitData.tier = res.tier;
+    } while(this._rangeAgain);
     this._applyWindow();
     this._feedAll();
     this._rangeBusy = false;
@@ -193,16 +227,12 @@ const Monitor = {
   // Monitor owns the window; the chart just renders it.
   _applyWindow() {
     if(!this._stack) return;
-    const [xMin, xMax] = MonitData.window();
-    this._stack._autoScroll = true;
-    this._stack._zoomMin = null;
-    this._stack._zoomMax = null;
-    this._stack._xMin = xMin;
-    this._stack._xMax = xMax;
+    this._stack.showWindow(...MonitData.window());
   },
 
+  /** CSV download of every charted trace over the window on screen. */
   exportCSV() {
-    chartExportCSV([...S.monitor], MonitData._buf);
+    chartExportCSV([...S.monitor], MonitData.samples());
   },
 
   //------------------------------------------------------------------------------------- Internals
@@ -256,8 +286,8 @@ const Monitor = {
       if(!grp) return;
       // Safety net: a series/panel count mismatch makes uPlot read past its
       // data array and throw. `update`'s signature check should have caught it.
-      const panel = this._stack._panels[i];
-      if(panel && grp.names.length !== panel.series.length) return;
+      const count = this._stack.seriesCount(i);
+      if(count != null && grp.names.length !== count) return;
       const data = MonitData.prepare(grp.names);
       if(data) this._stack.setData(i, data);
     });

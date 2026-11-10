@@ -3,41 +3,51 @@
 // Pure helpers shared by the UI. Reads `S.dirty` / `S.values` for rule
 // resolution but never writes back.
 
-//------------------------------------------------------------------------------------- DOM helpers
+//---------------------------------------------------------------------------------- Shared helpers
 
-// `*` and `?` as they read in a file name, escaped into a regex body.
-//
-// The search box and the ignore list both take these, and two copies of the
-// rule are two rules the moment one of them is fixed. Callers add their own
-// anchors and flags, because those are where the two uses legitimately differ.
+/**
+ * A glob as a regex body: `*` and `?` as they read in a file name, everything else literal.
+ * Callers add their own anchors and flags, because those are where the search box
+ * and the ignore list legitimately differ.
+ */
 function globSource(pattern) {
+  // Shared, because two copies of the rule are two rules the moment one of them is fixed
   return pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*").replace(/\?/g, ".");
 }
 
-// Falsy mods drop out, so callers can write `cls("btn", on && "on")`.
+/**
+ * Class string of a base and its modifiers, a falsy modifier dropping out:
+ *   cls("btn", on && "on") -> "btn on", or "btn" while `on` is false
+ */
 function cls(base, ...mods) {
   let out = base;
   for(const m of mods) if(m) out += " " + m;
   return out;
 }
 
-// Grid input editing `name` - looked up fresh, render() detaches held nodes.
-const valInput = (name) =>
-  document.querySelector(`input.rb-val[data-reg="${CSS.escape(name)}"]`);
-
-// Labels of the bits set in `mask`; unlabeled ones as `bN` so a stray flag
-// still shows, "-" when none. `labels` is the index->name map (reg.bits).
+/**
+ * Labels of the bits set in `mask`, `"-"` when none is;
+ * an unlabeled bit shows as `bN`, so a stray flag still shows.
+ * @param {Record<number, string>} labels  bit index -> name, as `reg.bits` holds it
+ * @param {number} mask  a 16-bit word
+ */
 function bitsText(labels, mask) {
   const out = [];
   for(let i = 0; i < 16; i++) if((mask >> i) & 1) out.push(labels[i] ?? ("b" + i));
   return out.length ? out.join(" | ") : "-";
 }
 
-// "2026-07-17" - date stamp for exported file names.
+/** Date stamp for an exported file's name, today in UTC: "2026-07-17". */
 const fileStamp = () => new Date().toISOString().slice(0, 10);
 
-// "1-10, 12, 100-110" → sorted, dedup'd Modbus addresses (1..247).
+// The addresses a Modbus RTU device can answer at
+const MIN_ADDR = 1, MAX_ADDR = 247;
+
+/**
+ * Modbus addresses a list like "1-10, 12, 100-110" names: sorted, each once, in range.
+ * A part that is neither a number nor a range is skipped.
+ */
 function parseAddrRange(str) {
   const addrs = new Set();
   for(const part of str.split(",")) {
@@ -51,7 +61,7 @@ function parseAddrRange(str) {
     else if(/^\d+$/.test(t)) addrs.add(parseInt(t));
   }
   return [...addrs]
-    .filter(a => a >= 1 && a <= 247)
+    .filter(a => a >= MIN_ADDR && a <= MAX_ADDR)
     .sort((a, b) => a - b);
 }
 
@@ -75,12 +85,14 @@ const Reg = (() => {
 
   //-------------------------------------------------------------------------------------- Identity
 
-  // Pair registers store `id` as `[hi, lo]`; collapse to the two extremes.
+  /** First address a register takes: its `id`, or the lower of a pair's `[hi, lo]`. */
   const lo = (reg) => Array.isArray(reg.id) ? Math.min(...reg.id) : reg.id;
+  /** Last address a register takes: its `id`, or the higher of a pair's `[hi, lo]`. */
   const hi = (reg) => Array.isArray(reg.id) ? Math.max(...reg.id) : reg.id;
 
-  // name → reg, or null. Map cached on the catalog reference.
+  // Map cached on the catalog reference
   let _byName = null, _byNameSrc = null;
+  /** Register of that name in the loaded map, or `null`. */
   function byName(name) {
     if(_byNameSrc !== S.regs) {
       _byNameSrc = S.regs;
@@ -89,7 +101,7 @@ const Reg = (() => {
     return _byName.get(name) || null;
   }
 
-  // "12" for a single, "12-13" for a pair.
+  /** Address text of a register: "12" for a single, "12-13" for a pair. */
   function label(reg) {
     const a = lo(reg), b = hi(reg);
     return a === b ? String(a) : `${a}-${b}`;
@@ -97,18 +109,20 @@ const Reg = (() => {
 
   //------------------------------------------------------------------------------- Rule resolution
 
-  // Slot index for a `type=rule` register: case-insensitive match of the
-  // switch value against `reg.unit` labels; null when no slot is active.
-  //
-  // `confirmed=true` reads only `S.values` so chart panels wait for device
-  // feedback before regrouping; offline there is no feedback to wait for.
+  /** What a field stands at: the staged edit where there is one, the device value otherwise. */
+  const staged = (name) => Object.hasOwn(S.dirty, name) ? S.dirty[name] : S.values[name];
+
+  /**
+   * Slot index of a `type=rule` register, `null` when no slot is active or it is no rule.
+   * The switch value is matched against the `reg.unit` labels, case aside.
+   * @param {boolean} [confirmed]  `S.values` only, so chart panels wait for device feedback
+   *   before regrouping; offline, with no feedback to wait for, the staged value counts
+   */
   function ruleIndex(reg, confirmed = false) {
     if(reg.type !== "rule" || !reg.rule?.switch) return null;
     const switchName = reg.rule.switch;
     const useConfirmed = confirmed && S.connected;
-    const sv = useConfirmed
-      ? S.values[switchName]
-      : (switchName in S.dirty ? S.dirty[switchName] : S.values[switchName]);
+    const sv = useConfirmed ? S.values[switchName] : staged(switchName);
     if(sv == null) return null;
     const units = reg.unit;
     if(!Array.isArray(units)) return null;
@@ -119,26 +133,38 @@ const Reg = (() => {
     return null;
   }
 
-  // Rule register whose switch resolves to no slot - control is disabled.
+  /** Whether a rule register's switch resolves to no slot, which disables its control. */
   const isInactive = (reg) => reg.type === "rule" && ruleIndex(reg) === null;
 
   //---------------------------------------------------------------------------- Per-slot accessors
 
+  /**
+   * Unit of a register, its active slot's for a rule; `""` when there is none.
+   * @param {boolean} [confirmed]  as `ruleIndex` takes it
+   */
   function unit(reg, confirmed = false) {
     const ri = ruleIndex(reg, confirmed);
     if(Array.isArray(reg.unit)) return ri !== null ? reg.unit[ri] : "";
     return reg.unit || "";
   }
 
-  // Falls back to 0 / 65535 so OOR checks always have concrete bounds.
+  /** Lower bound of a register's active slot, 0 when undeclared, so there always is one. */
   const min = (reg) => _pickSlot(reg.min, ruleIndex(reg), 0);
+  /** Upper bound of a register's active slot, 65535 when undeclared, so there always is one. */
   const max = (reg) => _pickSlot(reg.max, ruleIndex(reg), 65535);
 
-  // Rule-aware: Ctrl:Setpoint rpm → Hz remaps unit AND scale, so panels regroup.
+  /**
+   * Scale of a register's active slot, 1 by default.
+   * Rule-aware: a switch from rpm to Hz on `Ctrl:Setpoint` remaps unit and scale together,
+   * so chart panels regroup.
+   * @param {boolean} [confirmed]  as `ruleIndex` takes it
+   */
   const scale = (reg, confirmed = false) => _pickSlot(reg.scale, ruleIndex(reg, confirmed), 1);
 
-  // scale=1000 → step 0.001. Pairs fix step at 1: they hold 32-bit ints or
-  // floats, and sliders skip them anyway.
+  /**
+   * Step a register's value moves in, one over its scale: 0.001 for `scale=1000`.
+   * A pair is fixed at 1: it holds a 32-bit int or float, and sliders skip pairs anyway.
+   */
   function step(reg) {
     if(reg.rule?.pair) return 1;
     const s = _pickSlot(reg.scale, ruleIndex(reg), 1);
@@ -147,14 +173,20 @@ const Reg = (() => {
 
   //----------------------------------------------------------------------------------- Access mode
 
+  /** Access mode of a register, `R` when the map gives none. */
   const rws = (reg) => reg.rws || "R";
+  /** Whether a register is read-only. */
   const ro = (reg) => rws(reg) === "R";
 
-  // Own badge color per mode: RWs (persisted) vs RW (volatile).
+  /** Badge classes of a register's access mode, a color each: RWs persisted, RW volatile. */
   const rwsClass = (reg) => `rb-rws rws-${rws(reg).toLowerCase()}`;
 
   //------------------------------------------------------------------------------- Display / parse
 
+  /**
+   * Text of a value as its register shows it, `""` for none:
+   * hex, bit labels or a float's own precision by type, otherwise rounded to the step.
+   */
   function display(reg, value) {
     if(value == null) return "";
     if(reg.rule?.pair) {
@@ -176,11 +208,14 @@ const Reg = (() => {
     return String(value);
   }
 
-  // Shared with the chart CSV export so it rounds like `display`.
+  /** Decimal places `display` rounds a register to, for an export that must round alike. */
   const decimals = (reg) => _decimals(step(reg));
 
-  // Numerics accept `0x..` / `0b..` prefixes. Enum/bool/ver keep the raw
-  // string so the caller can map labels.
+  /**
+   * Typed text as a register's value, `null` for empty text or a number that does not parse.
+   * A `0x..` or `0b..` prefix reads as a number for any register; other enum, bool
+   * and version text stays a string, so the caller can map labels.
+   */
   function parse(reg, str) {
     str = String(str ?? "").trim();
     if(!str) return null;
@@ -194,21 +229,23 @@ const Reg = (() => {
     }
     if(isNumeric(reg)) {
       // Decimal comma (PL/DE locale) → dot so parseFloat keeps the fraction;
-      // grouped thousands are left alone. Mirrors the import path in actions.js.
+      // grouped thousands are left alone. A config import parses through here too.
       const v = parseFloat(str.replace(/^(-?\d+),(\d+)$/, "$1.$2"));
       return isNaN(v) ? null : v;
     }
     return str;
   }
 
-  // Equal up to null/undefined - re-picking the current value should drop
-  // the dirty entry rather than record a no-op edit.
+  /**
+   * Whether two values are equal, `null` and `undefined` counting as one:
+   * re-picking the current value should drop the staged edit rather than record a no-op.
+   */
   function same(a, b) {
     if(a === b) return true;
     return a == null && b == null;
   }
 
-  // Round to the precision `stepSize` allows.
+  /** A value rounded to the precision `stepSize` allows, not to a multiple of it. */
   function snap(value, stepSize) {
     if(stepSize >= 1) return Math.round(value);
     return parseFloat(value.toFixed(_decimals(stepSize)));
@@ -218,25 +255,36 @@ const Reg = (() => {
 
   // A JS number (uint / int / rule / hex / bits); render dispatch is `isScalar`.
   const isNumeric = (reg) => !["enum", "bool", "ver"].includes(reg.type);
+  /** Whether a register is an enum that carries its labels. */
   const isEnum = (reg) => reg.type === "enum" && reg.enum;
+  /** Whether a register is a bool. */
   const isBool = (reg) => reg.type === "bool";
+  /** Whether a register holds a version string. */
   const isVer = (reg) => reg.type === "ver";
+  /** Whether a register is a bit mask that carries its bit labels. */
   const isBits = (reg) => reg.type === "bits" && reg.bits;
 
-  // Identity, not telemetry: an opaque word has no trend, and a version string
-  // has no numeric order to plot ("1.10.0" would sit below "1.2.3").
+  /**
+   * Whether a register is telemetry: `ver` and `hex` are identity instead.
+   * An opaque word has no trend, and a version string has no numeric order to plot:
+   * "1.10.0" would sit below "1.2.3".
+   */
   const isTelemetry = (reg) => !["ver", "hex"].includes(reg.type);
 
-  // The map's `info` column: a read-only register the config file carries beside the settings.
+  /**
+   * Whether the map's `info` column marks a register:
+   * a read-only one the config file carries beside the settings.
+   */
   const isInfo = (reg) => String(reg.info ?? "").trim().toLowerCase() === "true";
 
-  // Renders the free-text Input control (Control.For's fallthrough).
+  /** Whether a register is edited as free text, the fallthrough of `Control.For`. */
   const isScalar = (reg) => !isEnum(reg) && !isBool(reg) && !isVer(reg) && !isBits(reg);
 
-  // Device-reported null - tells a real N/A apart from never-polled.
+  /** Whether a null is the device's own N/A, told apart from a value never polled. */
   const isNA = (reg, value) =>
     !!reg.nullable && value == null && S.connected && !isInactive(reg);
 
+  /** Whether a value lies past a bound the map declares for the register's active slot. */
   function outOfRange(reg, value) {
     if(value == null || typeof value !== "number") return false;
     if(isInactive(reg)) return false;
@@ -247,25 +295,21 @@ const Reg = (() => {
     return (loBound != null && value < loBound) || (hiBound != null && value > hiBound);
   }
 
-  // 16-bit register span per type; types absent here don't scale-encode.
-  const _RAW_RANGE = {
-    uint: [0, 0xFFFF], hex: [0, 0xFFFF], rule: [0, 0xFFFF], bits: [0, 0xFFFF],
-    int: [-0x8000, 0x7FFF],
-  };
-
-  // round(value*scale) overflows the register and wraps to a different number.
+  /**
+   * Whether `round(value * scale)` lands past the word the register holds,
+   * which wraps it to a different number.
+   * `reg.span` is that word as the backend's encoder knows it; a type without one has no scale.
+   */
   function willWrap(reg, value) {
     if(value == null || typeof value !== "number") return false;
-    if(reg.rule?.pair || isInactive(reg)) return false;
-    const range = _RAW_RANGE[reg.type];
-    if(!range) return false;
+    if(reg.rule?.pair || isInactive(reg) || !reg.span) return false;
     const s = scale(reg);
     if(!(s > 0)) return false;
     const raw = Math.round(value * s);
-    return raw < range[0] || raw > range[1];
+    return raw < reg.span[0] || raw > reg.span[1];
   }
 
-  // The number the device keeps after a wrap (encode & 0xFFFF, then decode).
+  /** Number the device keeps after a wrap: the value encoded, cut to 16 bits and decoded. */
   function wrapPreview(reg, value) {
     const s = scale(reg) || 1;
     let raw = Math.round(value * s) & 0xFFFF;
@@ -275,7 +319,10 @@ const Reg = (() => {
 
   //---------------------------------------------------------------------------- Tooltip / list ops
 
-  // Multi-line title attribute; browser renders \n as a soft break.
+  /**
+   * Hover text of a register, one fact per line from its address to its description;
+   * a `title` attribute shows each `\n` as a soft break.
+   */
   function tooltip(reg) {
     const hexStr = Array.isArray(reg.hex) ? reg.hex.join(", ") : reg.hex;
     const unitStr = Array.isArray(reg.unit) ? reg.unit.join("/") : reg.unit;
@@ -329,9 +376,12 @@ const Reg = (() => {
     return out;
   }
 
-  // Thins the list only in `S.searchHide` mode; the default marks instead
-  // (see `match`) so the grid never reflows. `blocks()` then re-sorts by id,
-  // dropping match order on purpose - address topology reads better.
+  /**
+   * Registers the query finds, in `S.searchHide` mode only; otherwise all of them,
+   * since the default marks instead (see `match`) so the grid never reflows.
+   * `blocks()` then re-sorts by id, dropping match order on purpose:
+   * address topology reads better.
+   */
   function filter(regs, query) {
     if(!query || !S.searchHide) return regs;
     return _rank(query, regs);
@@ -349,15 +399,20 @@ const Reg = (() => {
     return _hits;
   }
 
-  // "hit" / "miss" for the current query; null when there is nothing to mark -
-  // no query, or hide mode, where everything left standing is a hit anyway.
+  /**
+   * Mark of a register under the current query, `"hit"` or `"miss"`.
+   * `null` when there is nothing to mark: no query, or hide mode,
+   * where everything left standing is a hit anyway.
+   */
   function match(reg) {
     if(!S.query || S.searchHide) return null;
     return _hitSet().has(reg.name) ? "hit" : "miss";
   }
 
-  // Default view hides ignored regs; `S.showDisabled` reveals them inline
-  // so the user can re-enable without losing address-space context.
+  /**
+   * Registers the grid shows: ignored ones left out, unless `S.showDisabled` keeps them inline
+   * so the user can re-enable one without losing address-space context.
+   */
   function visibility(regs) {
     if(S.showDisabled) return regs;
     return regs.filter(r => !S.ignore.has(r.name));
@@ -386,8 +441,11 @@ const Reg = (() => {
     return _edges;
   }
 
-  // Boundaries come from the full catalog, so hiding registers thins a block
-  // out instead of splitting it at every hole. Drives the grid's visual gaps.
+  /**
+   * Registers in address order, cut into the blocks the grid sets apart with a gap.
+   * Boundaries come from the full catalog, so hiding registers thins a block out
+   * instead of splitting it at every hole.
+   */
   function blocks(regs) {
     if(!regs.length) return [];
     const s = [...regs].sort((a, b) => lo(a) - lo(b));
@@ -402,8 +460,10 @@ const Reg = (() => {
     return out;
   }
 
-  // `k` balanced columns: a block stays whole unless it alone exceeds a
-  // column's share, then it spills. Columns are re-grouped by `blocks`.
+  /**
+   * Registers spread over up to `k` balanced columns, each to be grouped by `blocks` again.
+   * A block stays whole unless it alone exceeds a column's share, then it spills.
+   */
   function columns(regs, k) {
     if(k <= 1 || !regs.length) return [regs];
     const colSize = regs.length / k;
@@ -425,7 +485,7 @@ const Reg = (() => {
 
   return {
     lo, hi, label, byName,
-    ruleIndex, isInactive,
+    staged, ruleIndex, isInactive,
     unit, min, max, step, scale,
     rws, ro, rwsClass,
     display, decimals, parse, same, snap,
@@ -434,11 +494,3 @@ const Reg = (() => {
     tooltip, filter, match, visibility, blocks, columns,
   };
 })();
-
-const GRID_COL_W = 460, GRID_COL_MAX = 6, GRID_COL_ROWS = 8;
-function gridColumnCount(regCount) {
-  const w = document.querySelector(".rb-grid")?.clientWidth || (window.innerWidth - 32) || 1200;
-  const byWidth = Math.max(1, Math.floor(w / GRID_COL_W));
-  const byRows = Math.max(1, Math.round(regCount / GRID_COL_ROWS));
-  return Math.max(1, Math.min(byWidth, byRows, GRID_COL_MAX));
-}

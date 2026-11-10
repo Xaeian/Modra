@@ -62,6 +62,7 @@ class ModbusLink:
     self._loop = asyncio.new_event_loop()
     self._mb_lock = asyncio.Lock()
     self._read_task = None
+    self._read_done = None # set once the read loop has unwound, which a cancel does not wait for
     self._sync_next = False
     self._write_pending = False
     self._port_miss = 0
@@ -70,7 +71,7 @@ class ModbusLink:
     # rebuild reseeds the random walk and traces visibly jump.
     self._sim_client = None
     # Simulator mode, mirrored from the active port (refreshed in _init_mb).
-    self._sim = (str(self.state.get("port", "")) == "SIM")
+    self._sim = config.setting(self.state, "port") == "SIM"
     # Background trickle-refresh state (see _trickle).
     self._trickle_built = False
     self._trickle_hot = []
@@ -90,7 +91,7 @@ class ModbusLink:
     # Prune once at boot so an oversized DB is trimmed to the retention window.
     self.run_async(self.store.prune(self.history_days()))
     if self.state:
-      log.inf(f"State loaded: {self.state}")
+      log.inf(f"State loaded port:{self.state.get('port')} addr:{self.state.get('addr')}")
     else:
       log.wrn("No state file, starting fresh")
     self.scan(False)
@@ -98,19 +99,23 @@ class ModbusLink:
   #-------------------------------------------------------------------------------------- Internals
 
   def history_days(self) -> int:
-    """Retention window in days from state; 14 on missing/garbage value."""
-    try:
-      return int(self.state.get("history", 14) or 14)
-    except (ValueError, TypeError):
-      return 14
+    """Retention window in days; 0 or garbage reads as the default."""
+    return config.setting(self.state, "history") or config.STATE_DEFAULT["history"]
+
+  def poll_period_s(self) -> float:
+    """Time between polls, which is also how far apart the raw history rows are."""
+    return config.setting(self.state, "interval") / 1000
 
   def run_async(self, coro, timeout=30):
     """Run coroutine on internal event loop. Thread-safe."""
+    future = None
     try:
       future = asyncio.run_coroutine_threadsafe(coro, self._loop)
       return future.result(timeout=timeout)
     except Exception as e:
-      log.err(f"Modbus: {e}")
+      # A call past its time is cancelled, or it would keep the bus after its caller gave up
+      if future: future.cancel()
+      log.err(f"run_async | {e or type(e).__name__}")
       return None
 
   def close(self):
@@ -127,7 +132,7 @@ class ModbusLink:
     # Rebuild the trickle plan for the new register set, clear its backoff.
     self._trickle_built = False
     self._trickle_errors = self._trickle_backoff = 0
-    timeout = self.state.get("timeout", 1000)
+    timeout = config.setting(self.state, "timeout")
     log.inf(f"ModbusMaster init port:{port} addr:{self.mb.addr}"
       f" baud:{self.mb.baudrate} timeout:{timeout}ms")
     if self._sim:
@@ -135,6 +140,7 @@ class ModbusLink:
       # values whenever the port reopens. Which kind it is stays config's call.
       self._sim_client = config.sim_client(self.mb, self._sim_client)
       self.mb.client = self._sim_client
+      self.mb.client_factory = lambda _mb: self._sim_client
 
   def _save_state(self):
     if not self.mb: return
@@ -158,10 +164,25 @@ class ModbusLink:
     if self._read_task and not self._read_task.done(): return
     self._sync_next = False
     self._auth_reset()
+    self._read_done = threading.Event()
     self._read_task = asyncio.run_coroutine_threadsafe(
-      self._read_loop(), self._loop,
+      self._reads(self._read_done), self._loop,
     )
     log.inf("Read loop started")
+
+  async def _reads(self, done:threading.Event):
+    """
+    The read loop, kept alive, with word of when it has unwound.
+    Only a cancel ends it: anything else is logged and the loop starts over after a pause,
+    where it would otherwise die in silence while the UI went on showing the last values.
+    """
+    try:
+      while True:
+        try: return await self._read_loop()
+        except Exception as e:
+          log.err(f"read loop | {e!r}")
+          await asyncio.sleep(RETRY_INTERVAL_S)
+    finally: done.set()
 
   def _stop_reads(self):
     if self._read_task:
@@ -185,14 +206,14 @@ class ModbusLink:
         await self.mb.read_registers(self._sync_ids())
         log.ok("Initial sync done")
       except Exception as e:
-        log.wrn(f"Initial sync failed: {e}")
+        log.wrn(f"Initial sync failed | {e}")
         try: await self.mb.reconnect()
         except Exception: pass
     # Only cancellation (`_stop_reads`) ends this loop. `connected` reports
     # whether the device answers; it never decides whether to keep trying.
     while True:
       t0 = Time()
-      interval_s = int(self.state.get("interval", 500)) / 1000
+      interval_s = self.poll_period_s()
       cache = None
       did_sync = False
       if not self._write_pending:
@@ -212,7 +233,7 @@ class ModbusLink:
             errors = 0
           except Exception as e:
             errors += 1
-            log.wrn(f"Read error ({errors}): {e}")
+            log.wrn(f"Read error ({errors}) | {e}")
             try: await self.mb.reconnect()
             except Exception: pass
             if errors >= READ_ERR_LIMIT and self.connected:
@@ -373,7 +394,7 @@ class ModbusLink:
         if level: await self.mb.read_registers([level["id"]])
     except Exception as e:
       self._auth_fails += 1
-      log.wrn(f"Unlock failed ({self._auth_fails}): {e}")
+      log.wrn(f"Unlock failed ({self._auth_fails}) | {e}")
       return
     if want is None:
       log.inf(f"Unlock key sent to {name}")
@@ -441,7 +462,6 @@ class ModbusLink:
     if self.mb:
       self.run_async(self.mb.disconnect())
       self.mb = None
-    self._clear_cache()
 
   def set_addr(self, addr:int):
     """Probe addr and start the read loop on response (step 2)."""
@@ -524,8 +544,8 @@ class ModbusLink:
       self._clear_cache()
       self._init_mb(self.mb.port)
       log.inf("Serial params changed, reconnect needed")
-    # `_save_state` needs an open `mb`; when disconnected, persist state directly.
-    if self.mb: self._save_state()
+    # `_save_state` copies from an open `mb`; a closed one may still hold the old wire settings
+    if self.serial_open: self._save_state()
     else: config.save_state(self.state)
 
   def reset_database(self) -> bool:
@@ -533,14 +553,12 @@ class ModbusLink:
     insert to release the DB file before deleting, then resumes polling if it
     was active. Returns `False` when the file could not be removed."""
     was_connected = self.connected
-    task = self._read_task
+    done = self._read_done if self._read_task else None
     self._stop_reads()
     # Wait for the cancelled read loop to unwind so its open aiosqlite
     # connection is closed before `store.reset` deletes the file. A still-held
     # handle makes `os.remove` fail on Windows, silently leaving history on disk.
-    if task:
-      try: task.result(timeout=2)
-      except Exception: pass
+    if done: done.wait(timeout=2)
     ok = bool(self.run_async(self.store.reset()))
     if was_connected and self.mb:
       self._start_reads()
@@ -554,7 +572,7 @@ class ModbusLink:
     real device keys by its Modbus address. Columns are named after registers,
     so an updated map slots into the existing table."""
     if self._sim: return "sim"
-    return self.mb.addr if (self.mb and self.connected) else self.state.get("addr")
+    return self.mb.addr if (self.mb and self.connected) else config.setting(self.state, "addr")
 
   def read(self) -> dict|None:
     if not self.mb or not self.connected: return None
@@ -606,6 +624,9 @@ class ModbusLink:
     return result
 
   async def _async_write(self, data:dict) -> dict|None:
+    # A value the map refuses is the caller's to fix, not the bus's: say why, keep the port
+    try: self.mb.encode(data)
+    except Exception as e: return {"error": str(e)}
     self._write_pending = True
     async with self._mb_lock:
       self._write_pending = False
@@ -623,11 +644,12 @@ class ModbusLink:
         # values and not an echo of its request. Cheap enough to do on every
         # write; a failure here says nothing about the write, so it must not
         # fail it. Use `sync()` for a full re-read of the whole map.
-        try: await self.mb.read_registers(list(self.mb.encode(data, ["W", "RW", "RWs"])))
-        except Exception as e: log.wrn(f"Readback failed: {e}")
+        back = ["RW", "RWs"] + (["W"] if config.READBACK_W else [])
+        try: await self.mb.read_registers(list(self.mb.encode(data, back)))
+        except Exception as e: log.wrn(f"Readback failed | {e}")
         return self.mb.cache
       except Exception as e:
-        log.err(f"Write error: {e}")
+        log.err(f"Write error | {e}")
         try: await self.mb.reconnect()
         except Exception: pass
         return None

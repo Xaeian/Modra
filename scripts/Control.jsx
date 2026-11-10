@@ -3,6 +3,10 @@
 // Type-specialized value controls. `For` dispatches; each variant takes
 // `{reg, value, isDirty, ro}` and commits through `editSend()` / `editSilent()`.
 
+// Grid input editing `name` - looked up fresh, render() detaches held nodes.
+const valInput = (name) =>
+  document.querySelector(`input.rb-val[data-reg="${CSS.escape(name)}"]`);
+
 // `dirty` recolors so a pending pick reads differently from a confirmed one.
 const _btnClass = (isActive, isDirty) =>
   cls("rb-btn", isActive && "on", isDirty && isActive && "dirty");
@@ -10,7 +14,7 @@ const _btnClass = (isActive, isDirty) =>
 // Shared by Bool and Input. No focus steal: blurring the row's input would
 // autosend the value this toggle replaces.
 const NullCheckbox = ({ reg }) => {
-  const cur = reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
+  const cur = Reg.staged(reg.name);
   return (
     <label class="rb-null-cb" title="Send null"
       onMouseDown={(e) => e.preventDefault()}>
@@ -109,10 +113,10 @@ const Control = {
     // leaving: acting on it would autosend a half-typed value and re-enter render().
     const onBlur = (e) => {
       if(isRendering() || !e.target.isConnected) return;
-      if(!ro && reg.name in S.dirty && S.dirty[reg.name] === null && !reg.nullable)
+      if(!ro && Object.hasOwn(S.dirty, reg.name) && S.dirty[reg.name] === null && !reg.nullable)
         resetOne(reg);
       else {
-        if(shouldAutosend(reg)) autosendOne(reg);
+        if(shouldAutosend(reg)) autosendOne(reg); // fire-and-forget: renders once written
         render();
       }
     };

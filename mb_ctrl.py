@@ -7,6 +7,7 @@ CLI: device ↔ config file admin tool.
 """
 
 import sys, asyncio, os
+from pymodbus.exceptions import ModbusException
 from xaeian import INI, CSV, Print, Color as c
 import config
 
@@ -31,7 +32,7 @@ def _joined(cell, sep:str) -> str:
 
 async def main():
   if len(sys.argv) < 2:
-    log.wrn("Usage: py mb_ctrl.py {import|export|sudo} [file]"); return
+    log.err("Usage: py mb_ctrl.py {import|export|sudo} [file]"); sys.exit(1)
 
   state = config.load_state()
   mb = config.create_mb(state)
@@ -71,7 +72,7 @@ async def main():
     case "export" | "exp":
       file = sys.argv[2] if len(sys.argv) > 2 else "config.ini"
       if not os.path.exists(file):
-        log.err(f"File not found: {file}"); return
+        log.err(f"File not found: {file}"); sys.exit(1)
       ext = os.path.splitext(file)[1].lstrip(".").lower()
       if ext == "csv":
         rows = CSV.load(file)
@@ -80,20 +81,33 @@ async def main():
       else:
         data = INI.load(file) or {}
       await mb.connect()
-      await mb.write(data)
+      count = await mb.write(data)
       await mb.disconnect()
+      # Unknown names and read-only rows are skipped, so a file can hold nothing to write
+      if not count: log.err(f"{file}: nothing writable for this map"); sys.exit(1)
       log.inf(f"{file} {c.TURQUS}>>{c.END} Motor")
 
     case "sudo" | "su":
       if config.AUTH_KEY is None:
-        log.wrn("No key: set config.AUTH_KEY"); return
+        log.err("No key: set config.AUTH_KEY"); sys.exit(1)
       await mb.connect()
-      await mb.write({config.AUTH_KEY_REG: config.AUTH_KEY})
+      if not await mb.write({config.AUTH_KEY_REG: config.AUTH_KEY}):
+        log.err(f"No writable {config.AUTH_KEY_REG} in {config.regs_path()}"); sys.exit(1)
+      # The device publishes the level on its own clock, so it may trail the key: wait up to 1s
+      for _ in range(10):
+        level = (await mb.read([config.AUTH_LEVEL_REG], grouped=False)).get(config.AUTH_LEVEL_REG)
+        if level == config.AUTH_LEVEL: break
+        await asyncio.sleep(0.1)
       await mb.disconnect()
+      if level != config.AUTH_LEVEL:
+        log.err(f"Unlock unconfirmed, {config.AUTH_LEVEL_REG} reads {level}"); sys.exit(1)
       log.ok(f"You are {c.TURQUS}{config.AUTH_LEVEL}{c.END} now")
 
     case _:
-      log.wrn(f"Unknown action: {action}")
+      log.err(f"Unknown action: {action}"); sys.exit(1)
 
 if __name__ == "__main__":
-  asyncio.run(main())
+  # Only what the user can fix: a bad file or value, a dead port, a silent or refusing device
+  try: asyncio.run(main())
+  except (OSError, RuntimeError, ValueError, ModbusException) as e:
+    log.err(str(e)); sys.exit(1)

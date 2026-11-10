@@ -151,8 +151,12 @@ class Binding:
     if mode == "rpm":
       return max(0.0, (self._rule_hz(values, "Ctrl:Setpoint", "rpm") or 0.0) * poles / 60.0)
     if mode == "%":
-      ceiling = self._eng(values, "Speed:Max", 3000.0) * poles / 60.0 or 300.0
-      return max(0.0, (self._rule_hz(values, "Ctrl:Setpoint", "%") or 0.0) / 100.0 * ceiling)
+      # As ifc spreads it: 0 stops, the first step (0.01%) is `Speed:Min`, 100% is `Speed:Max`
+      pct = self._rule_hz(values, "Ctrl:Setpoint", "%") or 0.0
+      if pct <= 0: return 0.0
+      low = self._eng(values, "Speed:Min", 0.0) * poles / 60.0
+      high = self._eng(values, "Speed:Max", 0.0) * poles / 60.0
+      return max(0.0, low + (high - low) * (min(pct, 100.0) - 0.01) / (100.0 - 0.01))
     return 0.0
 
   def command(self, values:dict, held_hz:float) -> Command:

@@ -1,7 +1,7 @@
 // scripts/alert.js
 
 // Bottom-center toast stack, deduped by message - a repeat rearms the existing toast, so
-// poll loops shouting "Connection lost" stay quiet. Plain DOM: loads before the JSX runtime.
+// poll loops shouting "Connection lost" stay quiet. Plain DOM: a `.js` file gets no JSX.
 // API: `alert.err / wrn / inf / ok (msg, ms?)`.
 const alert = (() => {
 

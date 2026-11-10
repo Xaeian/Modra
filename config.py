@@ -4,16 +4,17 @@ view.json (monitor panels + ignore list). Factory for ModbusMaster bound
 to current on-disk state.
 """
 
-import sys
-from fnmatch import fnmatchcase
+import re, sys
 from importlib import import_module
-from modbus import ModbusMaster
-from xaeian import INI, JSON, FILE, PATH, Color
+from modbus import ModbusMaster, RAW_SPAN, slot
+from xaeian import INI, JSON, FILE, PATH, Print
 
 APP_FILE = "app.ini" # deployment facts shared with the frontend build
 STATE_FILE = "serial.ini"
 REGS_FILE = "regs.csv"
 VIEW_FILE = "view.json"
+
+log = Print()
 
 # Read write-only (W) registers back on a sync (device is source of truth), or
 # never read them and show a written W as 0 (self-clearing command registers).
@@ -54,10 +55,10 @@ def regs_path() -> str:
   return PATH.resolve(REGS_FILE, read=False)
 
 def load_state() -> dict:
+  """serial.ini over `STATE_DEFAULT`, written out with the defaults on a first start."""
   state = INI.load(STATE_FILE)
-  if state: return state
-  INI.save(STATE_FILE, STATE_DEFAULT)
-  return dict(STATE_DEFAULT)
+  if not state: INI.save(STATE_FILE, STATE_DEFAULT)
+  return {**STATE_DEFAULT, **(state or {})}
 
 def save_state(state:dict):
   INI.save(STATE_FILE, state)
@@ -66,7 +67,18 @@ def _int(val, default:int) -> int:
   try: return int(val)
   except (ValueError, TypeError): return default
 
-def _bool(val, default:bool=False) -> bool:
+def setting(state:dict, key:str):
+  """
+  `state[key]` in the type its `STATE_DEFAULT` has, that default where it is missing or garbage.
+  The one place a setting's default lives: a reader never keeps a copy of it.
+  """
+  default = STATE_DEFAULT[key]
+  val = state.get(key, default)
+  if isinstance(default, bool): return as_bool(val, default)
+  if isinstance(default, int): return _int(val, default)
+  return default if val is None else str(val)
+
+def as_bool(val, default:bool=False) -> bool:
   """Coerce INI-style values to bool. Accepts true/yes/1/on (case-insensitive)."""
   if isinstance(val, bool): return val
   if val is None: return default
@@ -83,18 +95,21 @@ def load_view() -> dict:
     data = JSON.load(VIEW_FILE)
     if isinstance(data, dict):
       out = dict(VIEW_DEFAULT)
-      out["ask_map"] = _bool(data.get("ask_map"), True)
+      out["ask_map"] = as_bool(data.get("ask_map"), True)
       if isinstance(data.get("monitor"), list):
         out["monitor"] = data["monitor"]
       if isinstance(data.get("ignore"), list):
         out["ignore"] = [str(x).strip() for x in data["ignore"] if str(x).strip()]
       return out
-  except Exception: pass
+  except Exception as e:
+    # Kept aside before the defaults stand in: the next save would write them over it
+    FILE.save(VIEW_FILE + ".bad", FILE.load(VIEW_FILE, binary=True))
+    log.wrn(f"{VIEW_FILE} unreadable, kept as {VIEW_FILE}.bad | {e}")
   return dict(VIEW_DEFAULT)
 
 def save_view(view:dict):
   payload = {
-    "ask_map": _bool(view.get("ask_map"), True),
+    "ask_map": as_bool(view.get("ask_map"), True),
     "monitor": view.get("monitor", []) if isinstance(view.get("monitor"), list) else [],
     "ignore": [str(x).strip() for x in view.get("ignore", []) if str(x).strip()],
   }
@@ -124,13 +139,13 @@ def _load_sims():
   path = app_path()
   try: listed = str(INI.load(path).get("sim", "") or "")
   except Exception as e:
-    print(f"{Color.ORANGE}{path} unreadable, SIM falls back to the generic walk: {e}{Color.END}")
+    log.wrn(f"{path} unreadable, SIM falls back to the generic walk | {e}")
     return
   for name in (n.strip() for n in listed.split(",")):
     if not name: continue
     try: import_module(name)
     except Exception as e:
-      print(f"{Color.ORANGE}sim package {name} not loaded: {e}{Color.END}")
+      log.wrn(f"sim package {name} not loaded | {e}")
 
 def sim_client(mb:ModbusMaster, prev=None):
   """Simulated transport for the SIM port.
@@ -151,20 +166,32 @@ def sim_client(mb:ModbusMaster, prev=None):
     try:
       if offer.match(mb.id_map): cls = offer; break
     except Exception as e:
-      print(f"{Color.ORANGE}sim {offer.__name__} match failed: {e}{Color.END}")
+      log.wrn(f"sim {offer.__name__} match failed | {e}")
+  # A model was asked for and none takes this map: without a word the walk would pass for it
+  if cls is SimulatedClient and REGISTRY:
+    names = ", ".join(sorted({o.__module__.split(".")[0] for o in REGISTRY}))
+    log.wrn(f"SIM: the map fits no model of {names}, generic walk")
   if type(prev) is cls:
     prev.reattach(mb.id_map)
     return prev
   return cls(mb.id_map)
 
+def _glob(pattern:str) -> re.Pattern:
+  """
+  `*` and `?` as in a file name, every other character literal, case kept.
+  The grid reads a pattern the same way, so a row it shows as polled is one the poll reads.
+  """
+  return re.compile(re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".") + r"\Z")
+
 def ignore_names(patterns, mb:ModbusMaster) -> set[str]:
   """view.json entries may be globs (`Journal:*`); the map takes plain names, so
-  expand once, here. Case-sensitive everywhere - `fnmatch` folds case on Windows."""
+  expand once, here."""
   known = list(mb.name_map) + list(mb.pairs)
   out = set()
   for p in (str(x).strip() for x in patterns):
     if not p: continue
-    out |= {n for n in known if fnmatchcase(n, p)} if "*" in p or "?" in p else {p}
+    if "*" in p or "?" in p: out |= {n for n in known if _glob(p).match(n)}
+    else: out.add(p)
   return out
 
 def is_info(cell) -> bool:
@@ -174,19 +201,19 @@ def is_info(cell) -> bool:
 def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
   """ModbusMaster bound to current state + `view.ignore`. Ignore is applied
   inside `mb.read()`; the map itself stays complete so the DB schema covers
-  every register. `view=None` lets CLI tools skip view.json lookup. The SIM
+  every register. `view=None` reads it from view.json. The SIM
   port swaps the transport client here."""
   if view is None: view = load_view()
-  port = port or str(state.get("port", ""))
+  port = port or setting(state, "port")
   mb = ModbusMaster(
     port=port,
     regmap_file=regs_path(),
-    addr=_int(state.get("addr"), 1),
-    baudrate=_int(state.get("baudrate"), 9600),
-    parity=str(state.get("parity", "N")),
-    stopbits=_int(state.get("stopbits"), 1),
-    timeout=_int(state.get("timeout"), 1000) / 1000,
-    retries=_int(state.get("retries"), 3),
+    addr=setting(state, "addr"),
+    baudrate=setting(state, "baudrate"),
+    parity=setting(state, "parity"),
+    stopbits=setting(state, "stopbits"),
+    timeout=setting(state, "timeout") / 1000,
+    retries=setting(state, "retries"),
     client_factory=sim_client if port == "SIM" else None,
   )
   # Needs the parsed map to resolve globs against.
@@ -195,22 +222,8 @@ def create_mb(state:dict, view:dict=None, port:str=None) -> ModbusMaster:
 
 #----------------------------------------------------------------------------------------- Map lint
 
-# 16-bit register span per type; the encoder masks round(value*scale) with
-# & 0xFFFF, so a bound/default that overflows wraps instead of being rejected.
-_RAW_RANGE = {
-  "uint": (0, 0xFFFF), "hex": (0, 0xFFFF), "rule": (0, 0xFFFF), "bits": (0, 0xFFFF),
-  "int": (-0x8000, 0x7FFF),
-}
-
 def _slots(val) -> list:
   return val if isinstance(val, list) else [val]
-
-def _slot(val, i):
-  """Per-slot pick for rule lists; scalars repeat, OOB falls back to slot 0
-  (matching runtime _get_scale / _get_minmax)."""
-  if not isinstance(val, list): return val
-  if i < len(val): return val[i]
-  return val[0] if val else None
 
 def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
   """Flag regs.csv mistakes the encoder would otherwise hide (uint16 wrap,
@@ -220,13 +233,13 @@ def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
     name = r.get("name", "?")
     # 32-bit pairs (list id) encode outside the single-word scale path.
     if isinstance(r.get("id"), list): continue
-    rng = _RAW_RANGE.get(r.get("type"))
+    rng = RAW_SPAN.get(r.get("type"))
     if not rng: continue
     raw_lo, raw_hi = rng
     scale, mn, mx = r.get("scale", 1.0), r.get("min"), r.get("max")
     n = max(len(_slots(scale)), len(_slots(mn)), len(_slots(mx)))
     for i in range(n):
-      s, lo, hi = _slot(scale, i), _slot(mn, i), _slot(mx, i)
+      s, lo, hi = slot(scale, i), slot(mn, i), slot(mx, i)
       tag = name + (f"[{i}]" if n > 1 else "")
       if s is None or s <= 0:
         issues.append(("err", f"{tag}: scale={s} (must be > 0)"))
@@ -251,10 +264,8 @@ def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
           issues.append(("wrn", f"{name}: default {d:g} above max {mx:g}"))
   if issues:
     errs = sum(1 for k, _ in issues if k == "err")
-    print(f"{Color.ORANGE}regs.csv: {len(issues)} issue(s), {errs} error(s){Color.END}")
-    for kind, msg in issues:
-      col = Color.RED if kind == "err" else Color.YELLOW
-      print(f"  {col}{kind.upper()}{Color.END} {msg}")
+    log.wrn(f"regs.csv: {len(issues)} issue(s), {errs} error(s)")
+    for kind, msg in issues: (log.err if kind == "err" else log.wrn)(f"  {msg}")
   return issues
 
 def load_regs(state:dict=None, view:dict=None) -> list[dict]:
@@ -280,7 +291,7 @@ def save_regs(text:str) -> list[dict]|None:
     regs = load_regs()
     if regs: return regs
   except Exception as e:
-    print(f"{Color.RED}Register map rejected: {e}{Color.END}")
+    log.err(f"Register map rejected | {e}")
   if backup is None: FILE.remove(path)
   else: FILE.save(path, backup)
   return None

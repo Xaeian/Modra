@@ -1,8 +1,10 @@
 # Changes `modra`
 
-## `1.3.6` Info
+## `1.3.6` Info, Widgets
 
 - Config export opens with `info` registers _(serial, versions, UID)_, in the app and `mb_ctrl`
+- Widgets 🧩 activate only when the map has their registers; a broken one stays in its panel
+- Fixes: address scan, polling, sending, chart history, settings
 
 ## `1.3.5` Status, Faults
 

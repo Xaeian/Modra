@@ -1,6 +1,6 @@
 // scripts/monitor.js
 
-// Chart config, time-series buffer, CSV export. Consumed by Monitor.jsx and chart.js.
+// Chart config, time-series buffer, CSV export. Consumed by `Monitor`.
 
 //--------------------------------------------------------------------------------- Chart constants
 
@@ -29,11 +29,6 @@ const CHART_LIVE_MS = 1000;
 // A zoom ending this close to "now" counts as live-edge and keeps topping up.
 // Absorbs drag and refresh lag; further back is a deliberate historical view.
 const CHART_EDGE_SEC = 15;
-
-// Not filtered by available history: tiers cover any span.
-function chartRanges() {
-  return CHART_RANGE_PRESETS;
-}
 
 // One palette per panel index; series rotate within it so multi-trace panels
 // stay distinct.
@@ -80,25 +75,29 @@ const GAP_MIN_SEC = 5;
 
 const _pad2 = (n) => String(n).padStart(2, "0");
 
-// "13:45:09" - axis tick.
+/** Local time of day of a timestamp in seconds, as an axis tick shows it: "13:45:09". */
 function chartFmtTime(ts) {
   const d = new Date(ts * 1000);
   return d.getHours() + ":" + _pad2(d.getMinutes()) + ":" + _pad2(d.getSeconds());
 }
 
-// "26-05-12" - 2-digit year keeps axis labels narrow at the cost of post-2099 wrap.
+/**
+ * Local date of a timestamp in seconds, as "26-05-12".
+ * The 2-digit year keeps axis labels narrow, at the cost of a wrap after 2099.
+ */
 function chartFmtDate(ts) {
   const d = new Date(ts * 1000);
   return String(d.getFullYear()).slice(2)
     + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate());
 }
 
+/** Date and time of a timestamp in seconds, as "26-05-12 13:45:09". */
 const chartFmtFull = (ts) => chartFmtDate(ts) + " " + chartFmtTime(ts);
 
-// uPlot axis values formatter: "date\ntime" on two lines per tick.
+/** A uPlot `values` formatter for the x-axis, each tick a date over a time on two lines. */
 const chartFmtAxisX = () => (u, vals) => vals.map(v => chartFmtDate(v) + "\n" + chartFmtTime(v));
 
-// Full ISO-ish stamp for CSV exports (4-digit year, sortable).
+/** Full stamp of a timestamp in seconds for a CSV export, sortable: "2026-05-12 13:45:09". */
 function chartFmtCSV(ts) {
   const d = new Date(ts * 1000);
   return d.getFullYear() + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate())
@@ -107,21 +106,27 @@ function chartFmtCSV(ts) {
 
 //-------------------------------------------------------------------------------- Color / grouping
 
+/** Color of series `si` in panel `gi`, each panel its own palette; both indexes wrap around. */
 const chartColor = (gi, si) => {
   const palette = CHART_COLORS[gi % CHART_COLORS.length];
   return palette[si % palette.length];
 };
 
-// Stepped where interpolation would lie: writable values jump between samples,
-// discrete types have no in-between.
+/**
+ * Whether a register's trace is drawn stepped, which is where interpolation would lie:
+ * writable values jump between samples, discrete types have no in-between.
+ */
 function chartIsStepped(reg) {
   return reg.rws !== "R"
     || ["bool", "enum", "bits", "hex"].includes(reg.type);
 }
 
-// Two registers share a panel iff unit and scale match; bool/enum/bits get one
-// each (different y-axis semantics). The `true` arg picks the device-confirmed
-// slot, so a rule reg regroups only once the write is ack'd.
+/**
+ * Key of the chart panel a register goes in.
+ * Two registers share a panel exactly when unit and scale match;
+ * a bool, enum or bits register gets one of its own, its y-axis meaning something else.
+ * A rule register regroups only once the device has confirmed the write that moved its slot.
+ */
 function chartGroupKey(reg) {
   if(reg.type === "bool") return "bool|" + reg.name;
   if(reg.type === "enum") return "enum|" + reg.name;
@@ -129,7 +134,7 @@ function chartGroupKey(reg) {
   return Reg.unit(reg, true) + "|" + Reg.scale(reg, true);
 }
 
-// name → hex, so the tag bar in Monitor.jsx mirrors the panel series colors.
+/** Hex color of every charted register by name, so the tag bar mirrors the panel series. */
 function chartTagColors() {
   const map = {};
   for(const grp of Object.values(MonitData.groups())) {
@@ -138,15 +143,17 @@ function chartTagColors() {
   return map;
 }
 
-// JSON label maps come string-keyed; charts index them by numeric value.
+/** A label map keyed by number, as a chart indexes it; JSON gives the keys as strings. */
 function chartLabels(map) {
   const out = {};
   for(const [k, v] of Object.entries(map)) out[parseInt(k)] = v;
   return out;
 }
 
-// Backend returns enums as labels and bools as JS booleans; uPlot needs
-// numeric coordinates.
+/**
+ * A value as the number uPlot plots, `null` when there is none:
+ * the backend gives an enum as its label and a bool as a JS boolean.
+ */
 function chartToNum(reg, value) {
   if(value == null) return null;
   if(typeof value === "number") return value;
@@ -162,8 +169,12 @@ function chartToNum(reg, value) {
 
 //-------------------------------------------------------------------------------------- CSV export
 
-// Rows align on the union of timestamps - missing samples are blank. Decimals
-// come from `Reg.decimals` so values match the Grid.
+/**
+ * CSV download of these traces, one row for each timestamp any of them has.
+ * A missing sample is blank, and decimals come from `Reg.decimals`, so values match the grid.
+ * @param {string[]} names  register names, in column order
+ * @param {Record<string, Array<{ts: number, v: number}>>} buf  samples by name, `ts` in seconds
+ */
 function chartExportCSV(names, buf) {
   const allTs = new Set();
   for(const n of names) {
@@ -207,6 +218,10 @@ const MonitData = {
 
   //---------------------------------------------------------------------------------------- Window
 
+  /**
+   * Window the chart shows, `[from, to]` in seconds:
+   * the last `range` while live, the frozen one otherwise.
+   */
   window() {
     if(this.live) {
       const now = Date.now() / 1000;
@@ -223,18 +238,23 @@ const MonitData = {
   // Floor only: `prepare` derives the real threshold from the data's own
   // spacing, since bucket width varies with the tier.
   gapMin() {
-    const ms = parseInt(S.serial?.interval) || 500;
-    return Math.max(ms * GAP_TICKS / 1000, GAP_MIN_SEC);
+    return Math.max(S.serial.interval * GAP_TICKS / 1000, GAP_MIN_SEC);
   },
 
-  // Time range + point budget; tier selection lives in the backend. `fetchParams`
-  // is the explicit fetch (range button, zoom, date pick); `readParams` polls and
-  // returns null while frozen, so a zoomed window is not refetched every tick.
+  /**
+   * Time range and point budget of an explicit fetch: a range button, a zoom, a date pick.
+   * Tier selection lives in the backend. `null` while nothing is charted.
+   */
   fetchParams() {
     if(!S.monitor.size) return null;
     const [from, to] = this.window();
     return { from, to, names: [...S.monitor], max_points: CHART_TARGET_POINTS };
   },
+  /**
+   * `fetchParams` for a poll, at most once per `CHART_LIVE_MS` and `null` in between.
+   * A frozen window gets `null` too, so a zoomed window is not refetched every tick;
+   * one that ends at the live edge on the raw tier still tops up.
+   */
   readParams() {
     if(!this.live && !(this._edge && this.tier === "raw")) return null;
     const now = Date.now();
@@ -256,8 +276,11 @@ const MonitData = {
     return idx !== null ? `${base}_${idx}` : null;
   },
 
-  // A non-array payload (cache-only poll) is ignored so a frozen chart is never
-  // blanked. Rows arrive downsampled; only the active-slot column is projected.
+  /**
+   * The buffer replaced by the rows of one read, a trace for each charted name.
+   * A non-array payload (a cache-only poll) is ignored, so a frozen chart is never blanked.
+   * Rows arrive downsampled; only the active-slot column is projected.
+   */
   ingest(rows) {
     if(!Array.isArray(rows)) return;
     const next = {};
@@ -280,23 +303,31 @@ const MonitData = {
 
   //----------------------------------------------------------------------- Range / membership sync
 
+  /** A live window of the last `s` seconds, `Infinity` for all history. */
   setRange(s) { this.range = s; this.live = true; this._edge = false; },
 
-  // Frozen window from a drag-zoom or date picker.
+  /**
+   * A frozen window from a drag-zoom or a date picker, `from` and `to` in seconds.
+   * One ending within `CHART_EDGE_SEC` of now counts as the live edge and keeps topping up.
+   */
   setWindow(from, to) {
     this.from = from; this.to = to; this.live = false;
     this._edge = (Date.now() / 1000 - to) <= CHART_EDGE_SEC;
   },
 
-  // Drop unsubscribed names; the next fetch repopulates the rest.
+  /** Samples of names no longer charted dropped; the next fetch repopulates the rest. */
   sync() {
     for(const n of Object.keys(this._buf)) if(!S.monitor.has(n)) delete this._buf[n];
   },
 
   //-------------------------------------------------------------------------------------- Grouping
 
-  // Rule regs without an active slot are gated out: no sample can land, so the
-  // panel would stay perpetually empty.
+  /**
+   * Charted registers as panels, keyed by `chartGroupKey`: each group has its `unit`,
+   * palette `idx`, member `names`, and the type and labels its y-axis reads.
+   * A rule register without an active slot is left out: no sample can land,
+   * so its panel would stay perpetually empty.
+   */
   groups() {
     const out = {};
     let idx = 0;
@@ -322,9 +353,11 @@ const MonitData = {
 
   //------------------------------------------------------------------------ Prepare data for chart
 
-  // Buffer -> uPlot `[xs, ...series]`. The window edges are not padded: the
-  // x-scale is set explicitly by the chart, and an empty point at the live edge
-  // would sit under the pointer instead of the last sample.
+  /**
+   * The buffer as uPlot data for these traces, `[xs, ...series]`, a real hole broken by nulls.
+   * The window edges are not padded: the x-scale is set explicitly by the chart,
+   * and an empty point at the live edge would sit under the pointer instead of the last sample.
+   */
   prepare(names) {
     const [xMin, xMax] = this.window();
     const maps = {};
@@ -364,6 +397,9 @@ const MonitData = {
     return [ts, ...vals];
   },
 
-  // Called on disconnect so the next session starts fresh.
+  /** Every sample held, by register name, each a list of `{ts, v}`. */
+  samples() { return this._buf; },
+
+  /** Every sample dropped, once the history they came from is deleted. */
   clear() { this._buf = {}; },
 };

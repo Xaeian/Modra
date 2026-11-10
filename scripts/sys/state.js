@@ -10,6 +10,7 @@ const S = {
   port: null,
   addr: null,
   connected: false,
+  link: 0, // connections made so far; what belongs to one device ends with its link
   serial_open: false,
   serial: {
     baudrate: 9600, parity: "N", stopbits: 1, timeout: 1000,

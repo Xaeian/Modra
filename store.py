@@ -5,7 +5,7 @@ Raw data (one row per poll cycle) goes to one table per address (`addr_1`,
 `addr_5`, ...; `addr_sim` for the simulator), columns typed from regs.csv
 (INTEGER/REAL/TEXT). Three coarser archive tiers downsample it incrementally -
 minute (`addr_1_m`), hour (`addr_1_h`), day (`addr_1_d`) - each averaging the
-tier below. A chart query reads from whichever tier matches the requested time
+finer tier above it. A chart query reads from whichever tier matches the requested time
 span, so an overview of a year is a 365-row read and a zoom into one minute is
 full resolution. Numeric columns average; bits OR-reduce (any bit set in the
 window); TEXT (enum/ver) take the last value in the bucket.
@@ -29,9 +29,6 @@ log = Print()
 # retention days). Each tier averages the one above it (raw → m → h → d),
 # so a year only ever costs the day tier 365 rows. `None` retention = forever.
 ARCHIVE_TIERS = [("_m", 60.0, 90), ("_h", 3600.0, 730), ("_d", 86400.0, None)]
-# Nominal raw row spacing (s), used only to pick a tier by zoom level. Real
-# spacing is the poll interval; a LIMIT caps the row count either way.
-RAW_BUCKET = 1.0
 
 class Store:
 
@@ -167,7 +164,7 @@ class Store:
         row[c["col"]] = self._resolve(cache, name) if active[name] == slot_idx else None
       await self.db.insert(self._table(addr), row)
     except Exception as e:
-      log.err(f"log: {e}")
+      log.err(f"log | {e}")
 
   #------------------------------------------------------------------------------------- Downsample
 
@@ -187,7 +184,7 @@ class Store:
         total += await self._roll_tier(src, dst, bucket)
         src = dst
     except Exception as e:
-      log.err(f"roll: {e}")
+      log.err(f"roll | {e}")
     return total
 
   async def _roll_tier(self, src:str, dst:str, bucket:float) -> int:
@@ -228,20 +225,30 @@ class Store:
 
   #------------------------------------------------------------------------------------------ Query
 
-  def _pick_tier(self, span:float, max_points:int, age:float, raw_days:int) -> str:
-    """Finest tier whose native bucket keeps the row count under `max_points`
-    (bucket >= span/max_points) AND whose retention still holds data back to
-    `from` (age = now - from). Routes wide/old windows to coarse tiers, narrow
-    recent ones to raw."""
+  @staticmethod
+  def _cap(max_points:int) -> int:
+    """Rows one query returns at most."""
+    return max(max_points * 2, 4000)
+
+  def _pick_tier(
+    self, span:float, max_points:int, age:float,
+    raw_days:int, raw_period:float,
+  ) -> str:
+    """Raw while its rows, one per poll `raw_period` apart, fit the query's cap and its
+    retention reaches back to `from` (age = now - from). Past that the finest archive tier
+    whose bucket keeps the row count under `max_points` (bucket >= span/max_points)."""
+    if span / raw_period <= self._cap(max_points) and age <= raw_days * 86400: return ""
     needed = span / max_points if max_points else span
-    tiers = [("", RAW_BUCKET, raw_days)] + ARCHIVE_TIERS
-    for suffix, bucket, ret_days in tiers:
+    for suffix, bucket, ret_days in ARCHIVE_TIERS:
       if bucket < needed: continue
       if ret_days is not None and age > ret_days * 86400: continue
       return suffix
     return "_d"
 
-  def tier_label(self, from_ts:float, to_ts:float, max_points:int, raw_days:int) -> str:
+  def tier_label(
+    self, from_ts:float, to_ts:float, max_points:int,
+    raw_days:int, raw_period:float,
+  ) -> str:
     """Human name of the tier `query` would read for this window, for the UI to
     show which resolution is on screen. Mirrors `query`'s pick (no DB)."""
     try:
@@ -249,12 +256,12 @@ class Store:
       mp = max(1, min(int(max_points or 2000), 50000))
     except (ValueError, TypeError):
       return "raw"
-    suffix = self._pick_tier(span, mp, Time().to("ts") - float(from_ts), int(raw_days or 14))
+    suffix = self._pick_tier(span, mp, Time().to("ts") - float(from_ts), raw_days, raw_period)
     return {"": "raw", "_m": "min", "_h": "hour", "_d": "day"}.get(suffix, "raw")
 
   async def query(
     self, addr:int|str, names:list[str], from_ts:float, to_ts:float,
-    max_points:int=2000, raw_days:int=14,
+    max_points:int, raw_days:int, raw_period:float,
   ) -> list[dict]:
     """Rows for `names` in [from_ts, to_ts], ascending, downsampled to the tier
     that fits the span. Rule registers expand to all slot columns; the frontend
@@ -267,17 +274,20 @@ class Store:
     if to_ts <= from_ts: return []
     max_points = max(1, min(int(max_points or 2000), 50000))
     try:
-      suffix = self._pick_tier(to_ts - from_ts, max_points, Time().to("ts") - from_ts, raw_days)
+      age = Time().to("ts") - from_ts
+      suffix = self._pick_tier(to_ts - from_ts, max_points, age, raw_days, raw_period)
       table = self._table(addr, suffix)
       await self._ensure(table)
       vcols = self._vcols(names)
       cols_sql = ", ".join(ident(c) for c in (["ts"] + vcols)) if vcols else "ts"
-      cap = max(max_points * 2, 4000)
+      cap = self._cap(max_points)
+      # Newest first, so a cap trims the far end of the window and never the live edge
       sql = (f"SELECT {cols_sql} FROM {ident(table)} "
-        f"WHERE ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?")
-      return await self.db.get_dicts(sql, (from_ts, to_ts, cap))
+        f"WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ?")
+      rows = await self.db.get_dicts(sql, (from_ts, to_ts, cap))
+      return rows[::-1]
     except Exception as e:
-      log.err(f"query: {e}")
+      log.err(f"query | {e}")
       return []
 
   #-------------------------------------------------------------------------------------- Retention
@@ -306,7 +316,7 @@ class Store:
         total += await self.db.exec(f"DELETE FROM {ident(t)} WHERE ts < ?", (cut,)) or 0
       if total: log.inf(f"Prune: removed {total} rows")
     except Exception as e:
-      log.err(f"prune: {e}")
+      log.err(f"prune | {e}")
     return total
 
   async def reset(self) -> bool:
@@ -321,7 +331,7 @@ class Store:
       try:
         if os.path.isfile(f): os.remove(f)
       except OSError as e:
-        log.wrn(f"reset: {f}: {e}")
+        log.wrn(f"reset {f} | {e}")
         if suffix == "": ok = False
     if self.db:
       await self.db.exec("PRAGMA journal_mode=WAL")

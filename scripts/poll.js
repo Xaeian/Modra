@@ -7,8 +7,7 @@ const POLL_MS_FLOOR = 50;
 const PORT_SCAN_MS = 1000;
 
 function _pollInterval() {
-  const ms = parseInt(S.serial?.interval) || 500;
-  return Math.max(POLL_MS_FLOOR, ms);
+  return Math.max(POLL_MS_FLOOR, S.serial.interval);
 }
 
 //---------------------------------------------------------------------------- Status & cache merge
@@ -25,7 +24,10 @@ function applyStatus(s) {
     if(!S.portInput || !newPorts.includes(S.portInput))
       S.portInput = newPorts[0] || "";
   }
+  const was = S.connected;
   S.connected = s.connected || false;
+  // A device found again may be another one, swapped in on the same port and address
+  if(S.connected && !was) S.link++;
   S.serial_open = s.serial_open || false;
   if(S.serial_open) {
     if(s.port) S.port = s.port;
@@ -120,7 +122,7 @@ async function poll() {
     connectionEdge(prev);
     // History rows come from the DB, not the device: ingest them even while
     // unreachable so charts keep serving stored data through an outage.
-    if("tier" in res) MonitData.tier = res.tier;
+    if(Object.hasOwn(res, "tier")) MonitData.tier = res.tier;
     if(S.monitor.size) Monitor.update(res.rows);
     if(!S.connected) {
       // Keep the timer armed: the backend retries, so polling recovers on its own.
@@ -142,7 +144,7 @@ async function poll() {
 function startPoll() {
   if(_pollTimer) return;
   _pollTimer = setInterval(poll, _pollInterval());
-  poll();
+  poll(); // fire-and-forget: this tick now, the timer brings the rest
 }
 
 function stopPoll() {

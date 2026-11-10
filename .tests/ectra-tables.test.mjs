@@ -11,7 +11,7 @@ import { createApp, LOGIC, ok, eq, settle, done } from "./harness.mjs";
 
 // A table as the map has it: points named by frequency, 0.1V steps, bounded
 const VOLT = [0, 2, 5, 10, 20].map((hz, i) => ({ id: 100 + i, name: `Volt:${hz}Hz`,
-  type: "uint", rws: "RWs", unit: "V", scale: 10, min: 0, max: 400 }));
+  type: "uint", rws: "RWs", unit: "V", scale: 10, min: 0, max: 400, span: [0, 0xFFFF] }));
 
 // The curve on the drive, with a spike at 2Hz
 const STANDING = [20, 60, 40, 50, 80];
@@ -106,6 +106,17 @@ const writes = (app) => app.api.filter(([name]) => name === "write").map(([, pat
   ok("but not on another drive, whose curve it never was", button(tables, UNDO).disabled);
 }
 
+{
+  const { app, S, tables } = setup();
+  const { applyStatus } = app.load([], ["applyStatus"]);
+  button(tables, SMOOTH).onClick();
+  await settle();
+  applyStatus({ connected: false, serial_open: true, port: "COM3" });
+  applyStatus({ connected: true, serial_open: true, port: "COM3", addr: 1 });
+  ok("nor after the link dropped and came back: the drive there may be another one",
+    S.addr === 1 && button(tables, UNDO).disabled);
+}
+
 //----------------------------------------------------------------------------------------- Quantum
 
 {
@@ -114,6 +125,15 @@ const writes = (app) => app.api.filter(([name]) => name === "write").map(([, pat
   // this clamp is what keeps a pulled point a number the register can hold
   eq("a point pulled past its bounds lands on them, and between them on the 0.1V quantum",
     [ecQuant(VOLT[1], 512.34), ecQuant(VOLT[1], -3), ecQuant(VOLT[1], 12.345)], [400, 0, 12.3]);
+}
+
+//-------------------------------------------------------------------------------------------- Gate
+
+{
+  const { tables } = setup();
+  ok("a map with a Volt curve opens the panel", tables.match(VOLT));
+  ok("a current setting of another device does not",
+    !tables.match([{ id: 1, name: "Curr:Limit", type: "uint" }]));
 }
 
 done();

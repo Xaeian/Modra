@@ -3,7 +3,7 @@
 // Inactive or disconnected collapse to null so the control renders blank.
 function _resolveValue(reg, inactive, disconnected) {
   if(inactive || disconnected) return null;
-  return reg.name in S.dirty ? S.dirty[reg.name] : S.values[reg.name];
+  return Reg.staged(reg.name);
 }
 
 const _rowClass = (reg, isDirty, ghosted, oor, isIgnored, match) =>
@@ -23,7 +23,7 @@ const Grid = {
     const disconnected = !S.connected;
     const ghosted = inactive || disconnected;
     const val = _resolveValue(reg, inactive, disconnected);
-    const isDirty = !ghosted && (reg.name in S.dirty);
+    const isDirty = !ghosted && Object.hasOwn(S.dirty, reg.name);
     const isMonitored = S.monitor.has(reg.name);
     const isIgnored = S.ignore.has(reg.name);
     const isUtilOpen = !ghosted && S.utilOpen === reg.name;

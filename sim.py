@@ -17,8 +17,9 @@ traces rather than a clean sinusoid or pure noise.
 Each register is simulated from its own descriptor row alone (type, rws,
 min/max) - no cross-register logic, no mode/setpoint dependencies.
 
-Per-register tuning (sigma/gain/chance) is seeded from `(rid, name)` so
-adjacent channels stay uncorrelated but deterministic per tick.
+Per-register tuning (gain, flip chance) is seeded from `(rid, name)` so
+adjacent channels stay uncorrelated; `hash()` of a name is salted per process,
+so the tuning holds for one run.
 """
 
 import asyncio, math, random, time
@@ -75,8 +76,8 @@ class SimulatedClient:
     self.id_map = id_map
     self.connected = False
     self.values:dict[int, int] = {}
-    # Per-register tuning (gain, sigma, flip-chance) seeded from (rid, name)
-    # so traces stay uncorrelated across registers but consistent per tick.
+    # Per-register tuning (gain, flip-chance) seeded from (rid, name)
+    # so traces stay uncorrelated across registers, and kept for the run.
     self._params:dict[tuple, float] = {}
     self._last_tick = time.time()
     for rid, entry in id_map.items():

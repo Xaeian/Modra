@@ -5,26 +5,30 @@
 // a rule register is in, and judges whether the number fits the 16 bits it is squeezed into.
 // A mistake here throws nothing. It writes a different number to a running drive,
 // so each check below is one way a wrong number would get there.
+// So is an edit lost on its way: typed while a write is on the wire, then dropped with it.
 // Registers are shaped as `reg_info()` hands them over, the setpoint as the map's own rule.
 
-import { createApp, ok, eq, done } from "./harness.mjs";
+import { createApp, LOGIC, ok, eq, done } from "./harness.mjs";
+
+// The words `RAW_SPAN` gives a 16-bit register
+const WORD16 = [0, 0xFFFF], SIGNED16 = [-0x8000, 0x7FFF];
 
 // The setpoint keeps a slot per label of `Ctrl:Mode`; `off` and `ai` have none
 const MODE = { id: 0, name: "Ctrl:Mode", type: "enum", rws: "RWs",
   enum: { 0: "off", 1: "ai", 2: "%", 3: "rpm", 4: "Hz" } };
 const SETPOINT = { id: 1, name: "Ctrl:Setpoint", type: "rule", rws: "RW",
   unit: ["rpm", "%", "Hz"], scale: [1, 100, 100], min: [0, 0, 0], max: [5000, 100, 300],
-  rule: { switch: "Ctrl:Mode" } };
+  rule: { switch: "Ctrl:Mode" }, span: WORD16 };
 const WORD = { id: 2, name: "Pwm:Deadtime", type: "uint", rws: "RWs", unit: "ns", scale: 1,
-  min: null, max: null };
+  min: null, max: null, span: WORD16 };
 const FREQ = { id: 3, name: "Foc:EntryFreq", type: "uint", rws: "RWs", unit: "Hz", scale: 100,
-  min: null, max: null };
+  min: null, max: null, span: WORD16 };
 const TEMP = { id: 4, name: "Speed:DerateTemp", type: "int", rws: "RWs", unit: "°C", scale: 1,
-  min: -40, max: null };
+  min: -40, max: null, span: SIGNED16 };
 const CURRENT = { id: 5, name: "Estim:Id", type: "int", rws: "R", unit: "A", scale: 1000,
-  min: null, max: null };
+  min: null, max: null, span: SIGNED16 };
 const FLAGS = { id: 6, name: "Foc:Flags", type: "bits", rws: "R", unit: null, scale: 1,
-  min: null, max: null, bits: { 0: "limit", 1: "sat" } };
+  min: null, max: null, bits: { 0: "limit", 1: "sat" }, span: WORD16 };
 const KEY = { id: 7, name: "Auth:SecretKey", type: "uint", rws: "W", unit: null, scale: 1,
   min: null, max: null, rule: { pair: "high" } };
 
@@ -113,6 +117,29 @@ function setup({ mode = "Hz", connected = false } = {}) {
   ok("and well inside it in rpm", !Reg.outOfRange(SETPOINT, 301));
   S.values["Ctrl:Mode"] = "ai";
   ok("an inactive register is never out of range", !Reg.outOfRange(SETPOINT, 99999));
+}
+
+//----------------------------------------------------------------------------------------- Sending
+
+{
+  // A write that lands when the test says, the device keeping what it was sent
+  let land;
+  const app = createApp({
+    write: (patch) => new Promise(resolve => { land = () => resolve(patch); }),
+  });
+  const { S, send } = app.load(LOGIC, ["S", "send"]);
+  S.regs = [WORD, FREQ];
+  S.connected = true;
+  S.dirty["Pwm:Deadtime"] = 2000;
+  const sending = send();
+  S.dirty["Pwm:Deadtime"] = 2100;
+  S.dirty["Foc:EntryFreq"] = 45;
+  land();
+  await sending;
+  eq("an edit typed while a write is on the wire stays staged, a retyped one too",
+    { ...S.dirty }, { "Pwm:Deadtime": 2100, "Foc:EntryFreq": 45 });
+  eq("and the toast counts what was sent", app.toasts.at(-1),
+    ["ok", "Saved 1 register to device"]);
 }
 
 done();

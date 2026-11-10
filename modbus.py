@@ -7,9 +7,8 @@ The map is always complete - `ignore_set` filters at read time only
 (pair-aware), so the DB schema and `regs_info()` cover every register
 and the frontend can show or hide ignored entries on its own.
 
-A `?` prefix on `type` marks a register nullable - a reserved raw value
-decodes to `None`. Defaults follow SunSpec; the `null` CSV column
-overrides per-register. See modbus.md for the full table.
+A `?` prefix on `type` marks a register nullable: a reserved raw value decodes to `None`.
+Defaults follow SunSpec; the `null` CSV column overrides them per register.
 """
 
 import asyncio, math, struct
@@ -17,13 +16,20 @@ from pymodbus.client import AsyncModbusSerialClient
 from typing import Literal
 from xaeian import CSV
 
-# SunSpec-aligned sentinels. Float pairs use IEEE-754 NaN at runtime, so
-# they don't appear in NULL_SENTINELS_32.
+# SunSpec-aligned sentinels.
+# Float pairs use IEEE-754 NaN at runtime, so they don't appear in `NULL_SENTINELS_32`.
 NULL_SENTINELS_16 = {"uint": 0xFFFF, "hex": 0xFFFF, "int": 0x8000, "bool": 0xFFFF}
 NULL_SENTINELS_32 = {"uint": 0xFFFFFFFF, "hex": 0xFFFFFFFF, "int": 0x80000000}
 
-# Columns the library reads. Anything else is the project's own (this app adds
-# `auth`) and rides along in `extra`, back out through `reg_info()`.
+# What one 16-bit word holds per type, as `round(value * scale)`. The encoder masks with
+# `& 0xFFFF`, so a value past its span is stored as a different number, not refused.
+RAW_SPAN = {
+  "uint": (0, 0xFFFF), "hex": (0, 0xFFFF), "rule": (0, 0xFFFF), "bits": (0, 0xFFFF),
+  "int": (-0x8000, 0x7FFF),
+}
+
+# Columns the library reads. The project's own, this app's `auth` and `info` among them,
+# ride along in `extra`, back out through `reg_info()`.
 COLUMNS = {"id", "hex", "name", "rws", "type", "unit", "scale",
   "min", "max", "desc", "rule", "default", "null"}
 
@@ -36,6 +42,12 @@ def _float(s, fallback=None):
 def _num_or_str(s):
   try: return int(s)
   except ValueError: return _float(s, s)
+
+def _number(value) -> float|int:
+  """A value as a person or a file writes it: `0x..`/`0b..` an integer, else a decimal."""
+  if not isinstance(value, str): return float(value)
+  s = value.strip()
+  return int(s, 0) if s[:2].lower() in ("0x", "0b") else float(s)
 
 def _bool(value) -> bool:
   """Spelled-out text too - every non-empty string is otherwise truthy."""
@@ -54,9 +66,11 @@ def _parse_slots(val, conv, empty=None, split=True):
   if split and "/" in s: return [_parse_slots(x, conv, empty) for x in s.split("/")]
   return conv(s)
 
-def _slot(val, index:int=None, fallback=None):
-  """Value for the active rule slot: lists pick `index` (slot 0 when out of
-  range), scalars pass through, missing → `fallback`."""
+def slot(val, index:int|None=None, fallback=None):
+  """
+  Value for the active rule slot: lists pick `index` (slot 0 when out of range),
+  scalars pass through, missing → `fallback`.
+  """
   if isinstance(val, list):
     if index is not None and 0 <= index < len(val): return val[index]
     return val[0] if val else fallback
@@ -95,8 +109,8 @@ def _parse_null_override(val) -> int|None:
 def _null_raw_16(typ:str, nullable:bool, override:int|None) -> int|None:
   if not nullable: return None
   if override is not None:
-    # Signed CSV input (e.g. -1) wraps into unsigned raw space so it
-    # matches the on-wire word directly.
+    # Signed CSV input (e.g. -1) wraps into unsigned raw space,
+    # so it matches the on-wire word directly.
     if typ == "int" and override < 0:
       override = override + 0x10000
     return override & 0xFFFF
@@ -219,9 +233,10 @@ class ModbusMaster:
       if self.client_factory:
         self.client = self.client_factory(self)
       else:
+        # `retries=0`: `_retry` is the one retry budget, or each of its tries would make 4
         self.client = AsyncModbusSerialClient(
           port=self.port, baudrate=self.baudrate, parity=self.parity,
-          stopbits=self.stopbits, bytesize=8, timeout=self.timeout)
+          stopbits=self.stopbits, bytesize=8, timeout=self.timeout, retries=0)
     await self.client.connect()
     if not self.client.connected:
       raise RuntimeError(f"Connect error: {self.port}")
@@ -260,11 +275,17 @@ class ModbusMaster:
       for start, count in self._contiguous_blocks(list(raw_data.keys()))]
 
   async def _retry(self, op):
-    """Run `op` up to `retries` times, raising the last failure."""
+    """
+    Run `op` up to `retries` times, raising the last failure.
+    pymodbus turns a cancel inside a request into an IO error;
+    it stays a cancel here, or a stopped read loop would go on polling.
+    """
     last_err = None
     for _ in range(self.retries):
       try: return await op()
-      except Exception as e: last_err = e
+      except Exception as e:
+        if asyncio.current_task().cancelling(): raise asyncio.CancelledError() from e
+        last_err = e
     raise last_err
 
   async def read_registers(self, reg_ids:list[int]) -> dict[int, int]:
@@ -276,8 +297,8 @@ class ModbusMaster:
       async def op(start=start, count=count):
         resp = await client.read_holding_registers(start, count=count, device_id=self.addr)
         if resp.isError(): raise RuntimeError(f"Read error R{start}: {resp}")
-        # A non-error response may still be truncated; caching the prefix would
-        # mix words from two device epochs.
+        # A non-error response may still be truncated:
+        # caching the prefix would mix words from two device epochs.
         registers = getattr(resp, "registers", None)
         if registers is None or len(registers) != count:
           got = None if registers is None else len(registers)
@@ -309,27 +330,29 @@ class ModbusMaster:
   @staticmethod
   def _pair_decode(raw32:int, pair_type:str, null_raw32:int|None=None):
     """32-bit word → value. Float pairs decode as IEEE-754 big-endian
-    (NaN → `None`); integer pairs match `null_raw32` → `None`."""
+    (NaN → `None`); integer pairs match `null_raw32` → `None`, an `int` pair is signed."""
     if pair_type == "float":
       val = struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
       return None if math.isnan(val) else val
     if null_raw32 is not None and raw32 == null_raw32:
       return None
+    if pair_type == "int" and raw32 >= 0x80000000: return raw32 - 0x100000000
     return raw32
 
   @staticmethod
   def _pair_encode(val, pair_type:str, null_raw32:int|None=None) -> int|None:
-    """Inverse of `_pair_decode`. `None` returns the sentinel (NaN for
-    float, `null_raw32` for int) or `None` if the pair isn't nullable -
-    the caller drops the write in that case."""
+    """
+    Inverse of `_pair_decode`.
+    `None` returns the sentinel (NaN for float, `null_raw32` for int),
+    or `None` if the pair isn't nullable, and the caller drops the write.
+    """
     if val is None:
       if pair_type == "float":
         return int.from_bytes(struct.pack(">f", float("nan")), "big")
       return null_raw32
     if pair_type == "float":
-      return int.from_bytes(struct.pack(">f", float(val)), "big")
-    if isinstance(val, str): return int(val, 0) & 0xFFFFFFFF
-    return int(val) & 0xFFFFFFFF
+      return int.from_bytes(struct.pack(">f", float(_number(val))), "big")
+    return int(_number(val)) & 0xFFFFFFFF
 
   def _get_pair_maps(self) -> tuple[dict[int, str], dict[int, list[str]]]:
     pair_part, pair_anchor = {}, {}
@@ -375,7 +398,11 @@ class ModbusMaster:
       if k in self.name_map or k in self.pairs: return False
     return self.group
 
-  def _resolve_rule_index(self, entry:dict, pending_raw:dict[int, int]=None) -> int|None:
+  def _resolve_rule_index(
+    self, entry:dict,
+    pending_raw:dict[int, int] = None,
+    strict:bool = True,
+  ) -> int|None:
     rule = entry.get("rule")
     if not rule or "switch" not in rule: return None
     switch_entry = self.name_map.get(rule["switch"])
@@ -383,7 +410,9 @@ class ModbusMaster:
     switch_id = switch_entry["id"]
     switch_raw = pending_raw.get(switch_id) if pending_raw else None
     if switch_raw is None: switch_raw = self.cache_raw.get(switch_id)
+    # A read shows the register inactive until its switch arrives; a write must not guess
     if switch_raw is None:
+      if not strict: return None
       raise RuntimeError(f"Switch '{rule['switch']}' not yet read")
     unit = entry.get("unit")
     if not isinstance(unit, list): return None
@@ -392,14 +421,14 @@ class ModbusMaster:
       if label.lower() == switch_label: return i
     return None
 
-  def _get_scale(self, entry:dict, index:int=None) -> float:
-    return _slot(entry.get("scale"), index, 1.0) or 1.0
+  def _get_scale(self, entry:dict, index:int|None=None) -> float:
+    return slot(entry.get("scale"), index, 1.0) or 1.0
 
-  def _get_unit(self, entry:dict, index:int=None) -> str|None:
-    return _slot(entry.get("unit"), index)
+  def _get_unit(self, entry:dict, index:int|None=None) -> str|None:
+    return slot(entry.get("unit"), index)
 
-  def _get_minmax(self, entry:dict, index:int=None) -> tuple[float|None, float|None]:
-    return (_slot(entry.get("min"), index), _slot(entry.get("max"), index))
+  def _get_minmax(self, entry:dict, index:int|None=None) -> tuple[float|None, float|None]:
+    return (slot(entry.get("min"), index), slot(entry.get("max"), index))
 
   #---------------------------------------------------------------------------------- Encode/decode
 
@@ -408,8 +437,8 @@ class ModbusMaster:
     if not entry: return raw
     typ = entry.get("type", "uint")
     rule_idx = self._resolve_rule_index(entry) if typ == "rule" else None
-    # Nullable sentinel is checked before type decode, so an N/A read returns
-    # None rather than -32768 / 65535.
+    # Nullable sentinel is checked before type decode,
+    # so an N/A read returns `None` rather than -32768 / 65535.
     null_raw = entry.get("null_raw")
     if null_raw is not None and raw == null_raw:
       return None
@@ -428,10 +457,12 @@ class ModbusMaster:
     self, reg_id:int, value:any,
     pending_raw:dict[int, int]=None,
   ) -> int|None:
-    """Engineering value → 16-bit raw. `None` returns the sentinel on
-    nullable regs, or `None` on non-nullable ones (caller drops the
-    write). min/max are advisory - out-of-range writes go through and
-    the firmware decides what to do."""
+    """
+    Engineering value → 16-bit raw.
+    `None` returns the sentinel on nullable regs,
+    or `None` on the others, and the caller drops the write.
+    min/max are advisory: out-of-range writes go through and the firmware decides.
+    """
     entry = self.id_map.get(reg_id)
     if not entry:
       return None if value is None else int(value) & 0xFFFF
@@ -451,18 +482,17 @@ class ModbusMaster:
       valid = ", ".join(rev.keys())
       raise ValueError(f"{entry['fullname']}: unknown enum '{value}' (valid: {valid})")
     elif typ == "ver":
-      parts = [p for p in str(value).split(".") if p.isdigit()]
-      if len(parts) != 3:
+      parts = [int(p) for p in str(value).split(".") if p.isdigit()]
+      # YY and ZZ own two digits each; 1.150.0 would otherwise come back as 2.50.0
+      if len(parts) != 3 or parts[1] > 99 or parts[2] > 99:
         raise ValueError(f"{entry['fullname']}: invalid version '{value}' (expected X.YY.ZZ)")
-      raw = int(parts[0]) * 10000 + int(parts[1]) * 100 + int(parts[2])
+      raw = parts[0] * 10000 + parts[1] * 100 + parts[2]
       if raw > 65535:
         raise ValueError(f"{entry['fullname']}: version '{value}' over uint16 max 6.55.35")
       return raw
-    elif typ == "int":
-      return int(round(float(value) * scale)) & 0xFFFF
-    elif typ in ("hex", "uint", "rule"):
-      return int(round(float(value) * scale)) & 0xFFFF
-    return int(value) & 0xFFFF
+    elif typ in ("int", "hex", "uint", "rule"):
+      return int(round(_number(value) * scale)) & 0xFFFF
+    return int(_number(value)) & 0xFFFF
 
   @staticmethod
   def _put(data:dict, grouped:bool, group, name, fullname, val):
@@ -476,10 +506,12 @@ class ModbusMaster:
     self, raw_data:dict[int, int], rws_filter:list[str]=None,
     grouped:bool=None, missing_as_none:bool=False,
   ) -> dict:
-    """Raw ids → engineering values, shared by `decode` and `get_cache`.
-    Pairs emit once under their pair key; a rule reg with no active slot
-    emits None. `missing_as_none` walks the full map and reports unpolled
-    registers as None (cache view) instead of skipping them."""
+    """
+    Raw ids → engineering values, shared by `decode` and `get_cache`.
+    Pairs emit once under their pair key; a rule reg with no active slot emits `None`.
+    `missing_as_none` walks the full map and reports unpolled registers as `None` (cache view)
+    instead of skipping them.
+    """
     if grouped is None: grouped = self.group
     data = {}
     pair_part, pair_anchor = self._get_pair_maps()
@@ -509,7 +541,7 @@ class ModbusMaster:
       if raw is None:
         if not missing_as_none: continue
         val = None
-      elif entry["type"] == "rule" and self._resolve_rule_index(entry) is None:
+      elif entry["type"] == "rule" and self._resolve_rule_index(entry, strict=False) is None:
         val = None
       else:
         val = self._decode_raw(reg_id, raw)
@@ -521,12 +553,14 @@ class ModbusMaster:
     if raw_data is None: raw_data = {k: v for k, v in self.cache_raw.items() if v is not None}
     return self._decode_map(raw_data, rws_filter, grouped)
 
-  def encode(self, data:dict, rws_filter:list[str]=None, grouped:bool=None) -> dict[int, int]:
+  def encode(
+    self, data:dict, rws_filter:list[str]|None = None, grouped:bool|None = None,
+  ) -> dict[int, int]:
     if grouped is None: grouped = self._detect_grouped(data)
     raw_data = {}
     pair_ids = self._get_pair_ids()
-    # Key-presence (not val-truthiness) gates pair emission so `None`
-    # reaches `_pair_encode` and emits the sentinel for nullable pairs.
+    # Key presence (not value truthiness) gates pair emission,
+    # so `None` reaches `_pair_encode` and emits the sentinel for nullable pairs.
     for pair_key, pair in self.pairs.items():
       group, name = pair.get("group"), pair.get("name")
       if grouped:
@@ -556,8 +590,7 @@ class ModbusMaster:
     else:
       for k, v in data.items():
         if k not in self.pairs: flat[k] = v
-    # Non-rule regs go first so rule regs can resolve their switch from
-    # the pending raw values.
+    # Non-rule regs go first, so rule regs can resolve their switch from the pending raw values.
     rule_entries = []
     for fullname, val in flat.items():
       entry = self.name_map.get(fullname)
@@ -577,13 +610,13 @@ class ModbusMaster:
 
   #------------------------------------------------------------------------------------- Public API
 
-  async def sync(self, grouped:bool=None) -> dict:
+  async def sync(self, grouped:bool|None=None) -> dict:
     await self.read_registers(list(self.id_map.keys()))
     return self.get_cache(grouped)
 
   def resolved_ignored_ids(self) -> set[int]:
-    # Pair keys (e.g. "Auth:SecretKey") expand to both halves so ignoring
-    # a 32-bit composite drops the whole pair.
+    # Pair keys (e.g. "Auth:SecretKey") expand to both halves,
+    # so ignoring a 32-bit composite drops the whole pair.
     ids = {rid for rid, entry in self.id_map.items() if entry["fullname"] in self.ignore_set}
     for pair_key in self.ignore_set:
       pair = self.pairs.get(pair_key)
@@ -614,7 +647,7 @@ class ModbusMaster:
 
   #------------------------------------------------------------------------------------------ Cache
 
-  def get_cache(self, grouped:bool=None) -> dict:
+  def get_cache(self, grouped:bool|None=None) -> dict:
     return self._decode_map(self.cache_raw, grouped=grouped, missing_as_none=True)
 
   @property
@@ -638,6 +671,7 @@ class ModbusMaster:
     if entry["type"] == "enum": info["enum"] = entry.get("enum", {})
     if entry["type"] == "bits": info["bits"] = entry.get("bits", {})
     if entry["type"] == "ver": info["ver"] = entry.get("ver")
+    if entry["type"] in RAW_SPAN: info["span"] = RAW_SPAN[entry["type"]]
     rule = entry.get("rule")
     if rule:
       info["rule"] = {}
@@ -652,10 +686,11 @@ class ModbusMaster:
     high, low = pair.get("high"), pair.get("low")
     if not high or not low: return None
     pair_type = high.get("type", "uint")
-    # Float pairs take engineering metadata from the high half and are nullable
-    # via NaN; integer pairs span the full range and need `?` to be nullable.
+    # Float pairs take engineering metadata from the high half and are nullable via NaN;
+    # integer pairs span the full range and need `?` to be nullable.
     is_float = pair_type == "float"
     nullable = is_float or bool(high.get("nullable"))
+    span = (-0x80000000, 0x7FFFFFFF) if pair_type == "int" else (0, 0xFFFFFFFF)
     return {
       **high["extra"],
       "id": [high["id"], low["id"]], "hex": [high["hex"], low["hex"]],
@@ -664,8 +699,8 @@ class ModbusMaster:
       "nullable": nullable,
       "unit": high.get("unit") if is_float else None,
       "scale": high.get("scale", 1.0) if is_float else 1.0,
-      "min": high.get("min") if is_float else 0,
-      "max": high.get("max") if is_float else 0xFFFFFFFF,
+      "min": high.get("min") if is_float else span[0],
+      "max": high.get("max") if is_float else span[1],
       "desc": high.get("desc"), "rule": {"pair": [high["id"], low["id"]], "type": pair_type},
     }
 
@@ -686,7 +721,7 @@ class ModbusMaster:
       result.append(self.reg_info(rid))
     return result
 
-  def annotate(self, data:dict=None, fields:list[str]=None) -> dict:
+  def annotate(self, data:dict|None=None, fields:list[str]|None=None) -> dict:
     """Wrap values as `(value, field1, field2, ...)`. Supported field names:
     `unit`, `min`, `max`, `scale`, `type`, `desc`."""
     if data is None: data = self.cache
@@ -699,10 +734,7 @@ class ModbusMaster:
         pair = self.pairs.get(fullname)
         if pair and pair.get("high"): entry = pair["high"]
       if not entry: return tuple(None for _ in fields)
-      rule_idx = None
-      if entry.get("type") == "rule":
-        try: rule_idx = self._resolve_rule_index(entry)
-        except Exception: pass
+      rule_idx = self._resolve_rule_index(entry, strict=False)
       result = []
       for field in fields:
         if field == "unit": result.append(self._get_unit(entry, rule_idx))

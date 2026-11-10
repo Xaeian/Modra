@@ -182,4 +182,15 @@ ok("the note renders above the prose with its names as links",
   bolds(Ectra.View()).some(b => b.props.class === "ec-ref"
     && b.children.join("") === "Speed:DerateTemp"));
 
+//-------------------------------------------------------------------------------------------- Gaps
+
+// A map from another firmware: the guide still opens, and says what it cannot point at
+const lockErr = regs.get("Foc:LockErr");
+regs.delete("Foc:LockErr");
+const gap = JSON.stringify(Ectra.View());
+regs.set("Foc:LockErr", lockErr);
+ok("a map without a register the guide uses gets a line naming it",
+  gap.includes("brakuje") && gap.includes("Foc:LockErr"));
+ok("and the full map no such line", !JSON.stringify(Ectra.View()).includes("brakuje"));
+
 done();

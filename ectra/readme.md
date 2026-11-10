@@ -3,9 +3,6 @@
 Pakiet `ectra` jest fizycznym modelem napędu używanym przez port `SIM`.
 W przeciwieństwie do ogólnego symulatora z `sim.py` nie generuje każdego rejestru osobno: wszystkie odczyty wynikają z jednego stanu maszyny, dlatego zmiana nastawy wpływa na cały punkt pracy.
 
-Ta sama wersja pakietu jest używana w repozytorium stanowiska, w katalogu `ectra/bench`.
-Pakiet, mapa `regs.csv` i biblioteka `modbus.py` są w fsync (grupy `ectra-model`, `ectra-regs`, `modbus`): zmianę robi się w jednej kopii, a `pyfsync sync` przenosi ją do pozostałych.
-
 ## Uruchomienie
 
 W Modrze symulator włącza wpis w `app.ini`:

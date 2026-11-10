@@ -1,5 +1,5 @@
 """
-Backend config: serial.ini (connection), regs.csv path,
+Backend config: app.ini (deployment), serial.ini (connection), regs.csv path,
 view.json (monitor panels + ignore list). Factory for ModbusMaster bound
 to current on-disk state.
 """
@@ -23,15 +23,6 @@ READBACK_W = True
 # Background trickle-refresh of RW/RWs between syncs (smart contiguous packets,
 # auto-sized to the poll interval). Off leaves them refreshed only on a sync.
 TRICKLE = True
-
-# Auto-unlock: with AUTH_KEY_REG in the map, AUTH_KEY goes out on connect,
-# and again whenever the level drops below AUTH_LEVEL (it boots to guest).
-# The key is a firmware constant, ectra's `SECRET_KEY_ADMIN`.
-# `AUTH_KEY = None`, or a map without that register, leaves access untouched.
-AUTH_KEY = 0x5D8E41B3
-AUTH_KEY_REG = "Auth:SecretKey"  # 32-bit `high=`/`low=` pair or a single reg
-AUTH_LEVEL_REG = "Auth:Access"   # enum reporting the level; optional
-AUTH_LEVEL = "admin"             # label from that enum to hold
 
 # Seeds serial.ini on first launch.
 STATE_DEFAULT = {
@@ -125,14 +116,29 @@ def app_path() -> str:
   Frozen, the bundle carries its own copy."""
   return PATH.join(getattr(sys, "_MEIPASS", None) or PATH.dirname(__file__), APP_FILE)
 
+def _auth() -> dict:
+  """`[auth]` of `app.ini`: which device a build unlocks is a deployment fact, like `sim`.
+  `key` goes to the `key_reg` register on connect, and again whenever the `level_reg`
+  enum reads below `level`. No section, or a map without `key_reg`, leaves access untouched."""
+  path = app_path()
+  try: return (INI.load(path) or {}).get("auth") or {}
+  except Exception as e:
+    log.wrn(f"{path} unreadable, no auto-unlock | {e}")
+    return {}
+
+_AUTH = _auth()
+AUTH_KEY = _AUTH.get("key")
+AUTH_KEY_REG = _AUTH.get("key_reg") # a 32-bit `high=`/`low=` pair or a single register
+AUTH_LEVEL_REG = _AUTH.get("level_reg") # the enum reporting the level, optional
+AUTH_LEVEL = _AUTH.get("level") # the label of that enum to hold
+
 def _load_sims():
   """Import the coupled simulator packages this build ships, once.
-  They register themselves on import,
-  the way a bundled widget file registers when the page loads it.
+  They register themselves on import.
 
-  Which packages exist is a deployment fact, so it lives in `app.ini` beside
-  `widgets` rather than here: another device is a new package and a new line
-  there, and a build for none is that line left empty."""
+  Which packages exist is a deployment fact, so it lives in `app.ini` rather than
+  here: another device is a new package and a new name in `sim`, and a build for
+  none leaves `sim` empty."""
   global _sims_loaded
   if _sims_loaded: return
   _sims_loaded = True
@@ -269,7 +275,7 @@ def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
   return issues
 
 def load_regs(state:dict=None, view:dict=None) -> list[dict]:
-  """Full register catalog (ignored entries included; frontend hides them).
+  """Full register catalog, ignored entries included.
   Empty when there is no map yet - the app starts anyway and asks for one."""
   if state is None: state = load_state()
   if view is None: view = load_view()

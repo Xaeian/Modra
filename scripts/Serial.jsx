@@ -122,7 +122,7 @@ const Serial = () => {
       <div class="rb-cfg-sep" />
 
       <button class="rb-tbtn rb-danger" onClick={deleteDatabase}
-        title="Wipe stored history (data.db)">🧹 Clear DB</button>
+        title="Wipe stored history">🧹 Clear DB</button>
     </div>
   );
 };

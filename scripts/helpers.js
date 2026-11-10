@@ -155,7 +155,7 @@ const Reg = (() => {
 
   /**
    * Scale of a register's active slot, 1 by default.
-   * Rule-aware: a switch from rpm to Hz on `Ctrl:Setpoint` remaps unit and scale together,
+   * Rule-aware: a switch that moves a register to another slot changes unit and scale together,
    * so chart panels regroup.
    * @param {boolean} [confirmed]  as `ruleIndex` takes it
    */

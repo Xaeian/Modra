@@ -7,12 +7,12 @@
 // What it does instead is aim the rest of the app.
 // Picking a topic highlights its registers, charts what goes with them
 // and drops the groups that take no part in it out of the poll cycle.
-// That is the part modra cannot do on its own:
+// That is the part the app cannot do on its own:
 // it holds no opinion about any device, and this file is nothing but an opinion about one.
 // Above the prose, a few sentences say what holds the drive back right now,
 // read off the registers they name.
 //
-// The prose names registers and quotes no defaults and no bench numbers:
+// The prose names registers and quotes no defaults and no measured values:
 // values and ranges are the map's, and the whole story is the PMSM documents'.
 // So the text changes when the firmware changes what a register means,
 // not every time a default moves.

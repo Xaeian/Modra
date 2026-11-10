@@ -428,7 +428,7 @@ async function setSerial(params) {
 // longer exist on disk.
 async function deleteDatabase() {
   if(typeof confirm === "function"
-    && !confirm("Delete all stored history? This wipes data.db and cannot be undone.")) return;
+    && !confirm("Delete all stored history? This cannot be undone.")) return;
   const res = await API.delete_database();
   if(!res || res.error) { alert.err(res?.error || "History not deleted"); return; }
   MonitData.clear();
@@ -456,7 +456,7 @@ function restoreDefaults() {
     editSilent(reg, Array.isArray(d) ? (d[S.variant] ?? d[0]) : d);
   }
   const n = Object.keys(S.dirty).length - before;
-  if(n) alert.inf(`Staged ${n} default${n === 1 ? "" : "s"} - review, then Send`);
+  if(n) alert.inf(`Staged ${n} default${n === 1 ? "" : "s"}: review, then Send`);
   else alert.ok("Already at defaults");
   render();
 }

@@ -60,9 +60,6 @@ Each is parsed into its own key (`enum` / `bits` / `ver`) and `unit` is cleared,
 so downstream `unit` always means a physical unit.
 
 Any other column is the project's own: carried through untouched and returned by `reg_info()`.
-This app adds `auth` and `info`.
-`info = true` marks a read-only register the exported config file carries ahead of the RWs values,
-such as a serial number or a firmware version; a full sync reads it even when it is ignored.
 
 ### Access Modes (rws)
 
@@ -125,8 +122,8 @@ A device that does reserve a sentinel takes an explicit `null` override.
 Writing `None` emits the sentinel where the type has one.
 On a non-nullable register - or a nullable type with no spare encoding
 (`?enum` / `?ver` / `?rule` / `?bits`) - the write is silently skipped, never garbage.
-The DB stores SQLite NULL for any nullable read that decoded as None,
-so the history column reads as a gap rather than a sentinel-valued spike.
+A read that hits the sentinel decodes as `None`,
+so a caller keeping history gets a gap rather than a sentinel-valued spike.
 
 ### Defaults
 
@@ -227,9 +224,9 @@ Connection and transport (raw words):
 
 `ignore_set` provides *user-level* register filtering outside the descriptor.
 Names in the set are excluded from the `read()` polling cycle but stay in the map,
-so the DB schema and `regs_info()` catalog cover every register.
+so the `regs_info()` catalog covers every register.
 Still readable explicitly via `read(keys=[...])` and `sync()` (full read for admin tools).
-Pair keys (e.g. `Auth:SecretKey`) expand to both underlying halves.
+A pair key expands to both underlying halves.
 
 ### Data Formats
 
@@ -257,8 +254,7 @@ mb.annotate(data, ["unit", "scale"])        # custom data
 ## Error Handling
 
 `min` / `max` are advisory - out-of-range numeric writes go through.
-The frontend marks them red and the Send button warns,
-but the device sees whatever the operator typed.
+The device sees whatever was written.
 Symbolic values (enum labels, version strings) still raise
 because they can't be encoded to a meaningful word.
 
@@ -267,7 +263,7 @@ dropped before validation - no write, no error. Validation runs on what remains.
 
 ```python
 # Out-of-range numeric - encoded and written as-is
-await mb.write({"Ctrl": {"Speed": 99999}})  # OK; firmware decides what to do
+await mb.write({"Ctrl": {"Speed": 99999}})  # OK; the device decides what to do
 
 # Unknown enum value
 await mb.write({"Ctrl": {"Mode": "turbo"}})

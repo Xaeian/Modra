@@ -350,8 +350,8 @@ class ModbusLink:
     register.
 
     The simulator is not exempt. A map that declares access control declares it
-    for every port: a simulated device that hands out admin for free would let
-    a procedure pass here and fail on the bench, which is the one thing a
+    for every port: a simulated device that grants access for free would let
+    a procedure pass on SIM and fail on the device, which is the one thing a
     simulator must never do."""
     if config.AUTH_KEY is None or not self.mb: return None
     name = config.AUTH_KEY_REG
@@ -360,7 +360,7 @@ class ModbusLink:
   async def _auth(self):
     """Hold the device at `config.AUTH_LEVEL`, so nothing above has to think
     about access. Runs after every successful poll, which makes it self-healing:
-    a drive that reboots back to guest is unlocked again on the next poll.
+    a device that reboots locked is unlocked again on the next poll.
     That needs the level register polled; ignored, it gets one blind unlock.
     Best-effort - one write per AUTH_RETRY_S, and it gives up entirely after
     AUTH_FAIL_LIMIT failures, so a stale key never becomes a write storm."""
@@ -369,8 +369,8 @@ class ModbusLink:
     if self._auth_fails >= AUTH_FAIL_LIMIT: return
     level = self.mb.name_map.get(config.AUTH_LEVEL_REG)
     enum = level.get("enum", {}) if level else {}
-    # Enum codes ascend with privilege (guest < user < service < admin), so a
-    # code below the wanted one means "not unlocked".
+    # Enum codes ascend with privilege, so a code below the wanted one means
+    # "not unlocked".
     want = next((k for k, v in enum.items() if v == config.AUTH_LEVEL), None)
     now = self.mb.cache_raw.get(level["id"]) if level else None
     if now is not None and want is not None:
@@ -407,7 +407,7 @@ class ModbusLink:
       self._auth_fails += 1
       log.wrn(f"Unlock refused ({self._auth_fails}), level: {enum.get(now, now)}")
       if self._auth_fails >= AUTH_FAIL_LIMIT:
-        log.err("Unlock given up - check config.AUTH_KEY")
+        log.err("Unlock given up: check the [auth] key in app.ini")
 
   #------------------------------------------------------------------------------------- Connection
 

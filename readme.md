@@ -155,8 +155,8 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 
 | File | Role | Edited by |
 |---|---|---|
-| [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md))_ | you, or picked on first run |
-| `app.ini` | build metadata and bundled simulator/widget selection | build author |
+| [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md), plus the app's `info` column)_ | you, or picked on first run |
+| `app.ini` | build metadata, bundled simulator/widget selection, device unlock _(`[auth]`)_ | build author |
 | `serial.ini` | connection state | app + you |
 | `view.json` | UI state _(monitor panels, ignored list)_ | app + you |
 | `data.db` | SQLite poll history, one table per addr | app |

@@ -46,8 +46,7 @@ VER_FALLBACK = "0.1.0"
 # Simulators that model one device family instead of walking registers one by one.
 #
 # Nothing here names one. A package offers itself on import, the deployment
-# decides which packages are imported at all, and `match` is the second gate:
-# the same two gates the frontend puts in front of a widget.
+# decides which packages are imported at all, and `match` is the second gate.
 # Registration order breaks a tie between two that recognise the same map.
 REGISTRY:list[type] = []
 

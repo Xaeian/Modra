@@ -3,7 +3,7 @@ CLI: device ↔ config file admin tool.
 
   mb_ctrl import [file] - device → file (.ini default, .csv supported), as the app exports it
   mb_ctrl export [file] - file → device, read-only rows skipped
-  mb_ctrl sudo - unlock via config.AUTH_KEY (the app does this itself)
+  mb_ctrl sudo - unlock with [auth] of app.ini (the app does this itself)
 """
 
 import sys, asyncio, os
@@ -67,7 +67,7 @@ async def main():
           if key: data.setdefault(group, {})[key] = entry
           else: data[group] = entry
         INI.save(file, data)
-      log.inf(f"{file} {c.TURQUS}<<{c.END} Motor")
+      log.inf(f"{file} {c.TURQUS}<<{c.END} device")
 
     case "export" | "exp":
       file = sys.argv[2] if len(sys.argv) > 2 else "config.ini"
@@ -85,11 +85,11 @@ async def main():
       await mb.disconnect()
       # Unknown names and read-only rows are skipped, so a file can hold nothing to write
       if not count: log.err(f"{file}: nothing writable for this map"); sys.exit(1)
-      log.inf(f"{file} {c.TURQUS}>>{c.END} Motor")
+      log.inf(f"{file} {c.TURQUS}>>{c.END} device")
 
     case "sudo" | "su":
       if config.AUTH_KEY is None:
-        log.err("No key: set config.AUTH_KEY"); sys.exit(1)
+        log.err("No key: app.ini has no [auth]"); sys.exit(1)
       await mb.connect()
       if not await mb.write({config.AUTH_KEY_REG: config.AUTH_KEY}):
         log.err(f"No writable {config.AUTH_KEY_REG} in {config.regs_path()}"); sys.exit(1)

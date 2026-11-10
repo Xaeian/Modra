@@ -1,0 +1,9 @@
+# .github/workflows/ci.yml
+
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    uses: Xaeian/TonkaJSX/.github/workflows/app.yml@main

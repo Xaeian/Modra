@@ -1,11 +1,10 @@
 """
 Async Modbus RTU master with CSV-based register descriptor.
 
-Parses regs.csv into a typed map (uint/int/bool/enum/bits/hex/ver/rule),
+Parses the descriptor into a typed map (uint/int/bool/enum/bits/hex/ver/rule),
 supports `switch=` / `high=` / `low=` rules and caches raw 16-bit words.
 The map is always complete - `ignore_set` filters at read time only
-(pair-aware), so the DB schema and `regs_info()` cover every register
-and the frontend can show or hide ignored entries on its own.
+(pair-aware), so `regs_info()` covers every register, the ignored ones too.
 
 A `?` prefix on `type` marks a register nullable: a reserved raw value decodes to `None`.
 Defaults follow SunSpec; the `null` CSV column overrides them per register.
@@ -28,8 +27,8 @@ RAW_SPAN = {
   "int": (-0x8000, 0x7FFF),
 }
 
-# Columns the library reads. The project's own, this app's `auth` and `info` among them,
-# ride along in `extra`, back out through `reg_info()`.
+# Columns the library reads. Any other column is the project's own:
+# it rides along in `extra`, back out through `reg_info()`.
 COLUMNS = {"id", "hex", "name", "rws", "type", "unit", "scale",
   "min", "max", "desc", "rule", "default", "null"}
 
@@ -461,7 +460,7 @@ class ModbusMaster:
     Engineering value → 16-bit raw.
     `None` returns the sentinel on nullable regs,
     or `None` on the others, and the caller drops the write.
-    min/max are advisory: out-of-range writes go through and the firmware decides.
+    min/max are advisory: out-of-range writes go through and the device decides.
     """
     entry = self.id_map.get(reg_id)
     if not entry:
@@ -615,7 +614,7 @@ class ModbusMaster:
     return self.get_cache(grouped)
 
   def resolved_ignored_ids(self) -> set[int]:
-    # Pair keys (e.g. "Auth:SecretKey") expand to both halves,
+    # A pair key expands to both halves,
     # so ignoring a 32-bit composite drops the whole pair.
     ids = {rid for rid, entry in self.id_map.items() if entry["fullname"] in self.ignore_set}
     for pair_key in self.ignore_set:

@@ -13,18 +13,23 @@ Change the file, restart, get a different device tool.
 **Modes:**
 
 - **Desktop**: `Modra.exe` via PyWebview
-- **HTTP**: `py serve.py` → `localhost:8000`, any browser
+- **HTTP**: `py serve.py` for the API, `tonka serve modra -r` for the page → `localhost:3000`, any browser
 - **Simulator**: pick the **SIM** port in the toolbar, no hardware
 
 ## Quick start
+
+Modra sits in a [TonkaJSX](https://github.com/Xaeian/TonkaJSX) workspace as `modra/`, and `tonka` builds its page:
 
 ```bash
 py -3.12 -m venv .venv
 ./.venv/Scripts/activate
 py -m pip install -r requirements.txt
+tonka build modra -i # the page
 py api.py # desktop window
-py serve.py # HTTP server
 ```
+
+For any browser, `py serve.py` serves the API on `localhost:8000` and `tonka serve modra -r` the page on `localhost:3000`.
+`-r` drops the desktop build first, so `tonka build modra -i` again before the next `py api.py`.
 
 Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases) and run it.
 It asks which `regs.csv` to use on startup, so the same binary serves any device - tick _don't ask again_ once you have settled on one.
@@ -44,6 +49,7 @@ History and UI state are keyed by register name, so an updated map keeps them; a
 - **`bits`**: one toggle per labeled bit, multi-select
 - **`hex`**: input formatted as `0xNNNN`
 - **`ver`**: read-only `X.YY.ZZ`
+- **nullable** _(`?` before the type)_: a **null** checkbox writes the reserved value
 
 **Access badges:**
 
@@ -56,6 +62,7 @@ History and UI state are keyed by register name, so an updated map keeps them; a
 
 - **yellow**: pending edit _(not sent)_
 - **red outline**: out of range
+- **dashed red**: too large for its register, it would be stored as a different number; **Send** asks first
 - **blank**: rule register with no active slot
 - **strikethrough**: ignored
 
@@ -75,10 +82,13 @@ History and UI state are keyed by register name, so an updated map keeps them; a
 - ⬆ **Send(n)** flush pending edits to device
 - ✕ **Reset** discard pending edits
 - 📈 toggle chart panel
+- device widgets: one button each, for the widgets the map fits
 - 🚫 toggle show-disabled mode
 - ☰ toggle settings panel
+- **A-** / **A+** zoom _(desktop window; also Ctrl - / Ctrl + / Ctrl 0)_
 
 Connect flow: pick port → type address _(1-247)_ → **⚡**.
+A device with access levels is unlocked on connect, and again after it reboots, when the build knows its key.
 Polling reads **R**/**RW**/**RWs** at the configured interval, and keeps retrying after a burst of read errors, so a transient bus glitch recovers on its own.
 Validation is advisory: the frontend marks out-of-range values and warns on **Send**, but the device is written whatever you typed.
 
@@ -130,6 +140,7 @@ widgets = ectra-guide, ectra-tables
 
 The bundled Ectra widgets are a PMSM guide (basic settings by topic, what limits the drive now, what each fault means) and editors for the `Volt`, `Curr`, `Rise` and `Fall` tables.
 Press `w` to toggle the first widget available for the current map; additional widgets have their own toolbar buttons.
+A widget that fails shows its error in its own panel, and the rest of the app keeps working.
 
 ## Settings ☰
 
@@ -137,9 +148,12 @@ Press `w` to toggle the first widget available for the current map; additional w
 - **Interval**: polling interval _(ms)_, drives both device polling and UI refresh rate
 - **Retries**: per-block retry budget on read errors
 - **History**: raw retention _(days)_; older data survives in coarser minute/hour/day archives
-- **Address scan**: enter `1-10, 12, 100-110` → **🔍 Scan**, click result to connect
+- **auto-send**: each value goes out on Enter, Tab or click, instead of waiting for **Send**
+- **Address scan**: enter `1-10, 12, 100-110` → **🔍 Scan**, pick a result to connect
+- **🗺 Map**: load another `regs.csv` _(the page reloads on it)_
 - **📂 Import**: load `.ini` / `.csv` into pending edits _(no auto-send; reads locale CSV with `;` + decimal comma)_
 - **💾 CSV** / 💾 **INI**: export current RWs values to file, after the registers marked `info` _(serial number, versions)_; import takes back only the RWs
+- **variant** + **🏭 Defaults**: stage the `default` column of that device variant as pending edits; review, then **Send**
 - **🧹 Clear DB**: wipe stored poll history _(data.db)_
 
 ## Keyboard shortcuts
@@ -156,7 +170,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 | File | Role | Edited by |
 |---|---|---|
 | [`regs.csv`](regs.csv) | register map, source of truth _(format: [`modbus.md`](modbus.md), plus the app's `info` column)_ | you, or picked on first run |
-| `app.ini` | build metadata, bundled simulator/widget selection, device unlock _(`[auth]`)_ | build author |
+| `app.ini` | build metadata, bundled simulator/widget selection, device unlock | build author |
 | `serial.ini` | connection state | app + you |
 | `view.json` | UI state _(monitor panels, ignored list)_ | app + you |
 | `data.db` | SQLite poll history, one table per addr | app |
@@ -188,6 +202,7 @@ The `ectra` package does this for the PMSM drive - see [`ectra/readme.md`](ectra
 py -3.12 -m venv .venv
 ./.venv/Scripts/activate
 py -m pip install -r requirements.txt
+tonka build modra -i # the page goes inside the exe
 ./build.bat
 ```
 

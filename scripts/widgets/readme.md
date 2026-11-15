@@ -1,6 +1,6 @@
 # Widgety
 
-Panel dla jednej rodziny urządzeń, który pokazuje to, czego nie pokaże ogólna siatka rejestrów - tabelę przeliczeń, krzywą strojenia.
+Panel dla jednej rodziny urządzeń, który pokazuje to, czego nie pokaże ogólna siatka rejestrów, na przykład tabelę przeliczeń albo krzywą strojenia.
 Wyłącznie frontend: bez backendu, bez stanu w `view.json`, bez trwałego DOM.
 
 ## Dodawanie widgetu
@@ -25,7 +25,7 @@ Mapa rejestrów jest tutaj jedynym źródłem prawdy o urządzeniu.
 Widget pojawia się, gdy spełnione są oba warunki: id jest wpisane w `app.ini`, a `match()` akceptuje mapę.
 Wtedy przycisk 🧩 (klawisz `w`) pokazuje panele.
 Gdy nic nie pasuje, przycisk w ogóle się nie renderuje.
-`app.ini` decyduje o aktywacji, nie o kompilacji - niewpisany widget nadal jest w paczce, tylko nieaktywny.
+`app.ini` decyduje o aktywacji, nie o kompilacji: niewpisany widget nadal jest w paczce, tylko nieaktywny.
 
 ## Zasady
 
@@ -35,14 +35,15 @@ Gdy nic nie pasuje, przycisk w ogóle się nie renderuje.
 - `View()` jest przebudowywany około dwa razy na sekundę.
   Wszystko, czego render nie może zgubić, trzymaj na obiekcie widgetu.
 - `ref` odpala się na odłączonym węźle: nadaje się do `addEventListener` i `innerHTML`, nie nadaje się do layoutu, fokusu ani przewijania.
-- Runtime JSX nie tworzy węzłów SVG - wstaw SVG jako markup przez `ref`.
+- Runtime JSX nie tworzy węzłów SVG: wstaw SVG jako markup przez `ref`.
 - Przycisk traci fokus przy następnym renderze, a pole tekstowe traci kursor, jeżeli nie ma klasy `.wg-hold`.
   Preferuj przyciski i selecty.
-- Nie używaj `stopPropagation()` na kliknięciu - sterownik renderu opróżnia odroczone rendery w listenerze kliknięć na dokumencie.
+- Nie używaj `stopPropagation()` na kliknięciu: sterownik renderu opróżnia odroczone rendery w listenerze kliknięć na dokumencie.
 - Preferencje trzymaj w `localStorage` pod kluczami `modra.<id>.*`.
 
 ## Rytm zapisów
 
 Zapis odczytuje z powrotem rejestry, które zapisał, więc `S.values` zawiera to, co urządzenie przechowało, a nie echo żądania.
-Pętla sterowania powinna łączyć swoje rejestry w jeden patch i czekać na każdy zapis - wtedy dostosowuje tempo do łącza, zamiast ustawiać się w kolejce za nim.
+Pętla sterowania powinna łączyć swoje rejestry w jeden patch i czekać na każdy zapis.
+Wtedy dostosowuje tempo do łącza, zamiast ustawiać się w kolejce za nim.
 Każdy krok powinna liczyć od `S.values`, żeby przycięty albo odrzucony zapis został skorygowany, a nie skumulowany.

@@ -30,7 +30,7 @@ const Serial = () => {
   // hitting partial-parse states.
   // Anything but a positive whole number keeps the value the field had: the render puts it back
   const Num = ({ k }) => (
-    <input class="rb-cfg-input rb-cfg-num" type="text" value={S.serial[k]}
+    <input class="rb-cfg-input num" type="text" value={S.serial[k]}
       onKeyDown={(e) => { if(e.key === "Enter") e.target.blur(); }}
       onBlur={(e) => {
         const v = parseInt(e.target.value);
@@ -104,24 +104,26 @@ const Serial = () => {
       <button class="rb-tbtn" onClick={exportConfigCSV}>💾 CSV</button>
       <button class="rb-tbtn" onClick={exportConfigINI}>💾 INI</button>
 
-      {defaultRegs().length > 0 &&
+      {defaultRegs().length > 0 && (
         <div class="rb-cfg-field">
-          {variantCount() > 1 &&
+          {variantCount() > 1 && (
             <select class="rb-cfg-input" value={S.variant}
               title="Which variant the defaults are taken from"
               onChange={(e) => { S.variant = parseInt(e.target.value); render(); }}>
               {Array.from({ length: variantCount() }, (_, i) =>
                 <option value={i}>{i + 1}</option>)}
-            </select>}
+            </select>
+          )}
           <button class="rb-tbtn" onClick={restoreDefaults}
             title="Stage all defaults as pending edits; review, then Send">
             🏭 Defaults
           </button>
-        </div>}
+        </div>
+      )}
 
       <div class="rb-cfg-sep" />
 
-      <button class="rb-tbtn rb-danger" onClick={deleteDatabase}
+      <button class="rb-tbtn danger" onClick={deleteDatabase}
         title="Wipe stored history">🧹 Clear DB</button>
     </div>
   );

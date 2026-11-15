@@ -1,75 +1,70 @@
 /* styles/toolbar.css */
 
-.rb-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  margin: 0 -16px;
-  padding: 2px 16px 4px;
+@layer app {
+  .rb-header {
+    position: sticky; top: 0; z-index: 10;
+    margin: 0 -16px;
+    padding: 2px 16px 4px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .rb-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 8px 0;
+  }
+
+  .rb-port, .rb-addr, .rb-search, .rb-tbtn, .rb-cfg-input {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg);
+    font-family: inherit; font-size: 12px; color: var(--text);
+  }
+  .rb-port:focus, .rb-addr:focus, .rb-search:focus, .rb-cfg-input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+  .rb-port:disabled, .rb-addr:disabled, .rb-search:disabled, .rb-cfg-input:disabled,
+  .rb-tbtn:disabled, .rb-tbtn.off { opacity: 0.4; cursor: not-allowed; }
+
+  .rb-port, .rb-addr { font-family: monospace; cursor: pointer; }
+  .rb-addr { width: 36px; text-align: center; }
+
+  .rb-search-wrap { position: relative; display: flex; flex: 1; min-width: 120px; }
+  .rb-search { flex: 1; min-width: 0; padding-right: 26px; font-size: 13px; }
+  .rb-search::placeholder { color: var(--text-muted); }
+  .rb-search-clear {
+    position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+    width: 20px; height: 20px;
+    padding: 0;
+    border: none; border-radius: 3px;
+    background: transparent;
+    font-size: 12px; line-height: 1; color: var(--text-muted);
+    cursor: pointer;
+  }
+  .rb-search-clear:hover { background: var(--border); color: var(--text); }
+
+  .rb-tbtn { background: var(--bg-alt); white-space: nowrap; cursor: pointer; }
+  .rb-tbtn:hover:not(:disabled) { background: var(--border); }
+  .rb-tbtn.active { border-color: var(--accent); background: var(--border); }
+  .rb-tbtn.danger { border-color: var(--err2); color: var(--err); }
+  .rb-tbtn.danger:hover:not(:disabled) { background: var(--err); color: var(--text-on-solid); }
+
+  .rb-send:not(.off) {
+    border-color: var(--wrn2);
+    background: var(--wrn);
+    color: var(--text-on-solid); font-weight: 600;
+  }
+  .rb-send:not(.off):hover { background: #d49600; }
+  .rb-send.oor:not(.off) { border-color: var(--err2); background: var(--err); }
+  .rb-send.oor:not(.off):hover { background: #c82333; }
+  .rb-send.wrap:not(.off) { border-color: #7a1220; background: var(--err3); }
+  .rb-send.wrap:not(.off):hover { background: #8a1422; }
+
+  .rb-conn { font-weight: 600; }
+  .rb-conn.on { border-color: var(--ok2); background: var(--ok); color: var(--text-on-solid); }
+  .rb-conn.on:hover { background: #218838; }
+  .rb-conn.open { border-color: var(--wrn2); background: var(--wrn); color: var(--text-on-solid); }
+  .rb-conn.open:hover { background: #d49600; }
 }
-
-.rb-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 0;
-}
-
-/* shared base - same height for all controls */
-.rb-port, .rb-addr, .rb-search, .rb-tbtn, .rb-cfg-input {
-  height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
-  font-family: inherit;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
-  box-sizing: border-box;
-}
-
-.rb-port, .rb-addr { font-family: monospace; cursor: pointer; }
-.rb-addr { width: 36px; text-align: center; }
-.rb-search-wrap { flex: 1; min-width: 120px; position: relative; display: flex; }
-.rb-search { flex: 1; min-width: 0; font-size: 13px; padding-right: 26px; }
-.rb-search-clear {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  width: 20px; height: 20px; padding: 0; border: none; background: transparent;
-  color: var(--text-muted); cursor: pointer; font-size: 12px; line-height: 1;
-  border-radius: 3px;
-}
-.rb-search-clear:hover { color: var(--text); background: var(--border); }
-.rb-tbtn { background: var(--bg-alt); cursor: pointer; white-space: nowrap; }
-
-.rb-port:focus, .rb-addr:focus,
-.rb-search:focus, .rb-cfg-input:focus { outline: none; border-color: var(--accent); }
-
-.rb-search::placeholder { color: var(--text-muted); }
-
-.rb-tbtn:hover:not(:disabled) { background: var(--border); }
-.rb-port:disabled, .rb-addr:disabled, .rb-search:disabled, .rb-cfg-input:disabled,
-.rb-tbtn:disabled, .rb-tbtn.off { opacity: 0.4; cursor: not-allowed; }
-.rb-tbtn.active { background: var(--border); border-color: var(--accent); }
-/* Destructive action (wipe history). Red border at rest, fills on hover. */
-.rb-tbtn.rb-danger { border-color: #b02a37; color: #dc3545; }
-.rb-tbtn.rb-danger:hover:not(:disabled) {
-  background: #dc3545; border-color: #b02a37; color: #fff;
-}
-
-.rb-send:not(.off) { background: #e8a308; border-color: #c78c00; color: #fff; font-weight: 600; }
-.rb-send:not(.off):hover { background: #d49600; }
-/* OOR warning - write still goes through; firmware decides. */
-.rb-send.oor:not(.off) { background: #dc3545; border-color: #b02a37; }
-.rb-send.oor:not(.off):hover { background: #c82333; }
-/* Wrap - value overflows its register; Send confirms before corrupting. */
-.rb-send.wrap:not(.off) { background: #a01828; border-color: #7a1220; }
-.rb-send.wrap:not(.off):hover { background: #8a1422; }
-
-.rb-conn { font-weight: 600; }
-.rb-conn.on { background: #28a745; border-color: #1e7e34; color: #fff; }
-.rb-conn.on:hover { background: #218838; }
-.rb-conn.open { background: #e8a308; border-color: #c78c00; color: #fff; }
-.rb-conn.open:hover { background: #d49600; }

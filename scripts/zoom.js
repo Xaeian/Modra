@@ -1,7 +1,7 @@
 // scripts/zoom.js
 
-// Page zoom for the desktop (webview) build, where the browser's own Ctrl +/-
-// is unavailable. No-op under HTTP - the browser handles zoom there.
+// Page zoom for the desktop (webview) build, where the browser's own Ctrl +/- is unavailable.
+// No-op under HTTP, where the browser handles zoom.
 const ZOOM = (() => {
   const KEY = "modra.zoom";
   const MIN = 0.5, MAX = 2.5, STEP = 0.1;

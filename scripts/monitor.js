@@ -66,8 +66,8 @@ const CHART_SIZES = { S: 100, M: 200, L: 300 };
 const CHART_SIZE_CYCLE = ["S", "M", "L"];
 const CHART_SIZE_DEFAULT = "M";
 
-// Gap floor: a longer hole breaks the line instead of interpolating. 15 ticks
-// at the 500ms default ≈ 7.5s - past read jitter, short of a real disconnect.
+// Gap floor: a longer hole breaks the line instead of interpolating.
+// 15 ticks at the 500ms default ≈ 7.5s, past read jitter and short of a real disconnect.
 const GAP_TICKS = 15;
 const GAP_MIN_SEC = 5;
 
@@ -204,7 +204,7 @@ function chartExportCSV(names, buf) {
 //------------------------------------------------------------------ MonitData (time-series buffer)
 
 // Visible window only: each fetch returns the whole [from, to] at the right tier
-// and REPLACES the buffer (no incremental append). `_buf[name]` -> [{ts, v}].
+// and REPLACES the buffer (no incremental append). `_buf[name]` → [{ts, v}].
 const MonitData = {
 
   range: 600,     // live window length (seconds)
@@ -214,7 +214,7 @@ const MonitData = {
   _buf: {},
   tier: "raw",    // resolution tier serving the current window (for the UI)
   _nextFetch: 0,  // earliest ms epoch the live refetch may run again
-  _edge: false,   // frozen zoom sits at the live edge -> top up on raw tier
+  _edge: false,   // frozen zoom sits at the live edge → top up on raw tier
 
   //---------------------------------------------------------------------------------------- Window
 
@@ -225,7 +225,7 @@ const MonitData = {
   window() {
     if(this.live) {
       const now = Date.now() / 1000;
-      // `∞` -> from epoch start: all history, served from the day tier.
+      // `∞` → from epoch start: all history, served from the day tier.
       return [this.range === Infinity ? 0 : now - this.range, now];
     }
     // Left anchor stays put, right edge follows "now", so new samples fill in.

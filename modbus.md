@@ -3,11 +3,11 @@
 Async Modbus RTU master with CSV-based register map, automatic encoding/decoding, and caching.
 
 The module has two layers: module-level regmap parsing (CSV cell → typed value)
-and the `ModbusMaster` class (connection, block transport, codec, public API).
+and `ModbusMaster` (connection, block transport, codec, public API).
 
 ## Requirements
 
-```
+```text
 python >= 3.10
 pymodbus >= 3.7 (device_id API)
 xaeian
@@ -15,12 +15,12 @@ xaeian
 
 ## Quick Start
 
-```python
+```py
 from modbus import ModbusMaster
 
 mb = ModbusMaster("/dev/ttyUSB0", "regmap.csv", addr=1, baudrate=9600)
 
-# Sync first - fills the cache, and rule registers need their switch read
+# Sync first: it fills the cache, and rule registers need their switch read
 data = await mb.sync()
 
 # Read specific registers
@@ -50,12 +50,11 @@ await mb.disconnect()
 | `default` | Factory value; `/`-list per device variant | `1500` or `3700/2600/1500` |
 | `null`    | Sentinel override for nullable types       | `0xFFFF` / `0` / `-1`      |
 
-`unit` / `scale` / `min` / `max` split on `/` **only** for `type=rule`, one slot per switch
-position. On any other type a slash is part of the value,
-so compound units like `m³/h` or `V/krpm` stay intact.
+`unit` / `scale` / `min` / `max` split on `/` **only** for `type=rule`, one slot per switch position.
+On any other type a slash is part of the value, so compound units like `m³/h` or `V/krpm` stay intact.
 `default` splits by device variant on every type.
 
-`enum`, `bits` and `ver` overload the `unit` cell - label map, bit names, version fields.
+`enum`, `bits` and `ver` overload `unit`: label map, bit names, version fields.
 Each is parsed into its own key (`enum` / `bits` / `ver`) and `unit` is cleared,
 so downstream `unit` always means a physical unit.
 
@@ -91,7 +90,7 @@ Without that every non-empty string would be truthy.
 
 A `?` prefix on `type` reserves one raw value as "no data".
 Default sentinels follow the SunSpec industry convention;
-the `null` column overrides per-register when the device uses a different value.
+`null` overrides them per register where a device uses another value.
 
 | Type prefix      | Default sentinel  | Decoded |
 | ---------------- | ----------------- | ------- |
@@ -102,16 +101,16 @@ the `null` column overrides per-register when the device uses a different value.
 | `?int`  (pair)   | `0x80000000`      | `None`  |
 | `float` (pair)   | `NaN` (IEEE-754)  | `None`  |
 
-`?bool` works because a boolean Modbus register still occupies a full 16-bit word -
+`?bool` works because Modbus keeps a boolean in a full 16-bit word:
 `0`/`1` are HIGH/LOW, anything else is free for N/A.
 
-`float` pairs are nullable by default - NaN is the natural sentinel, `?` is redundant.
-`enum` / `ver` / `rule` / `bits` accept `?` for metadata purposes
-but have no clean spare encoding: `ver` packs all 16 bits,
-`enum` raw outside the table reads as an integer fallback,
+`float` pairs are nullable by default: NaN is their natural sentinel, so `?` is redundant.
+`enum` / `ver` / `rule` / `bits` accept `?` for metadata purposes, but have no clean spare encoding:
+`ver` packs all 16 bits,
+`enum` raw outside its table falls back to an integer,
 `rule` already returns `None` for an inactive slot,
 and `bits` treats `0xFFFF` as a valid all-set mask.
-A device that does reserve a sentinel takes an explicit `null` override.
+A device that reserves a sentinel names it in `null`.
 
 ```csv
 33,0x21,MeasSlow:Freq,R,?uint,Hz,100,,,Frequency (N/A when output disabled),,
@@ -119,17 +118,17 @@ A device that does reserve a sentinel takes an explicit `null` override.
 60,0x3C,Energy:Total,R,?uint,Wh,1,,,Accumulated energy (N/A = not accumulated),,0
 ```
 
-Writing `None` emits the sentinel where the type has one.
-On a non-nullable register - or a nullable type with no spare encoding
-(`?enum` / `?ver` / `?rule` / `?bits`) - the write is silently skipped, never garbage.
+Writing `None` emits the sentinel where its type has one.
+On a non-nullable register, or a nullable type with no spare encoding (`?enum` / `?ver` / `?rule` / `?bits`),
+the write is silently skipped, never garbage.
 A read that hits the sentinel decodes as `None`,
-so a caller keeping history gets a gap rather than a sentinel-valued spike.
+so stored history shows a gap, not a sentinel-valued spike.
 
 ### Defaults
 
-`default` is the factory value, reported by `reg_info()` parsed to the register's own type.
+`default` holds the factory value, which `reg_info()` reports parsed to its register's type.
 A `/`-list holds one value per device variant,
-so one map can describe a family that shares a register layout but not its tuning.
+so one map can describe a family that shares its register layout but not its tuning.
 
 ```csv
 120,0x78,Speed:Max,RWs,uint,rpm,1,0,3000,Maximum speed,,1650/1300/760
@@ -137,9 +136,8 @@ so one map can describe a family that shares a register layout but not its tunin
 
 ### Rules
 
-**32-bit pairs** - combine two adjacent registers into one value.
-The pair's type is taken from the high half: `uint` produces a plain uint32
-(displayed as hex), `float` reinterprets the 32-bit word as an IEEE 754 single.
+**32-bit pairs** combine two adjacent registers into one value.
+The type comes from the high half: `uint` gives a uint32 shown as hex, and `float` reads both words as one IEEE 754 single.
 
 ```csv
 20,0x14,Data:KeyHigh,R,uint,-,-,-,-,Secret key high word,high=Key
@@ -171,20 +169,20 @@ When `Mode=off`: Speed returns `None`, write skips
 
 ### Constructor
 
-```python
+```py
 ModbusMaster(
-  port: str,                     # serial port, e.g. "COM3" / "/dev/ttyUSB0"
-  regmap_file: str,              # register map CSV path
-  addr: int = 1,                 # Modbus device address
+  port: str,                    # serial port, e.g. "COM3" / "/dev/ttyUSB0"
+  regmap_file: str,             # register map CSV path
+  addr: int = 1,                # device address on the bus
   baudrate: int = 9600,
   parity: "N"|"O"|"E" = "N",
   stopbits: 1|2 = 1,
-  timeout: float = 1,            # response timeout (s)
-  retries: int = 3,              # per-block retry budget
-  group: bool = True,            # default output format (grouped/flat)
-  max_block: int = 64,           # max registers per read/write block
-  ignore_set: set[str] = None,   # names excluded from read() polling (pair-aware)
-  client_factory = None,         # (mb) -> client; swaps transport (sim, tests)
+  timeout: float = 1,           # response timeout (s)
+  retries: int = 3,             # per-block retry budget
+  group: bool = True,           # default output format (grouped/flat)
+  max_block: int = 64,          # max registers per read/write block
+  ignore_set: set[str] = None,  # names excluded from read() polling (pair-aware)
+  client_factory = None,        # (mb) → client; swaps transport (sim, tests)
 )
 ```
 
@@ -223,7 +221,7 @@ Connection and transport (raw words):
 ### Runtime exclusions
 
 `ignore_set` provides *user-level* register filtering outside the descriptor.
-Names in the set are excluded from the `read()` polling cycle but stay in the map,
+Names in the set are excluded from `read()` polling but stay in the map,
 so the `regs_info()` catalog covers every register.
 Still readable explicitly via `read(keys=[...])` and `sync()` (full read for admin tools).
 A pair key expands to both underlying halves.
@@ -231,12 +229,12 @@ A pair key expands to both underlying halves.
 ### Data Formats
 
 **Grouped** _(default)_:
-```python
+```py
 {"Ctrl": {"Mode": "rpm", "Speed": 150.0}}
 ```
 
 **Flat**:
-```python
+```py
 {"Ctrl:Mode": "rpm", "Ctrl:Speed": 150.0}
 ```
 
@@ -245,7 +243,7 @@ A pair key expands to both underlying halves.
 ### Annotate
 
 Add metadata to values:
-```python
+```py
 mb.annotate(fields=["unit"])                # (val, unit)
 mb.annotate(fields=["unit", "min", "max"])  # (val, unit, min, max)
 mb.annotate(data, ["unit", "scale"])        # custom data
@@ -253,17 +251,15 @@ mb.annotate(data, ["unit", "scale"])        # custom data
 
 ## Error Handling
 
-`min` / `max` are advisory - out-of-range numeric writes go through.
-The device sees whatever was written.
-Symbolic values (enum labels, version strings) still raise
-because they can't be encoded to a meaningful word.
+`min` / `max` are advisory: out-of-range numeric writes go through, and the device sees whatever was written.
+Symbolic values (enum labels, version strings) still raise, because they cannot be encoded to a meaningful word.
 
-`write()` touches only `W` / `RW` / `RWs`: a value aimed at an `R` register is
-dropped before validation - no write, no error. Validation runs on what remains.
+`write()` touches only `W` / `RW` / `RWs`: values aimed at `R` registers are dropped before validation, with no write and no error.
+Validation runs on what remains.
 
-```python
-# Out-of-range numeric - encoded and written as-is
-await mb.write({"Ctrl": {"Speed": 99999}})  # OK; the device decides what to do
+```py
+# Out-of-range numeric: encoded and written as-is
+await mb.write({"Ctrl": {"Speed": 99999}}) # accepted; the device decides what to do
 
 # Unknown enum value
 await mb.write({"Ctrl": {"Mode": "turbo"}})
@@ -288,7 +284,7 @@ await mb.sync()
 
 Raw values stored in `mb.cache_raw: dict[int, int|None]`.
 
-```python
+```py
 # Direct access
 mb.cache_raw[10] = 1234
 

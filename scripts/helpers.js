@@ -179,7 +179,7 @@ const Reg = (() => {
   const ro = (reg) => rws(reg) === "R";
 
   /** Badge classes of a register's access mode, a color each: RWs persisted, RW volatile. */
-  const rwsClass = (reg) => `rb-rws rws-${rws(reg).toLowerCase()}`;
+  const rwsClass = (reg) => `rb-rws ${rws(reg).toLowerCase()}`;
 
   //------------------------------------------------------------------------------- Display / parse
 
@@ -190,7 +190,7 @@ const Reg = (() => {
   function display(reg, value) {
     if(value == null) return "";
     if(reg.rule?.pair) {
-      // IEEE 754 has no fixed scale - pick precision by magnitude.
+      // IEEE 754 has no fixed scale, so the precision follows the magnitude
       if(reg.type === "float") {
         const a = Math.abs(value);
         if(a === 0) return "0";
@@ -418,7 +418,7 @@ const Reg = (() => {
     return regs.filter(r => !S.ignore.has(r.name));
   }
 
-  // Contiguous runs of adjacent ids - e.g. [1,2,3,5,6] → [[1,2,3], [5,6]].
+  // Contiguous runs of adjacent ids: [1,2,3,5,6] → [[1,2,3], [5,6]]
   function _contiguous(regs) {
     if(!regs.length) return [];
     const s = [...regs].sort((a, b) => lo(a) - lo(b));

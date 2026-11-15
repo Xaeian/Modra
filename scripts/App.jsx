@@ -61,11 +61,12 @@ const MapPicker = () => {
         </button>
         {has && <button class="rb-tbtn on" onClick={() => boot(true)}>Continue ▶</button>}
       </div>
-      {has &&
+      {has && (
         <label class="rb-nomap-skip">
           <input type="checkbox" checked={!S.askMap} onChange={toggleAskMap} />
           Don't ask again
-        </label>}
+        </label>
+      )}
     </div>
   );
 };
@@ -82,10 +83,11 @@ const App = () => {
       {S.showChart && <Monitor.Bar />}
       {Widgets.over().map(w => <WidgetPanel widget={w} />)}
       <div class="rb-body">
-        {Widgets.beside().length > 0 &&
+        {Widgets.beside().length > 0 && (
           <aside class="rb-side">
             {Widgets.beside().map(w => <WidgetPanel widget={w} />)}
-          </aside>}
+          </aside>
+        )}
         <div class="rb-grid">
           {Reg.columns(regs, gridColumnCount(regs.length)).map(col =>
             <div class="rb-col">{Reg.blocks(col).map(b => <Grid.Block regs={b} />)}</div>

@@ -1,60 +1,52 @@
 /* styles/monitor.css */
 
-.rb-monitor { display: flex; flex-direction: column; }
+@layer app {
+  .rb-monitor { display: flex; flex-direction: column; }
+  .rb-monitor-slot { min-height: 0; }
 
-.rb-monitor-bar {
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  padding: 6px;
-  background: var(--bg-alt); border: 1px solid var(--border);
-  border-radius: 4px 4px 0 0; font-size: 12px;
-}
+  .rb-monitor-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+    padding: 6px;
+    border: 1px solid var(--border); border-radius: 4px 4px 0 0;
+    background: var(--bg-alt);
+    font-size: 12px;
+  }
+  .rb-monitor-sep { width: 1px; height: 18px; margin: 0 2px; background: var(--border); }
 
-.rb-monitor-tag {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 6px; border-radius: 3px; cursor: pointer;
-  font: 10px monospace; white-space: nowrap;
-  background: var(--tag-bg, #e0f0ff); border: 1px solid var(--tag-border, #b0d4f1);
-  color: var(--tag-text, #1a5276);
-}
-.rb-monitor-tag:hover {
-  background: var(--tag-hover-bg, #fde8e8);
-  border-color: var(--tag-hover-border, #e6a0a0);
-  color: var(--tag-hover-text, #a02020);
-}
-[data-theme="dark"] .rb-monitor-tag {
-  --tag-bg: #1a3040; --tag-border: #2a5070; --tag-text: #90c0e0;
-  --tag-hover-bg: #3a2020; --tag-hover-border: #703030; --tag-hover-text: #e09090;
-}
+  .rb-monitor-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 6px;
+    border: 1px solid #b0d4f1; border-radius: 3px;
+    background: #e0f0ff;
+    font: 10px monospace; color: #1a5276; white-space: nowrap;
+    cursor: pointer;
+  }
+  .rb-monitor-tag:hover { border-color: #e6a0a0; background: #fde8e8; color: #a02020; }
+  .rb-tag-dot {
+    display: inline-block; flex-shrink: 0; vertical-align: middle;
+    width: 6px; height: 6px; border-radius: 50%;
+  }
 
-.rb-tag-dot {
-  display: inline-block; width: 6px; height: 6px;
-  border-radius: 50%; flex-shrink: 0;
-  vertical-align: middle;
-}
+  .rb-range-btn {
+    padding: 3px 6px;
+    border: 1px solid var(--border); border-radius: 3px;
+    background: var(--bg);
+    font: 10px monospace; color: var(--text-muted); white-space: nowrap;
+    cursor: pointer;
+  }
+  .rb-range-btn:hover { background: var(--border); }
+  .rb-range-btn.busy { opacity: 0.4; pointer-events: none; cursor: wait; }
+  .rb-range-btn.active {
+    border-color: var(--accent); background: var(--accent);
+    color: var(--text-on-solid); font-weight: 600;
+  }
+  .rb-range-btn.active.raw  { border-color: #16a34a; background: #16a34a; }
+  .rb-range-btn.active.min  { border-color: #2563eb; background: #2563eb; }
+  .rb-range-btn.active.hour { border-color: #d97706; background: #d97706; }
+  .rb-range-btn.active.day  { border-color: #dc2626; background: #dc2626; }
 
-.rb-monitor-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
-
-.rb-range-btn {
-  padding: 3px 6px; font: 10px monospace; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 3px;
-  background: var(--bg); color: var(--text-muted); white-space: nowrap;
-}
-.rb-range-btn:hover { background: var(--border); }
-.rb-range-btn.busy { opacity: 0.4; cursor: wait; pointer-events: none; }
-.rb-range-btn.active {
-  background: var(--accent); border-color: var(--accent);
-  color: #fff; font-weight: 600;
-}
-/* Active button tinted by the tier serving the data: green raw (full detail)
-   -> blue minute -> amber hour -> red day (coarsest). */
-.rb-range-btn.active.tier-raw  { background: #16a34a; border-color: #16a34a; }
-.rb-range-btn.active.tier-min  { background: #2563eb; border-color: #2563eb; }
-.rb-range-btn.active.tier-hour { background: #d97706; border-color: #d97706; }
-.rb-range-btn.active.tier-day  { background: #dc2626; border-color: #dc2626; }
-
-.rb-monitor-slot { min-height: 0; }
-
-.rb-charts {
-  border: 1px solid var(--border); border-top: none;
-  border-radius: 0 0 4px 4px; background: var(--bg);
+  .rb-charts {
+    border: 1px solid var(--border); border-top: none; border-radius: 0 0 4px 4px;
+    background: var(--bg);
+  }
 }

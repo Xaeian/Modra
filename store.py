@@ -1,3 +1,5 @@
+# store.py
+
 """
 SQLite store for poll-cycle history with resolution tiers.
 
@@ -37,7 +39,7 @@ class Store:
     # Each entry: {col, type, name, slot_idx}. slot_idx=None for plain regs;
     # rule regs expand to N entries with slot_idx in 0..N-1.
     self._cols:list[dict] = []
-    # name → {"switch": switch_name, "units": [...]} for rule regs.
+    # `name` → {"switch": switch_name, "units": [...]} for rule regs
     self._rule_meta:dict[str, dict] = {}
     self._tables:set[str] = set()
     self._parse_regs(regs)
@@ -216,8 +218,8 @@ class Store:
           acc = 0
           for v in vals: acc |= int(v)
           agg[c["col"]] = acc
-        elif c["type"] == "TEXT": agg[c["col"]] = vals[-1]   # last value in bucket
-        else: agg[c["col"]] = sum(vals) / len(vals)          # mean of the bucket
+        elif c["type"] == "TEXT": agg[c["col"]] = vals[-1] # last value in bucket
+        else: agg[c["col"]] = sum(vals) / len(vals) # mean of the bucket
       await self.db.insert(dst, agg)
       n += 1
     await self.db.exec("INSERT OR REPLACE INTO _roll (tbl, ts) VALUES (?, ?)", (dst, end))

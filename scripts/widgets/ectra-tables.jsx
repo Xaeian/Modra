@@ -53,17 +53,17 @@ const EctraTables = {
   title: "Ectra · Tables",
   icon: "📐",
 
-  _busy: false,       // a curve write in flight
-  _ghost: true,       // draw the device curve under the edited one
+  _busy: false,    // a curve write in flight
+  _ghost: true,    // draw the device curve under the edited one
   _tab: EC_TABLES[0],
   _drag: -1,
   _from: null,
-  _preview: null,     // device curve held from grab until the write lands
+  _preview: null,  // device curve held from grab until the write lands
   _hist: [],
   _redo: [],
-  _bound: null,       // connection the history belongs to
+  _bound: null,    // connection the history belongs to
   _cv: null,
-  _geo: null,         // paint-time transforms, reused for hit-testing
+  _geo: null,      // paint-time transforms, reused for hit-testing
   _hoverEl: null,
 
   // Another widget asking for a table by name. Still no idea what a topic is:
@@ -162,8 +162,8 @@ const EctraTables = {
 
   // One gentle pass toward the neighbours' chord,
   // weighted by the real Hz spacing of the non-uniform grid.
-  // Endpoints never move - they anchor standstill and top-end behaviour on the live drive -
-  // and each point lands between where it stood and that chord,
+  // Endpoints never move: they anchor standstill and top-end behaviour on the live drive.
+  // Every other point lands between where it stood and that chord,
   // so a pass cannot mint a new extreme.
   // Repeated clicks smooth further, each one written and undoable.
   smooth() {
@@ -193,7 +193,7 @@ const EctraTables = {
     render();
   },
 
-  // One persistent canvas reparented into each render's slot - the same trick `Monitor` uses.
+  // One persistent canvas reparented into each render's slot, the same trick `Monitor` uses.
   // A fresh canvas per render is blank until painted,
   // and with the ref firing on a detached 0x0 node that blank frame flickers twice a second.
   // The old bitmap stays on screen until the deferred repaint lands.
@@ -213,7 +213,7 @@ const EctraTables = {
   },
 
   _cancel() {
-    // Leaving mid-drag discards the gesture - nothing was written yet
+    // Leaving mid-drag discards the gesture: nothing was written yet
     this._drag = -1;
     this._preview = null;
     if(this._cv) this._cv.style.cursor = "crosshair";
@@ -358,7 +358,7 @@ const EctraTables = {
       segment(P.l, toY(v), W - P.r, toY(v));
       ctx.fillText(v.toFixed(dec), P.l - 5, toY(v) + 3);
     }
-    // Vertical grid on the anchors themselves - they are the axis that matters
+    // Vertical grid on the anchors themselves: they are the axis that matters
     ctx.textAlign = "center";
     pts.forEach((p, i) => {
       segment(toX(p.hz), P.t, toX(p.hz), H - P.b);
@@ -462,9 +462,9 @@ const EctraTables = {
         <div class="ec-curve">
           <div class="ec-slot" ref={el => EctraTables._slot(el)} />
           <div class="ec-foot">
-            <span><em class="lg-edit" /> ustawiane</span>
-            {this._ghost && <span><em class="lg-ghost" /> na urządzeniu</span>}
-            {EC_LIVE[this._tab] && <span><em class="lg-live" /> punkt pracy</span>}
+            <span><em class="ec-key edit" /> ustawiane</span>
+            {this._ghost && <span><em class="ec-key ghost" /> na urządzeniu</span>}
+            {EC_LIVE[this._tab] && <span><em class="ec-key live" /> punkt pracy</span>}
             <span class="wg-gap" />
             <span>
               {S.serial?.autosend

@@ -1,3 +1,5 @@
+# modbus.py
+
 """
 Async Modbus RTU master with CSV-based register descriptor.
 
@@ -199,7 +201,7 @@ class ModbusMaster:
     if nullable: typ = typ[1:].strip()
     null_override = _parse_null_override(row.get("null"))
     # Outside a rule register a slash belongs to the value itself (`m³/h`).
-    # `default` splits by variant instead - a separate axis, on every type.
+    # `default` splits by variant instead: a separate axis, on every type.
     slots = typ == "rule"
     entry = {
       "id": reg_id, "hex": hex_str, "group": group, "name": name, "fullname": fullname,
@@ -216,7 +218,7 @@ class ModbusMaster:
       "default": _parse_slots(row.get("default", ""), _bool if typ == "bool" else _num_or_str),
       "extra": {k: _text(v) for k, v in row.items() if k not in COLUMNS},
     }
-    # These types overload the unit cell - labels, bit names, version fields.
+    # These types overload the unit cell: labels, bit names, version fields.
     # Parsed into their own key and cleared, so `unit` is always a unit.
     if typ == "enum": entry["enum"] = _parse_enum(row.get("unit", ""))
     elif typ == "bits": entry["bits"] = _parse_enum(row.get("unit", ""))
@@ -385,7 +387,7 @@ class ModbusMaster:
         pair = self.pairs[key]
         if pair.get("high"): reg_ids.append(pair["high"]["id"])
         if pair.get("low"): reg_ids.append(pair["low"]["id"])
-      elif (entry := self.name_map.get(key)):
+      elif entry := self.name_map.get(key):
         reg_ids.append(entry["id"])
     return reg_ids
 

@@ -138,10 +138,11 @@ const Control = {
           onBlur={onBlur} />
         {reg.nullable && !ro && !Reg.isInactive(reg) && <NullCheckbox reg={reg} />}
         {/* preventDefault: discarding must not blur-autosend the discarded value */}
-        {isDirty &&
+        {isDirty && (
           <button class="rb-val-reset" title="Discard"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => resetOne(reg)}>✕</button>}
+            onClick={() => resetOne(reg)}>✕</button>
+        )}
       </div>
     );
   },

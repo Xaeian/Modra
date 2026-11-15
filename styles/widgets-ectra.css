@@ -1,63 +1,62 @@
 /* styles/widgets-ectra.css */
-/* The two ectra widgets: the guide and the curve tables. Sorts after
-   widget.css, so the shared chrome is in place before these. */
 
-.ec { font-size: 12px; }
+@layer app {
+  .ec { font-size: 12px; }
 
-/* Tabs, shared: the guide's topics and the tables' four names read the same,
-   because they are the same gesture - pick one, the panel below follows. */
-.ec-tabs { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; padding: 6px 8px; }
-.ec-tab {
-  font-size: 11px; padding: 2px 8px; background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: 3px; cursor: pointer;
-}
-.ec-tab.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.ec-tab:disabled { opacity: 0.4; cursor: default; }
+  .ec-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 6px 8px; }
+  .ec-tab {
+    padding: 2px 8px;
+    border: 1px solid var(--border); border-radius: 3px;
+    background: var(--bg);
+    font-size: 11px; color: var(--text);
+    cursor: pointer;
+  }
+  .ec-tab.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .ec-tab:disabled { opacity: 0.4; cursor: default; }
 
-/* The guide. Narrow on purpose: it sits beside the grid, and a column of prose
-   is read, not scanned. Beside the grid it takes the height the other widgets
-   leave and scrolls its own prose, so the topic tabs never leave the screen. */
-.rb-side > .wg:has(> .ec-book) {
-  flex: 1 1 auto; min-height: 0;
-  display: flex; flex-direction: column;
-}
-.ec-book { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
-.ec-book .ec-tabs { flex: none; }
-.ec-text {
-  padding: 0 10px 8px;
-  font-size: 11px; line-height: 1.55; color: var(--text-muted);
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
-}
-.ec-text p { margin: 0 0 6px; }
-.ec-text p:last-child { margin-bottom: 0; }
-.ec-text b { color: var(--text); font-weight: 600; }
-/* What holds the drive back right now. Between the tabs and the prose, so it never scrolls
-   away, and only there while something does. */
-.ec-now {
-  flex: none; margin: 0 10px 8px; padding: 5px 8px;
-  font-size: 11px; line-height: 1.5; color: var(--text);
-  background: var(--bg-alt); border-left: 2px solid var(--accent);
-}
-.ec-now p { margin: 0 0 4px; }
-.ec-now p:last-child { margin-bottom: 0; }
-.ec-now b { font-weight: 600; }
-/* A name that leads somewhere: hover marks its row, click goes to it. */
-.ec-ref { cursor: pointer; border-bottom: 1px dotted var(--border); }
-.ec-ref:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  .rb-side > .wg:has(> .ec-book) {
+    display: flex; flex: 1 1 auto; flex-direction: column;
+    min-height: 0;
+  }
+  .ec-book { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  .ec-book .ec-tabs { flex: none; }
+  .ec-text {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding: 0 10px 8px;
+    font-size: 11px; line-height: 1.55; color: var(--text-muted);
+  }
+  .ec-text p { margin: 0 0 6px; }
+  .ec-text p:last-child { margin-bottom: 0; }
+  .ec-text b { color: var(--text); font-weight: 600; }
+  .ec-now {
+    flex: none;
+    margin: 0 10px 8px; padding: 5px 8px;
+    border-left: 2px solid var(--accent);
+    background: var(--bg-alt);
+    font-size: 11px; line-height: 1.5; color: var(--text);
+  }
+  .ec-now p { margin: 0 0 4px; }
+  .ec-now p:last-child { margin-bottom: 0; }
+  .ec-now b { font-weight: 600; }
+  .ec-ref { border-bottom: 1px dotted var(--border); cursor: pointer; }
+  .ec-ref:hover { border-bottom-color: var(--accent); color: var(--accent); }
 
-/* The curve editor. */
-.ec-hover { font-size: 11px; font-family: monospace; color: var(--text-muted); }
-.ec-curve { padding: 0 8px 6px; }
-.ec-slot { min-height: 240px; }
-.ec-cv { width: 100%; height: 240px; display: block; cursor: crosshair; }
-.ec-foot {
-  display: flex; gap: 12px; flex-wrap: wrap;
-  font-size: 10px; color: var(--text-muted); padding-top: 2px;
+  .ec-hover { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+  .ec-curve { padding: 0 8px 6px; }
+  .ec-slot { min-height: 240px; }
+  .ec-cv { display: block; width: 100%; height: 240px; cursor: crosshair; }
+  .ec-foot {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    padding-top: 2px;
+    font-size: 10px; color: var(--text-muted);
+  }
+  .ec-key {
+    display: inline-block; vertical-align: middle;
+    width: 8px; height: 8px;
+    margin: 0 3px 0 8px;
+    border-radius: 50%;
+  }
+  .ec-key.edit  { background: var(--accent); }
+  .ec-key.ghost { background: var(--text-muted); }
+  .ec-key.live  { background: #2e9e5b; }
 }
-.ec-foot em {
-  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-  margin: 0 3px 0 8px; vertical-align: middle;
-}
-.ec-foot .lg-edit { background: var(--accent); }
-.ec-foot .lg-ghost { background: var(--text-muted); }
-.ec-foot .lg-live { background: #2e9e5b; }

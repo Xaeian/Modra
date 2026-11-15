@@ -56,10 +56,12 @@ const Toolbar = () => {
             onClick={() => search("")}>✕</button>
         )}
       </div>
-      {ZOOM.enabled &&
-        <button class="rb-tbtn" onClick={ZOOM.out} title="Zoom out (Ctrl -)">A-</button>}
-      {ZOOM.enabled &&
-        <button class="rb-tbtn" onClick={ZOOM.in} title="Zoom in (Ctrl +)">A+</button>}
+      {ZOOM.enabled && (
+        <button class="rb-tbtn" onClick={ZOOM.out} title="Zoom out (Ctrl -)">A-</button>
+      )}
+      {ZOOM.enabled && (
+        <button class="rb-tbtn" onClick={ZOOM.in} title="Zoom in (Ctrl +)">A+</button>
+      )}
       <button class={cls("rb-tbtn", S.showChart && "active")}
         onClick={toggleChart}
         title="Toggle charts (p)">📈</button>

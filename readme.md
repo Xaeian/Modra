@@ -20,7 +20,7 @@ Change the file, restart, get a different device tool.
 
 Modra sits in a [TonkaJSX](https://github.com/Xaeian/TonkaJSX) workspace as `modra/`, and `tonka` builds its page:
 
-```bash
+```sh
 py -3.12 -m venv .venv
 ./.venv/Scripts/activate
 py -m pip install -r requirements.txt
@@ -32,7 +32,8 @@ For any browser, `py serve.py` serves the API on `localhost:8000` and `tonka ser
 `-r` drops the desktop build first, so `tonka build modra -i` again before the next `py api.py`.
 
 Or grab `Modra.exe` from [Releases](https://github.com/Xaeian/Modra/releases) and run it.
-It asks which `regs.csv` to use on startup, so the same binary serves any device - tick _don't ask again_ once you have settled on one.
+It asks which `regs.csv` to use on startup, so the same binary serves any device.
+Tick _don't ask again_ once you have settled on one.
 
 First launch creates `serial.ini`, `view.json`, `data.db` next to the binary.
 History and UI state are keyed by register name, so an updated map keeps them; a genuinely different device wants **🧹 Clear DB**.
@@ -176,7 +177,7 @@ Fire when nothing is focused _(Gmail / GitHub pattern)_, neighbours on QWERTY:
 | `data.db` | SQLite poll history, one table per addr | app |
 | `write.log` | audit log of every write | app |
 
-**Schema change:** new `regs.csv` registers become DB columns automatically; a removed or retyped register is not migrated - delete `data.db` to rebuild.
+**Schema change:** new `regs.csv` registers become DB columns automatically; a removed or retyped register is not migrated, so delete `data.db` to rebuild.
 
 ## Simulator
 
@@ -194,11 +195,11 @@ By default each register is simulated from its own descriptor row alone _(type, 
 
 A build can also ship a coupled device simulator.
 Packages listed under `sim =` in `app.ini` register themselves on import, and when one recognizes the map it models the whole device instead of walking registers one by one.
-The `ectra` package does this for the PMSM drive - see [`ectra/readme.md`](ectra/readme.md).
+The `ectra` package does this for the PMSM drive, as [`ectra/readme.md`](ectra/readme.md) describes.
 
 ## Build
 
-```bash
+```sh
 py -3.12 -m venv .venv
 ./.venv/Scripts/activate
 py -m pip install -r requirements.txt

@@ -1,7 +1,7 @@
 // scripts/alert.js
 
-// Bottom-center toast stack, deduped by message - a repeat rearms the existing toast, so
-// poll loops shouting "Connection lost" stay quiet. Plain DOM: a `.js` file gets no JSX.
+// Bottom-center toast stack, deduped by message: a repeat rearms the existing toast,
+// so poll loops shouting "Connection lost" stay quiet. Plain DOM: a `.js` file gets no JSX.
 // API: `alert.err / wrn / inf / ok (msg, ms?)`.
 const alert = (() => {
 
@@ -54,7 +54,7 @@ const alert = (() => {
 
   function _build(type, msg) {
     const el = document.createElement("div");
-    el.className = "rb-alert rb-alert-" + type;
+    el.className = "rb-alert " + type;
     const iconEl = document.createElement("span");
     iconEl.className = "rb-alert-icon";
     iconEl.textContent = ICONS[type] || ICONS.inf;

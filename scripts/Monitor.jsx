@@ -9,14 +9,14 @@
 
 const Monitor = {
 
-  _stack: null,       // ChartStack instance
-  _el: null,          // <div class="rb-charts"> hosting the stack
-  _keys: [],          // group keys, one per panel of the stack
-  _sig: null,         // built layout signature (keys + names per group)
-  _rangeBusy: false,  // guards a window fetch against overlapping round-trips
-  _rangeAgain: false, // a window asked for while a fetch was in flight
-  _zoomTimer: null,   // debounces drag-zoom into a single refetch
-  _pending: false,    // rows ingested while a chart was hovered, not yet drawn
+  _stack: null,        // `ChartStack` instance
+  _el: null,           // <div class="rb-charts"> hosting the stack
+  _keys: [],           // group keys, one per panel of the stack
+  _sig: null,          // built layout signature (keys + names per group)
+  _rangeBusy: false,   // guards a window fetch against overlapping round-trips
+  _rangeAgain: false,  // a window asked for while a fetch was in flight
+  _zoomTimer: null,    // debounces drag-zoom into a single refetch
+  _pending: false,     // rows ingested while a chart was hovered, not yet drawn
 
   //--------------------------------------------------------------------------------------- JSX bar
 
@@ -43,7 +43,7 @@ const Monitor = {
           <span class="rb-monitor-sep" />
           {CHART_RANGE_PRESETS.map(r => (
             <button class={"rb-range-btn"
-              + (MonitData.live && MonitData.range === r.s ? " active tier-" + MonitData.tier : "")
+              + (MonitData.live && MonitData.range === r.s ? " active " + MonitData.tier : "")
               + (Monitor._rangeBusy ? " busy" : "")}
               onClick={() => Monitor.changeRange(r.s)}
               disabled={Monitor._rangeBusy}
@@ -237,7 +237,7 @@ const Monitor = {
 
   //------------------------------------------------------------------------------------- Internals
 
-  // bool/enum keep `noTip`: the y-axis already spells out the state.
+  // Bool and enum panels keep `noTip`: the y-axis already spells out the state
   _panelCfg(key, grp) {
     const cfg = {
       unit: grp.unit,

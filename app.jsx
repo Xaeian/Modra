@@ -124,8 +124,8 @@ function render() {
       const f = wasAddr ? root.querySelector(".rb-addr") : valInput(regFocus);
       if(f && !f.disabled) {
         f.focus();
-        // Keep the mid-edit text while it still parses to the staged value -
-        // the canonical re-render reformats ("12." -> "12") under the caret.
+        // Keep the mid-edit text while it still parses to the staged value:
+        // the canonical re-render reformats ("12." → "12") under the caret.
         if(regFocus) {
           const reg = Reg.byName(regFocus);
           const staged = Reg.staged(regFocus);
@@ -209,8 +209,8 @@ async function boot(skipPrompt = false) {
   document.body.classList.add("app");
   render();
 
-  // The container had no measurable size while the chart was hidden. Backfill
-  // from the store too - history must show with no device connected.
+  // The container had no measurable size while the chart was hidden.
+  // Backfill from the store too: history must show with no device connected.
   if(S.monitor.size) Monitor.rebuild(true);
 }
 

@@ -1,3 +1,5 @@
+# config.py
+
 """
 Backend config: app.ini (deployment), serial.ini (connection), regs.csv path,
 view.json (monitor panels + ignore list). Factory for ModbusMaster bound
@@ -258,9 +260,9 @@ def lint_regs(regs:list[dict]) -> list[tuple[str, str]]:
         if raw < raw_lo or raw > raw_hi:
           issues.append(("wrn",
             f"{tag}: {label} {bound:g} x scale {s:g} = {raw:g} "
-            f"out of register range [{raw_lo}, {raw_hi}] - writes near it wrap"))
-    # default-in-range only when bounds are plain scalars: rule slots and
-    # per-variant defaults live on different list axes, so don't cross them.
+            f"out of register range [{raw_lo}, {raw_hi}], writes near it wrap"))
+    # The default is checked against the range only when both bounds are plain scalars:
+    # rule slots and per-variant defaults live on different list axes, so they never cross.
     if not isinstance(mn, list) and not isinstance(mx, list):
       for d in _slots(r.get("default")):
         if not isinstance(d, (int, float)) or isinstance(d, bool): continue

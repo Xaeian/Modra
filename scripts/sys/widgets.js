@@ -1,8 +1,8 @@
 // scripts/sys/widgets.js
 
-// Registry of device widgets - per-family panels for what the register grid cannot
-// show. Frontend only; the host component lives in App.jsx. Two gates, both must pass:
-// the `widgets` list in app.ini and the widget's own `match(regs)`.
+// Registry of device widgets: per-family panels for what the register grid cannot show.
+// Frontend only; the host component lives in App.jsx.
+// Two gates, both must pass: the `widgets` list in app.ini and the widget's own `match(regs)`.
 //
 // Also the seam a widget drives the rest of the app through. A widget knows one
 // device deeply and modra knows none, so the useful split is: the widget says

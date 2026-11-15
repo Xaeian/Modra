@@ -1,3 +1,5 @@
+# sim.py
+
 """
 Modbus device simulator. Drop-in replacement for AsyncModbusSerialClient.
 
@@ -214,14 +216,14 @@ class SimulatedClient:
     if not entry: return
     rws = entry.get("rws", "R")
     typ = entry.get("type", "uint")
-    # Only pure read-only telemetry drifts. Anything writable (W/RW/RWs)
-    # stays where the user / firmware put it - otherwise a written setpoint
-    # would walk off into nonsense values on the next tick.
+    # Only pure read-only telemetry drifts.
+    # Anything writable (W/RW/RWs) stays where the user or the firmware put it,
+    # or a written setpoint would walk off into nonsense values on the next tick.
     if rws != "R": return
     # Identity types (firmware version, status codes) aren't telemetry.
     if typ in ("hex", "ver"): return
-    # Pair halves stay at their initial value - drifting them independently
-    # would produce meaningless uint32 / float words.
+    # Pair halves stay at their initial value:
+    # drifting them independently would produce meaningless uint32 or float words.
     rule = entry.get("rule") or {}
     if "high" in rule or "low" in rule: return
 
@@ -261,8 +263,8 @@ class SimulatedClient:
     gain = span * self._param(rid, "gain", GAIN_FRAC_MIN, GAIN_FRAC_MAX)
 
     eng = self._raw_to_eng(entry, self.values[rid])
-    # Clamp the input - if a write parked the register outside its range
-    # we'd otherwise get a degenerate Gaussian. Snap back gradually.
+    # Clamp the input: a write that parked the register outside its range
+    # would otherwise give a degenerate Gaussian. Snap back gradually.
     eng = max(mn, min(mx, eng))
 
     # `down` peaks at mx (max attracts → push toward smaller values).

@@ -1,3 +1,5 @@
+# api.py
+
 """
 Frontend-facing API surface. Each method is callable from pywebview
 (`js_api=api`) and from serve.py as a JSON HTTP handler. Returns

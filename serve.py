@@ -1,3 +1,5 @@
+# serve.py
+
 """
 HTTP front for Api: routes GET/POST → Api methods, serves static frontend
 files. CORS open, port 8000. Counterpart to the pywebview launcher in api.py.
@@ -72,7 +74,7 @@ class Handler(SimpleHTTPRequestHandler):
     start = Time()
     mute = self.path in MUTE
     if not mute: print(f"→ GET {self.path}")
-    # /read and /scan bypass the route table and return early - muted hot paths.
+    # /read and /scan bypass the route table and return early: they are muted hot paths
     if self.path == "/read":
       self._json(api.read()); return
     elif self.path == "/scan":

@@ -1,171 +1,115 @@
 /* styles/reg.css */
 
-.rb-reg {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--border);
+@layer app {
+  .rb-row-wrap { display: contents; }
+
+  .rb-reg {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rb-reg:last-child { border-bottom: none; }
+  /* Held, not blinking: movement in the corner of the eye reads as an alarm */
+  .rb-reg.pointed {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .rb-reg:hover { background: var(--bg); }
+  .rb-reg.dirty { background: #fffbe6; }
+  .rb-reg.oor   { background: #fff0f0; }
+  .rb-reg.inactive { opacity: 0.4; }
+  .rb-reg.inactive .rb-name { color: var(--text-muted); }
+  .rb-reg.inactive .rb-val { background: var(--disabled); }
+  .rb-reg.ignored { opacity: 0.55; }
+  .rb-reg.ignored .rb-name { color: var(--text-muted); text-decoration: line-through; }
+  .rb-reg.hit { box-shadow: inset 3px 0 0 var(--accent); }
+  .rb-reg.hit .rb-name { font-weight: 600; }
+  /* Last, so a miss stays faded whatever else the row is */
+  .rb-reg.miss { opacity: 0.25; }
+  .rb-reg.miss:hover { opacity: 1; }
+
+  .rb-id {
+    min-width: 28px;
+    font-family: monospace; font-size: 11px; color: var(--text-muted);
+    text-align: right;
+  }
+
+  .rb-name { min-width: 130px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+
+  .rb-val-wrap { position: relative; flex: 1; min-width: 50px; }
+  .rb-val {
+    width: 100%;
+    padding: 2px 20px 2px 6px;
+    border: 1px solid var(--border); border-radius: 3px;
+    background: var(--bg);
+    font-family: monospace; font-size: 12px; color: var(--text);
+  }
+  .rb-val:disabled { background: var(--disabled); color: var(--text-muted); }
+  .rb-val:focus { border-color: var(--accent); outline: none; }
+  .rb-val::placeholder { color: var(--null); }
+  .rb-val.dirty { border-color: #e6c300; background: #fffbe6; }
+  .rb-val.oor { border-color: var(--err); background: #fff0f0; color: var(--err); }
+  .rb-val.wrap { border-style: dashed; border-width: 2px; color: var(--err3); font-weight: 600; }
+  .rb-val.na, .rb-ro.na { color: var(--text-muted); font-style: italic; }
+  .rb-val-reset {
+    position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
+    padding: 0 2px;
+    border: none;
+    background: none;
+    font-size: 12px; line-height: 1; color: #c03030;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    cursor: pointer;
+  }
+  .rb-val-reset:hover { opacity: 1; }
+
+  .rb-null-cb {
+    display: inline-flex; align-items: center; gap: 3px;
+    margin-left: 6px;
+    font-size: 11px; color: var(--text-muted); white-space: nowrap;
+    cursor: pointer;
+  }
+  .rb-null-cb input { margin: 0; cursor: pointer; }
+
+  .rb-ro { flex: 1; padding: 2px 6px; font-family: monospace; font-size: 12px; color: var(--text-muted); }
+
+  .rb-btns { display: flex; flex: 1; flex-wrap: wrap; gap: 2px; }
+  .rb-btn {
+    padding: 2px 7px;
+    border: 1px solid var(--border); border-radius: 3px;
+    background: var(--bg);
+    font-family: inherit; font-size: 11px; color: var(--text); white-space: nowrap;
+    cursor: pointer;
+  }
+  .rb-btn:hover:not(:disabled) { background: var(--border); }
+  .rb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .rb-btn.on { border-color: var(--accent); background: var(--accent); color: var(--text-on-solid); }
+  .rb-btn.dirty { border-color: var(--wrn2); background: var(--wrn); color: var(--text-on-solid); }
+  .rb-btn.zero.on { border-color: #17a2b8; background: #17a2b8; }
+
+  .rb-unit { min-width: 24px; font-size: 11px; color: var(--text-muted); }
+
+  .rb-rws {
+    min-width: 22px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: monospace; font-size: 9px; color: var(--text-on-solid);
+    text-align: center;
+  }
+  .rb-rws.r   { background: #d4a017; }
+  .rb-rws.w   { background: var(--err); }
+  .rb-rws.rw  { background: var(--inf); }
+  .rb-rws.rws { background: #0d9488; }
+
+  .rb-icon-btn {
+    padding: 2px 0 0;
+    border: none;
+    background: none;
+    font-size: 12px; line-height: 1;
+    opacity: 0.25;
+    transition: opacity 0.15s;
+    cursor: pointer;
+  }
+  .rb-icon-btn:hover  { opacity: 0.7; }
+  .rb-icon-btn.active { opacity: 1; }
 }
-
-.rb-reg:last-child { border-bottom: none; }
-.rb-reg:hover { background: var(--bg); }
-.rb-reg.rb-dirty { background: #fffbe6; }
-.rb-reg.rb-oor   { background: #fff0f0; }
-.rb-reg.rb-inactive { opacity: 0.4; }
-.rb-reg.rb-inactive .rb-name { color: var(--text-muted); }
-.rb-reg.rb-inactive .rb-val  { background: var(--disabled); }
-/* Ignored: row visible only in show-disabled view; muted + struck-through
-   name signals "currently disabled, click ghost to re-enable". */
-.rb-reg.rb-ignored { opacity: 0.55; }
-.rb-reg.rb-ignored .rb-name { text-decoration: line-through; color: var(--text-muted); }
-/* Search marks instead of hiding: an accent edge on the hit, the miss faded
-   but in place, so the grid never reflows under the query. The edge is drawn
-   inside, so it composes with the dirty/oor tints and shifts nothing. Last,
-   so a miss stays faded whatever else the row is. Hover reads it back. */
-.rb-reg.rb-hit { box-shadow: inset 3px 0 0 var(--accent); }
-.rb-reg.rb-hit .rb-name { font-weight: 600; }
-.rb-reg.rb-miss { opacity: 0.25; }
-.rb-reg.rb-miss:hover { opacity: 1; }
-.rb-row-wrap { display: contents; }
-
-[data-theme="dark"] .rb-reg.rb-dirty { background: #3a3520; }
-[data-theme="dark"] .rb-reg.rb-oor   { background: #3a2020; }
-
-.rb-id {
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  min-width: 28px;
-  text-align: right;
-}
-
-.rb-name {
-  min-width: 130px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* value input */
-.rb-val-wrap { flex: 1; min-width: 50px; position: relative; }
-
-.rb-val {
-  width: 100%;
-  padding: 2px 20px 2px 6px;
-  font-family: monospace;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg);
-  color: var(--text);
-}
-
-.rb-val:disabled    { background: var(--disabled); color: var(--text-muted); }
-.rb-val:focus       { outline: none; border-color: var(--accent); }
-.rb-val::placeholder { color: var(--null); }
-.rb-val.dirty { background: #fffbe6; border-color: #e6c300; }
-.rb-val.oor   { background: #fff0f0; border-color: #dc3545; color: #dc3545; }
-/* Encode overflow (wraps to a different number) - harsher than advisory .oor. */
-.rb-val.wrap  { border-style: dashed; border-width: 2px; font-weight: 600; color: #a01828; }
-/* Device-reported N/A label - italic muted reads as metadata, not input. */
-.rb-val.na, .rb-ro.na { font-style: italic; color: var(--text-muted); }
-
-[data-theme="dark"] .rb-val.dirty { background: #3a3520; border-color: #8a7a20; }
-[data-theme="dark"] .rb-val.oor   { background: #3a2020; border-color: #dc3545; color: #ff6b6b; }
-[data-theme="dark"] .rb-val.wrap  { color: #ff8080; }
-
-.rb-val-reset {
-  position: absolute;
-  right: 3px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 0 2px;
-  font-size: 12px;
-  line-height: 1;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: #c03030;
-  opacity: 0.4;
-  transition: opacity 0.15s;
-}
-
-.rb-val-reset:hover { opacity: 1; }
-[data-theme="dark"] .rb-val-reset { color: #ff6b6b; }
-
-/* Native checkbox + "null" label for writable nullable regs. */
-.rb-null-cb {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.rb-null-cb input { margin: 0; cursor: pointer; }
-
-/* readonly */
-.rb-ro {
-  flex: 1;
-  font-family: monospace;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 2px 6px;
-}
-
-/* enum/bool buttons */
-.rb-btns { flex: 1; display: flex; flex-wrap: wrap; gap: 2px; }
-
-.rb-btn {
-  padding: 2px 7px;
-  font-size: 11px;
-  font-family: inherit;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg);
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.rb-btn:hover:not(:disabled) { background: var(--border); }
-.rb-btn.on    { background: var(--accent); border-color: var(--accent); color: #fff; }
-.rb-btn.dirty { background: #e8a308; border-color: #c78c00; color: #fff; }
-.rb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* The 0/off/none/LOW choice is cyan instead of the blue active accent. */
-.rb-btn.zero.on { background: #17a2b8; border-color: #17a2b8; }
-
-/* unit / rws badge / icons */
-.rb-unit { font-size: 11px; color: var(--text-muted); min-width: 24px; }
-
-.rb-rws {
-  font-family: monospace;
-  font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  color: #fff;
-  min-width: 22px;
-  text-align: center;
-}
-
-.rws-r   { background: #d4a017; }  /* gold - read-only telemetry */
-.rws-w   { background: #dc3545; }  /* red - write-only trigger */
-.rws-rw  { background: #0d6efd; }  /* blue - volatile read/write */
-.rws-rws { background: #0d9488; }  /* teal - persisted read/write */
-
-.rb-icon-btn {
-  padding: 2px 0 0;
-  font-size: 12px;
-  line-height: 1;
-  border: none;
-  background: none;
-  cursor: pointer;
-  opacity: 0.25;
-  transition: opacity 0.15s;
-}
-
-.rb-icon-btn:hover  { opacity: 0.7; }
-.rb-icon-btn.active { opacity: 1; }

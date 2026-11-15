@@ -141,7 +141,7 @@ function csTipPlugin(stack) {
 
 //---------------------------------------------------------------------------- Bottom border plugin
 
-// uPlot's default axes leave the plot bottom open - panels look detached without it.
+// Default uPlot axes leave the plot bottom open, and panels look detached without it
 function csBottomLine(cfg) {
   return {
     hooks: {
@@ -185,7 +185,7 @@ class ChartStack {
     this._formatXValue = opts.formatXValue || null;
     this._onZoom = opts.onZoom || null;
     this._onHover = opts.onHover || null;
-    this.hovered = false;   // a pointer rests on one of the panels
+    this.hovered = false; // a pointer rests on one of the panels
     this._xMin = null;
     this._xMax = null;
     this._panels = [];

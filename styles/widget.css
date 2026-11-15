@@ -1,61 +1,30 @@
 /* styles/widget.css */
-/* Chrome shared by every device widget. Named to sort after main.css, which
-   the bundler emits in plain alphabetical order. */
 
-.wg {
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-}
+@layer app {
+  .wg {
+    overflow: hidden;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg-alt);
+  }
+  .wg-head {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+  }
+  .wg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; }
+  .wg-gap { flex: 1; }
 
-.wg-head {
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-}
-
-/* Rows of controls inside a widget body. */
-.wg-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 8px;
-}
-
-/* Pushes everything after it to the right edge. */
-.wg-gap { flex: 1; }
-
-/* A widget beside the grid rather than above it: it stays put while the grid
-   scrolls, so its text and the rows it points at are readable together. */
-.rb-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.rb-side {
-  flex: 0 0 340px;
-  min-width: 0;
-  position: sticky;
-  /* Below the sticky header, whatever height it happens to be right now. */
-  top: calc(var(--rb-header-h, 0px) + 8px);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: calc(100vh - var(--rb-header-h, 0px) - 16px);
-  overflow: auto;
-}
-
-.rb-body > .rb-grid { flex: 1 1 0; min-width: 0; }
-
-/* Narrow window: the column would leave the grid unreadable, so it goes back
-   to being a block above it. */
-@media (max-width: 900px) {
-  .rb-body { flex-direction: column; }
-  .rb-side { flex: none; width: 100%; position: static; max-height: none; }
+  .rb-body { display: flex; align-items: flex-start; gap: 10px; }
+  .rb-body > .rb-grid { flex: 1 1 0; min-width: 0; }
+  .rb-side {
+    position: sticky; top: calc(var(--rb-header-h, 0px) + 8px);
+    display: flex; flex: 0 0 340px; flex-direction: column; gap: 10px;
+    min-width: 0; max-height: calc(100vh - var(--rb-header-h, 0px) - 16px);
+    overflow: auto;
+  }
+  @media (max-width: 900px) {
+    .rb-body { flex-direction: column; }
+    .rb-side { position: static; flex: none; width: 100%; max-height: none; }
+  }
 }

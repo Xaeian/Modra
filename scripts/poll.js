@@ -1,8 +1,8 @@
 // scripts/poll.js
 
-// Poll at the same interval the backend reads the device - one source of
-// truth in `serial.ini`. Floor guards a near-zero setting. Port enumeration
-// is about hot-plug, not freshness, so it stays hardcoded.
+// Poll at the same interval the backend reads the device, one source of truth in `serial.ini`.
+// The floor guards a near-zero setting.
+// Port enumeration is about hot-plug, not freshness, so it stays hardcoded.
 const POLL_MS_FLOOR = 50;
 const PORT_SCAN_MS = 1000;
 
@@ -185,7 +185,7 @@ function startPortScan() {
       const prev = { connected: S.connected, serial_open: S.serial_open };
       applyStatus(status);
       connectionEdge(prev.connected);
-      // applyStatus swaps the array only on real change, so identity is enough.
+      // `applyStatus` swaps the array only on real change, so identity is enough.
       if(S.ports !== prevPorts
         || prev.connected !== S.connected
         || prev.serial_open !== S.serial_open) render();

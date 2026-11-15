@@ -8,12 +8,12 @@ function _resolveValue(reg, inactive, disconnected) {
 
 const _rowClass = (reg, isDirty, ghosted, oor, isIgnored, match) =>
   cls("rb-reg",
-    isDirty && "rb-dirty",
-    ghosted && "rb-inactive",
-    oor && "rb-oor",
-    isIgnored && "rb-ignored",
-    S.pointed === reg.name && "rb-pointed",
-    match && ("rb-" + match));
+    isDirty && "dirty",
+    ghosted && "inactive",
+    oor && "oor",
+    isIgnored && "ignored",
+    S.pointed === reg.name && "pointed",
+    match);
 
 const Grid = {
 
@@ -44,18 +44,21 @@ const Grid = {
           <span class="rb-name">{reg.name}</span>
           <Control.For reg={reg} value={val} isDirty={isDirty} ro={ro} />
           {showUnit && <span class="rb-unit">{inactive ? "" : unitText}</span>}
-          {showSendBtn &&
+          {showSendBtn && (
             <button class="rb-icon-btn" onClick={() => sendOne(reg)}
-              title="Stage for Send (even if unchanged)">🎯</button>}
-          {Reg.isTelemetry(reg) &&
+              title="Stage for Send (even if unchanged)">🎯</button>
+          )}
+          {Reg.isTelemetry(reg) && (
             <button class={cls("rb-icon-btn", isMonitored && "active")}
-              onClick={() => toggleMonitor(reg)} title="Monitor">📊</button>}
+              onClick={() => toggleMonitor(reg)} title="Monitor">📊</button>
+          )}
           <button class={cls("rb-icon-btn", isIgnored && "active")}
             onClick={() => toggleIgnore(reg)}
             title={isIgnored ? "Unhide" : "Ignore (skip polling, hide)"}>🚫</button>
-          {showMiscBtn &&
+          {showMiscBtn && (
             <button class={cls("rb-icon-btn", isUtilOpen && "active")}
-              onClick={() => toggleUtil(reg)} title="Slider">⚙</button>}
+              onClick={() => toggleUtil(reg)} title="Slider">⚙</button>
+          )}
           <span class={Reg.rwsClass(reg)}>{Reg.rws(reg)}</span>
         </div>
         {isUtilOpen && <Misc.Panel reg={reg} value={val} />}

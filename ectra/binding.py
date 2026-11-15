@@ -11,6 +11,7 @@ import math
 from sim import SimulatedClient
 from .command import Command
 from .machine import V_PEAK
+from .meter import CURR_CTRL_s, CURR_VIEW_s, phase_rms
 from .names import (
   AUTH_KEYS, CURVE_GROUPS, CURVE_NAME, OWNED, REQUIRED, STANDING, TIERS,
 )
@@ -247,24 +248,28 @@ class Binding:
     """
     Every reading that follows from the operating point, on both tiers.
 
-    A balanced machine puts the same RMS through all three phases,
-    so the per phase registers and their average carry one number.
+    A balanced machine puts the same RMS through all three phases once it turns,
+    but a standing field puts DC through them, the aligned phase carrying the vector's peak,
+    and each phase register reads what its window holds, as the drive's do.
+    The average is the average of the three.
     `Estim:Id` and `Estim:Iq` are the exceptions: they publish vector amplitude, not phase RMS.
     """
     m = plant.machine
     # `Meas` is the slow trend, `MeasCtrl` the fast one the protections read.
     # They are two different filters over one snapshot,
     # so on the run they disagree by exactly as much as the drive is moving.
-    for tier, t in zip(TIERS, (plant.meters.view, plant.meters.ctrl)):
+    tiers = (plant.meters.view, plant.meters.ctrl)
+    for tier, t, tau in zip(TIERS, tiers, (CURR_VIEW_s, CURR_CTRL_s)):
       # These carry the CONTROL domain, not the estimator:
       # the ramp step, and the observer once the loop is closed.
       # Standstill and coast fall back on the shaft, so a rotor still turning stays visible.
       put(f"{tier}:Freq", t.freq)
       put(f"{tier}:Speed", t.freq * 60.0 / poles)
-      put(f"{tier}:CurrAvg", t.curr)
+      phases = phase_rms(t.curr, m.i_ab, plant.f_field, tau)
+      put(f"{tier}:CurrAvg", sum(phases) / 3.0)
       put(f"{tier}:PeakMax", t.peak)
-      for phase in ("U", "V", "W"):
-        put(f"{tier}:Curr{phase}", t.curr)
+      for phase, curr in zip(("U", "V", "W"), phases):
+        put(f"{tier}:Curr{phase}", curr)
         put(f"{tier}:Peak{phase}", t.peak)
       put(f"{tier}:Temp", t.temp)
       put(f"{tier}:ExTemp", t.temp)

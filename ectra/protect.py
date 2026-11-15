@@ -1,3 +1,5 @@
+# bench/ectra/protect.py
+
 """
 The protection layers, in the order the drive stacks them.
 
@@ -67,15 +69,17 @@ class Protect:
 
   def check(
     self, cmd:Command, dt:float, ctrl, m:Machine, hz:float,
-    target:float, table:bool, forced:bool, estim_hz:float,
+    target:float, table:bool, forced:bool, estim_hz:float, uvw:float,
   ) -> str|None:
     """
     One pass over every layer, reading the FAST tier and never the machine behind it:
     a threshold on the raw value would answer the rotor swing instead of the operating point.
     The hardware line goes first, because it pre-empts even the PWM interrupt on the device.
+    `uvw` is the mean of the three phase windows, what the drive's `irms` and `stall` compare:
+    under a slow field it swings with the field's angle, a turning field reads as its RMS.
     """
     if self._comparator(cmd, dt, m): return "peak"
-    if self._hold("irms", bool(cmd.curr_rms_a) and ctrl.curr > cmd.curr_rms_a,
+    if self._hold("irms", bool(cmd.curr_rms_a) and uvw > cmd.curr_rms_a,
       dt, TRIP_s): return "irms"
     if self._hold("imax", bool(cmd.curr_peak_a) and ctrl.peak / 2.0 > cmd.curr_peak_a,
       dt, TRIP_s): return "imax"
@@ -83,14 +87,14 @@ class Protect:
       dt, TRIP_s): return "temp"
     if self._hold("hv-", bool(cmd.dc_min_v) and ctrl.vdc < cmd.dc_min_v,
       dt, TRIP_s): return "hv-"
-    if self._stall(cmd, dt, ctrl, hz, target, table, estim_hz): return "stall"
+    if self._stall(cmd, dt, uvw, hz, target, table, estim_hz): return "stall"
     if self._spin(cmd, dt, ctrl, hz, forced): return "spin"
     return None
 
   def _comparator(self, cmd:Command, dt:float, m:Machine) -> bool:
     """
     The board's own line, independent of the whole measurement chain and of every register:
-    it guards the transistors, so it sits far above any setting an operator can reach.
+    it guards the transistors whatever the thresholds say.
     Its counter drains one detector tick per quiet tick,
     so single spikes fade between attempts and only bursts denser than the drain ever add up.
     """
@@ -100,7 +104,7 @@ class Protect:
     return bool(cmd.peak_count) and self.peaks >= cmd.peak_count
 
   def _stall(
-    self, cmd:Command, dt:float, ctrl, hz:float, target:float, table:bool, estim_hz:float,
+    self, cmd:Command, dt:float, uvw:float, hz:float, target:float, table:bool, estim_hz:float,
   ) -> bool:
     """
     A rotor that never left standstill, and only where a table drives the bridge:
@@ -117,7 +121,7 @@ class Protect:
     """
     rising = table and cmd.stall_freq_hz and hz < target
     armed = rising and cmd.stall_curr_a and hz < cmd.stall_freq_hz
-    if self._hold("stall", bool(armed) and ctrl.curr > cmd.stall_curr_a, dt, cmd.stall_s):
+    if self._hold("stall", bool(armed) and uvw > cmd.stall_curr_a, dt, cmd.stall_s):
       return True
     est = rising and hz >= EST_RENDER_Hz and estim_hz < EST_STAND_Hz
     return self._hold("stall_est", bool(est), dt, cmd.stall_s)

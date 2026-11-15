@@ -40,7 +40,7 @@ const saveMonitor = () => _viewSaver.monitor();
 function edit(reg, val) { editSilent(reg, val); render(); }
 
 // Merge a pending edit without rendering (bulk import, per-keystroke typing).
-// Back to the cached value means no edit at all - drop the entry.
+// Back to the cached value means no edit at all, so the entry goes.
 function editSilent(reg, val) {
   if(Reg.same(S.values[reg.name], val)) delete S.dirty[reg.name];
   else S.dirty[reg.name] = val;
@@ -55,7 +55,7 @@ function reset() {
   render();
 }
 
-// Setting a null counts as a pick, so autosend writes it - like an enum click.
+// Setting a null counts as a pick, so autosend writes it, as it does an enum click
 function toggleNull(reg) {
   const cur = Reg.staged(reg.name);
   if(cur == null) resetOne(reg); else editSend(reg, null);
@@ -66,8 +66,8 @@ function toggleNull(reg) {
 const shouldAutosend = (reg) => S.serial?.autosend && S.connected
   && Object.hasOwn(S.dirty, reg.name);
 
-// Value already on the wire per register - collapses a blur autosend and an
-// immediate 🎯 on the same field into a single write.
+// Value already on the wire per register.
+// A blur autosend and an immediate 🎯 on the same field collapse into a single write.
 const _sending = new Map();
 
 async function _writeOne(reg, val) {
@@ -188,8 +188,8 @@ function expandIgnore(patterns) {
   return out;
 }
 
-// A pattern survives a save while everything it covers stays ignored - a
-// carve-out falls back to explicit names. A fully ignored group folds to
+// A pattern survives a save while everything it covers stays ignored,
+// and a carve-out falls back to explicit names. A fully ignored group folds to
 // `Group:*`, which then also covers registers added to that group later.
 function collapseIgnore() {
   const out = [], folded = new Set();
@@ -335,7 +335,7 @@ function _confirmWraps(batch) {
     + `stored as a different number on the device:\n\n${lines}\n\nSend anyway?`);
 }
 
-// Adopt the returned cache instead of our edits - the backend may clamp or reject.
+// Adopt the returned cache instead of our edits: the backend may clamp or reject
 async function send() {
   if(!S.connected || !Object.keys(S.dirty).length) return;
   const batch = { ...S.dirty };
@@ -487,7 +487,7 @@ async function pickMap() {
   location.reload();
 }
 
-// Kept in view.json, not localStorage - it belongs to the install, not the browser.
+// Kept in view.json, not localStorage: it belongs to the install, not the browser
 function toggleAskMap() {
   S.askMap = !S.askMap;
   API.view_set({ ask_map: S.askMap });
@@ -498,9 +498,11 @@ function toggleAskMap() {
 async function importConfig() {
   const file = await _pickFile(".ini,.csv");
   if(!file) return;
-  const rwSet = new Set(
-    S.regs.filter(r => r.rws === "RW" || r.rws === "RWs").map(r => r.name)
-  );
+  // An `info` register names the device a file came from,
+  // so a file never writes one back, even where the map leaves it writable.
+  const rwSet = new Set(S.regs
+    .filter(r => (r.rws === "RW" || r.rws === "RWs") && !Reg.isInfo(r))
+    .map(r => r.name));
   // Parse to the register's type like keyboard input, so numerics stage as
   // numbers (range/wrap checks need that); enum/bool/ver stay strings.
   const stage = (name, val) => {
@@ -553,7 +555,7 @@ async function importConfig() {
 }
 
 // What a config file carries: every RWs value, after the `info` registers.
-// Those name the device and firmware the values came from; import takes back only the RWs.
+// Those name the device and firmware the values came from, and an import skips them.
 function _configRegs() {
   const info = S.regs.filter(r => Reg.isInfo(r));
   const rws = S.regs.filter(r => r.rws === "RWs" && !Reg.isInfo(r));
@@ -581,7 +583,7 @@ function exportConfigCSV() {
   alert.ok(`Exported ${rows.length} register${rows.length === 1 ? "" : "s"} to ${name}`);
 }
 
-// Groups -> [sections], registers -> keys; unit rides as a trailing comment.
+// Groups → [sections], registers → keys; a unit rides as a trailing comment
 function exportConfigINI() {
   const data = {}, commentField = {};
   for(const reg of _configRegs()) {

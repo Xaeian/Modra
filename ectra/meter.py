@@ -11,6 +11,8 @@ Publishing one instantaneous number on both tiers is what makes a model feel ste
 A drive does not.
 """
 
+import math
+
 #----------------------------------------------------------------------------------------- Cascades
 
 # `MeasCfg:Window = 256` samples at 10kHz is a 25.6ms window,
@@ -36,6 +38,24 @@ FREQ_VIEW_s = 4 * REPORT_s
 CURRENTS = ("curr", "peak", "ripple")
 SCALARS = ("temp", "vdc", "flyback", "power")
 FREQS = ("freq",)
+
+#------------------------------------------------------------------------------------------- Phases
+
+def phase_rms(curr:float, i_ab:tuple, hz:float, tau_s:float) -> tuple:
+  """
+  Each phase as the drive's window reads it: the RMS of that phase over the window and the EMA.
+  The phase's square is half the vector's peak squared plus a term at twice the field's frequency,
+  which the 25.6ms window and the tier's EMA pass only in part:
+  a standing field reads in full as the DC of each phase, the aligned one carrying the peak,
+  and a fast one as the vector's RMS on all three.
+  `curr` is the tier's RMS, `i_ab` the vector's direction, `hz` how fast it turns.
+  """
+  ang = math.atan2(i_ab[1], i_ab[0]) if (i_ab[0] or i_ab[1]) else 0.0
+  x = 2.0 * math.pi * 2.0 * abs(hz)
+  box = math.sin(x * WINDOW_s / 2.0) / (x * WINDOW_s / 2.0) if x else 1.0
+  k = abs(box) / math.sqrt(1.0 + (x * tau_s) ** 2)
+  return tuple(curr * math.sqrt(max(0.0, 1.0 + k * math.cos(2.0 * (ang - off))))
+    for off in (0.0, 2.0 * math.pi / 3.0, -2.0 * math.pi / 3.0))
 
 #--------------------------------------------------------------------------------------------- Tier
 

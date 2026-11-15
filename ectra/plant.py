@@ -1,3 +1,5 @@
+# bench/ectra/plant.py
+
 """
 The drive: which stage owns the bridge, and what one tick does to everything.
 
@@ -26,10 +28,10 @@ Example:
 
 from math import pi as PI, sqrt
 from .command import Command
-from .curve import clamp
+from .curve import clamp, interp
 from .detector import Detector
 from .machine import FLYBACK_V, SUB_MAX, SUB_s, Machine, rotate, wrap
-from .meter import Meters
+from .meter import CURR_CTRL_s, Meters, phase_rms
 from .observer import Observer
 from .protect import Protect
 from .ramp import Ramp
@@ -45,8 +47,14 @@ TABLE_VEC = VERDICT_VEC + ("catch",)
 # The thread cadence the targets and the speed loop run on: the render update,
 # which bands with frequency on the device; one fixed value here
 TARGETS_s = 0.025
-# Reference slew toward the targets, per pass [A RMS]
-REF_SLEW_A = 0.05
+# Reference slew toward the targets: the drive walks each reference by an eighth of
+# the standstill anchor `Curr:0Hz` at every ramp update, which comes every 20ms under 50Hz,
+# 40ms to 150Hz and 80ms over it. On 4kW that is 29A/s: the catch hands the V/f current
+# to the table within a tenth of a second, where a fixed 2A/s kept it for 1.5s
+# and pushed the rotor past the field
+SLEW_SHARE = 1.0 / 8.0
+UPDATE_s = 0.04
+BAND_LOW_Hz, BAND_HIGH_Hz = 50.0, 150.0
 # The takeover seed never falls under this share of the entry vector
 SEED_FLOOR = 0.25
 # The start alignment's field rises over this share of `Drive:AlignTime` and stands for the rest
@@ -112,9 +120,9 @@ class Plant:
     self._sat = False
     self._sat_s = 0.0
     self._targets_s = 0.0
-    self.id_ref = self.iq_ref = 0.0   # what the loops chase, control frame
-    self.id_tgt = self.iq_tgt = 0.0   # where the references are headed
-    self.spd_acc = 0.0                # speed-loop integrator [A]
+    self.id_ref = self.iq_ref = 0.0  # what the loops chase, control frame
+    self.id_tgt = self.iq_tgt = 0.0  # where the references are headed
+    self.spd_acc = 0.0               # speed-loop integrator [A]
     self.limit = False
     self._forced_mag = 0.0
 
@@ -138,6 +146,11 @@ class Plant:
   def f_elec(self) -> float:
     """The frequency the windings see: the ramp, or the observer once closed."""
     return abs(self.obs.hz) if self.vec == "closed" else self.ramp.hz
+
+  @property
+  def f_field(self) -> float:
+    """How fast the current vector turns: still through the align, the windings' after."""
+    return 0.0 if self._align_s > 0.0 else self.f_elec
 
   @property
   def theta_applied(self) -> float:
@@ -185,7 +198,7 @@ class Plant:
       if self.fault: self._latch(cmd)
       return
     self.ramp.slew(cmd, dt, self.meters, self.vec in BLIND_VEC, self.vec == "closed",
-      self.det.close_done, self._align_s > 0.0, self._sat)
+      self.det.close_done, self._align_s > 0.0, self._sat, self.limit)
     # The cut belongs to the ramp step, as in the drive
     self._cutoff(cmd)
     if self.vec == "idle":
@@ -211,8 +224,9 @@ class Plant:
     self.meters.update(dt, self.report_hz, self.machine, FLYBACK_V)
     self.scope.feed(dt, self)
     if self.vec in ("idle", "fault") or self.fault: return
+    uvw = sum(phase_rms(self.meters.ctrl.curr, self.machine.i_ab, self.f_field, CURR_CTRL_s)) / 3.0
     self.fault = self.prot.check(cmd, dt, self.meters.ctrl, self.machine,
-      self.ramp.hz, self.target, self.table, self.vec == "forced", self.estim_hz)
+      self.ramp.hz, self.target, self.table, self.vec == "forced", self.estim_hz, uvw)
 
   def _coast(self, cmd:Command, dt:float):
     self._coast_s = max(0.0, self._coast_s - dt)
@@ -347,10 +361,10 @@ class Plant:
         v_ab, i_ab = m.step_table(cmd, h, self.theta_render, m.table_volts(cmd, field) * gain)
       elif closed:
         v_ab, i_ab = m.step_vector(cmd, h, self.obs.theta, (self.id_ref, self.iq_ref),
-          forced=False)
+          forced=False, w_frame=self.obs.w_hat)
       else:
         v_ab, i_ab = m.step_vector(cmd, h, self.theta_render,
-          (self.id_ref, self.iq_ref), forced=self.vec == "forced")
+          (self.id_ref, self.iq_ref), forced=self.vec == "forced", w_frame=TWO_PI * field)
       if not table: self._sat_s = clamp(self._sat_s + (h if m.sat else -h), 0.0, SAT_BUCKET_s)
       if self.vec not in VERDICT_VEC: self.obs.step(h, v_ab, i_ab, m.signs)
       if closed: self.theta_render = self.obs.theta
@@ -384,7 +398,9 @@ class Plant:
     """
     m = self.machine
     id0, iq0 = rotate(self.id_ref, self.iq_ref, -delta)
+    # The frame jumps and the current does not: the next sub-step reads it off the winding
     m.lean = 0.0
+    m.ic = None
     mag = max(abs(id0), abs(iq0)) + min(abs(id0), abs(iq0)) / 2.0
     seed = max(iq0, mag * SEED_FLOOR)
     self.id_ref, self.iq_ref = id0, iq0
@@ -404,11 +420,14 @@ class Plant:
       # Align and I/f: the table's current on the aligned axis, reached by the slew
       self.limit = False
       self.id_tgt, self.iq_tgt = self._forced_mag, 0.0
-      self._slew()
+      self._slew(cmd, dt, hz)
       return
     err = hz - abs(self.obs.hz)
     kp, ki = cmd.spd_kp / 1000.0, cmd.spd_ki / 1000.0
-    if self.ramp.freeze == "off": self.spd_acc += ki * err * dt
+    # The integral rests while the ramp is frozen, but runs on at the limit, as in the drive:
+    # rested there, back-calculation leaves the command just on the limit, which clears it,
+    # and the held ramp climbs away a step at a time
+    if self.ramp.freeze == "off" or self.limit: self.spd_acc += ki * err * dt
     self.spd_acc = clamp(self.spd_acc, -cmd.iq_max_a, cmd.iq_max_a)
     want = kp * err + self.spd_acc
     # Driving torque or none: a diode front-end has nowhere to put braking energy
@@ -417,9 +436,11 @@ class Plant:
     self.limit = want > cmd.iq_max_a
     self.iq_tgt = sat
     self.id_tgt = 0.0
-    self._slew()
+    self._slew(cmd, dt, hz)
 
-  def _slew(self):
-    """The thread's reference slew toward the targets, one pass."""
-    self.id_ref += clamp(self.id_tgt - self.id_ref, -REF_SLEW_A, REF_SLEW_A)
-    self.iq_ref += clamp(self.iq_tgt - self.iq_ref, -REF_SLEW_A, REF_SLEW_A)
+  def _slew(self, cmd:Command, dt:float, hz:float):
+    """The thread's reference slew toward the targets over one pass of `dt`."""
+    update = UPDATE_s / 2 if hz < BAND_LOW_Hz else UPDATE_s * 2 if hz > BAND_HIGH_Hz else UPDATE_s
+    step = (interp(cmd.curr, 0.0) or 0.0) * SLEW_SHARE * dt / update
+    self.id_ref += clamp(self.id_tgt - self.id_ref, -step, step)
+    self.iq_ref += clamp(self.iq_tgt - self.iq_ref, -step, step)

@@ -1,3 +1,5 @@
+# bench/ectra/ramp.py
+
 """
 The frequency ramp: where the command is allowed to go, and how fast.
 
@@ -28,7 +30,7 @@ class Ramp:
   def clear(self):
     """Everything one run owns."""
     self.hz = 0.0        # rendered electrical frequency, the field
-    self.freeze = "off"  # off | hv- | hv+ | hold
+    self.freeze = "off"  # off | hv- | hv+ | hold | lim
     self._held = False   # ceiling-hold edge, so one hold counts once
 
   #---------------------------------------------------------------------------------------- Ceiling
@@ -70,7 +72,7 @@ class Ramp:
 
   def slew(
     self, cmd:Command, dt:float, meters:Meters, blind:bool, closed:bool,
-    close_done:bool, aligning:bool, sat:bool,
+    close_done:bool, aligning:bool, sat:bool, limit:bool=False,
   ):
     """
     A rate is a tempo, so the table is read at where the drive is now,
@@ -88,6 +90,12 @@ class Ramp:
     up = goal > self.hz
     self._hold(cmd, goal, blind or pinned)
     if self._frozen(cmd, meters.ctrl, up): return
+    # On `Foc:IqMax` a higher reference turns the rotor no faster, so the climb waits for it,
+    # as the drive's `lim`: run on, the ramp leaves the rotor behind
+    if up and closed and limit and self.freeze != "hold":
+      self.freeze = "lim"
+      return
+    if self.freeze == "lim": self.freeze = "off"
     rate = interp(cmd.rise if up else cmd.fall, self.hz)
     if rate is None:
       self.hz = goal

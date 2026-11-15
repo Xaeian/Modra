@@ -1,5 +1,10 @@
 # Changes `modra`
 
+## `1.3.7` Import, SIM
+
+- Config import never writes `info` registers back _(serial, versions, UID)_, in the app and `mb_ctrl`
+- Fix: a SIM device model no longer freezes on connect
+
 ## `1.3.6` Info, Widgets
 
 - Config export opens with `info` registers _(serial, versions, UID)_, in the app and `mb_ctrl`

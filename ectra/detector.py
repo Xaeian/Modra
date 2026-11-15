@@ -1,3 +1,5 @@
+# bench/ectra/detector.py
+
 """
 The takeover gate and the loss detectors, on their own 10ms cadence, as the drive runs them.
 
@@ -25,6 +27,9 @@ LOCK_MAX = 0xFF
 UNLOCK_N = 8
 SLIP_N = 3
 FRESH_N = 50
+# A coast after a ramp step down falls by this much within every window (2s), or it is held up
+COAST_DROP_HZ = 0.2
+COAST_N = 200
 
 #------------------------------------------------------------------------------------------ Verdict
 
@@ -56,6 +61,7 @@ class Detector:
     self.close_done = False
     self._det = 0.0
     self._unlock_n = self._slip_n = self._weak_n = 0
+    self._coasting, self._coast_min, self._coast_n, self._ramp_last = False, 0.0, 0, 0.0
     self._fresh = 0
     self._entry_s = 0.0
     self._closed_s = 0.0
@@ -116,6 +122,7 @@ class Detector:
       self.exit_cause = "none"
       self._fresh = FRESH_N
       self._unlock_n = self._slip_n = self._weak_n = 0
+      self._coasting = False
       self._closed_s = 0.0
       return
     self._entry_wait(cmd, hz, out)
@@ -136,10 +143,20 @@ class Detector:
     self._closed_s += DET_s
     w = abs(obs.hz)
     # Off the ramp: over it by `Foc:SlipMax`, or under half of it (the rotor stopped).
-    # While the command walks the drive down, over the ramp is the rotor's own inertia
-    # and the bus guards own it, or every ordinary stop would read as a loss
-    falling = cmd.target_hz < hz
-    over = cmd.slip_max_hz and not falling and w > hz + cmd.slip_max_hz
+    # A rotor the ramp walks down, to a command or under derating, stays over it by inertia:
+    # the speed loop never brakes, so it coasts until it meets the ramp, also after the ramp stops.
+    # The bus guards own that, or every ordinary stop or slowdown would read as a loss.
+    # A coast only falls: an estimate that climbs from its lowest point is the runaway,
+    # and one that stops falling is a rotor held up, so both count as slip again.
+    if cmd.target_hz < hz or hz < self._ramp_last:
+      self._coasting, self._coast_min, self._coast_n = True, w, 0
+    elif self._coasting:
+      if w < self._coast_min - COAST_DROP_HZ: self._coast_min, self._coast_n = w, 0
+      self._coast_n += 1
+      climbing = w > self._coast_min + cmd.slip_max_hz / 2.0
+      if climbing or self._coast_n >= COAST_N: self._coasting = False
+    self._ramp_last = hz
+    over = cmd.slip_max_hz and not self._coasting and w > hz + cmd.slip_max_hz
     self._slip_n = self._slip_n + 1 if over or w < hz / 2.0 else 0
     self._unlock_n = self._unlock_n + 1 if abs(obs.err) > obs.unlock_sin else 0
     self._weak_n = self._weak_n + 1 if obs.weak else 0

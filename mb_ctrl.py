@@ -1,8 +1,10 @@
+# mb_ctrl.py
+
 """
 CLI: device ↔ config file admin tool.
 
   mb_ctrl import [file] - device → file (.ini default, .csv supported), as the app exports it
-  mb_ctrl export [file] - file → device, read-only rows skipped
+  mb_ctrl export [file] - file → device, read-only and `info` rows skipped
   mb_ctrl sudo - unlock with [auth] of app.ini (the app does this itself)
 """
 
@@ -29,6 +31,15 @@ def _joined(cell, sep:str) -> str:
   """A map cell as text: a list joined by `sep`, `None` as empty."""
   if isinstance(cell, list): return sep.join(map(str, cell))
   return "" if cell is None else str(cell)
+
+def _flat(data:dict) -> dict:
+  """A config file's values by full name: `Mode` under an INI section `Ctrl` is `Ctrl:Mode`."""
+  flat = {}
+  for group, entry in data.items():
+    if isinstance(entry, dict):
+      for key, value in entry.items(): flat[f"{group}:{key}"] = value
+    else: flat[group] = entry
+  return flat
 
 async def main():
   if len(sys.argv) < 2:
@@ -80,10 +91,14 @@ async def main():
           if r.get("name") and r.get("value") not in (None, "")}
       else:
         data = INI.load(file) or {}
+      # An `info` register names the device a file came from,
+      # so a file never writes one back, even where the map leaves it writable.
+      info = {r["name"] for r in mb.regs_info() if config.is_info(r.get("info"))}
+      data = {name: value for name, value in _flat(data).items() if name not in info}
       await mb.connect()
       count = await mb.write(data)
       await mb.disconnect()
-      # Unknown names and read-only rows are skipped, so a file can hold nothing to write
+      # Unknown names and read-only rows are skipped too, so a file can hold nothing to write
       if not count: log.err(f"{file}: nothing writable for this map"); sys.exit(1)
       log.inf(f"{file} {c.TURQUS}>>{c.END} device")
 

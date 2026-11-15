@@ -52,6 +52,8 @@ Wątek w `runner.py` budzi się co około `10ms` czasu rzeczywistego, niezależn
 W `lockstep` wątku nie ma, a krok ma zawsze `10ms`: detektor przejęcia ma taki sam takt i musi zobaczyć każde okno.
 `Plant` dzieli każdy krok na podkroki o docelowej długości `0.5ms`.
 Uzwojenie jest całkowane z dokładnym obrotem układu współrzędnych, a odpowiedź pętli prądowej wynika z `Foc:CurrBw`.
+Pętle niosą prąd z gładkim obrotem swojego układu, rampą w I/f i prędkością PLL w closed, jak integratory napędu, a resztę ruchu układu, pochylenie `If:Damp` i poprawki PLL, gonią swoim pasmem.
+Prąd niesiony z wirnikiem dawał odtłumianie: wirnik wychylony naprzód ciągnął swój prąd naprzód, a kołysanie I/f 4kW przy `15Hz` rosło samo z ±60° do ±90° w 45s.
 Napięcie potrzebne do uzyskania zadanej zmiany prądu wynika z modelu uzwojenia i jest następnie ograniczane przez dostępne napięcie szyny.
 
 Obserwator otrzymuje te same sygnały co firmware: napięcie odtworzone ze sterowania mostkiem i zmierzony prąd.
@@ -60,22 +62,47 @@ Nie zna rzeczywistej straty mostka; uwzględnia jedynie kompensację ustawioną 
 Wektor wymuszony przechodzi przez referencje ze slew jak w firmware: przy catch przejmuje zmierzony prąd, przy przejęciu obraca się razem z ramką, a moment startuje od rzutu na oś q.
 
 Parametry rzeczywistej maszyny są niezależne od nastaw `Motor:*`.
-Domyślnie model używa między innymi `KE_V_Hz = 0.55`, krzywej obciążenia `LOAD_CURVE`, bezwładności `INERTIA_kgm2` oraz zależnej od prądu straty mostka `LOSS_V`.
-Stałe służące do kalibracji modelu znajdują się na początku `machine.py`.
+Stałe kalibracji są na początku `machine.py`, każda z opisem pomiaru, z którego pochodzi.
+Obie maszyny są z przebiegów 10–12.11 na 0.13.4, pierwszym wydaniu, które dokładnie czyta napięcie wektora:
+
+| Stała | 1.5kW, wirnik 400 | 4kW, sztuka 99 | Skąd |
+| --- | --- | --- | --- |
+| SEM | `0.42V` na Hz | `0.83V` na Hz | 1.5kW strumień obserwatora przy 70–195Hz, 4kW karta zgodna z napięciem w closed |
+| Rezystancja | `1.58Ω` | `0.44Ω` | 1.5kW nachylenie prądu align względem `Volt:0Hz`, 4kW razem ze stratą, uzwojenie ze spadkiem mostka |
+| Strata mostka | `10.0V` | `9.0V` | 1.5kW ruszenie V/f do catch, 4kW align, ruszenie i kąt I/f startów 12.11 na tabeli stanowiska |
+| Bezwładność | `0.12kg·m²` | `0.25kg·m²` | `Foc:IqCmd` na podjazdach w closed ponad opór z prawa kwadratu, 218 i 242 podjazdów |
+| Opór cieplny stopnia mocy | `1.0°C/W` | `0.6°C/W` | `MeasCtrl:Temp` przy prądzie trzymanym w closed |
+| Obciążenie | `0.074Nm + 1.07·10⁻⁴·ω²` | `0.34Nm + 1.82·10⁻⁴·ω²` od 70Hz, `1.06–1.20Nm` przy 45–55Hz | `Foc:IqCmd` na schodkach w closed |
+
+Strata 1.5kW jest cała od `0.1A`, bo w closed przy `30Hz` i `0.16A` napęd potrzebował SEM i prawie całej straty.
+Strata 4kW zanika pod `0.8A`, w tętnieniu PWM jego uzwojenia: w closed odczyt dawał 5V przy 0.45A i 10V od 2A.
+Para 4kW trafia naraz w align, w ruszenie do catch i w kąt obserwatora w I/f.
+Poprzednia, `0.62Ω` i `7.65V`, pochodziła z trzech odczytów align jednej próby i zostawiała kąt I/f o 10° bliżej pola niż na stanowisku, więc start był oceniany jako przy polu.
+Bezwładność 4kW `0.18kg·m²` wychodziła z oporu liczonego prostą między postojami, który w połowie długiego podjazdu jest za wysoki.
+Czujnik `MeasCtrl:Temp` siedzi na stopniu mocy, więc grzeje go strata mostka, a nie miedź uzwojenia: na stanowisku temperatura rosła z prądem, nie z jego kwadratem.
+Pętla prędkości na `Foc:IqMax` wstrzymuje rampę (`lim`), a całka liczy dalej, jak w napędzie, więc 1.5kW staje przy 198Hz.
+Mapa wpisuje 1.5kW `Motor:Ke` 103.8, czyli √2 więcej niż SEM silnika stanowiska; model to zachowuje, jak napęd.
+Pomiar fazy (`MeasCtrl:CurrU/V/W`) to RMS fazy w oknie, tak jak w napędzie: na postoju prąd stały fazy, w ruchu RMS wektora, a `irms` i `stall` czytają średnią trzech faz.
+
+`py check_model.py` zestawia model z napędem: align, ruszenie V/f, napięcie I/f i punkty closed obu silników.
+
+| Wielkość | 1.5kW: model wobec napędu | 4kW: model wobec napędu |
+| --- | --- | --- |
+| prąd align | 13–18% niżej | 4–5% niżej |
+| ruszenie V/f, średnia faz | do 5% | do 6%, przy 1Hz 12% wyżej |
+| napięcie I/f | 0.3–1.4V wyżej | od −0.1 do +1.1V przy 7–40Hz |
+| napięcie closed | od +3.3 do −5.4V przy 45–195Hz | od −0.6 do +2.7V przy 50–190Hz |
+| `Foc:IqCmd` w closed | do 1% od 60Hz | do 1% |
+
+Odniesienie 4kW to 20 startów 12.11 na własnej tabeli stanowiska, `Volt` 17.4, 17.4, 16.7 i 18.6V, align 700ms i catch 6.25Hz.
+SIM `start` 4kW na tych stałych: w mocy 3/3 i 8/8 czysty, najwyższy kąt po catch −4° wobec −5.3° stanowiska, kołysanie 5.1° wobec 3.6°, szyna bez wzrostu.
 
 ## Wariant 4kW
 
 `SIM 4kW` sieje rejestry kolumną 4000W mapy i jedzie maszyną 4kW z `IRON` w `machine.py`, a sam `SIM` to nadal 1.5kW.
-Z karty silnika: Rs `0.32Ω`, Lq `6.6mH` i Ke `0.83V` na Hz elektryczny.
-Ze startów z 30 października: strata mostka `13V`, przy której catch z mapy ma `PeakMax` około `22A` wobec zmierzonych `20A`, obciążenie wentylatora z tego, co moment rozbiegu I/f zostawia ponad przyspieszenie, rosnące z kwadratem prędkości, szyna `60µF` i komparator `12A` amplitudy.
-Bezwładność `0.4kg·m²` jest z wybiegu: align na napędzie czytał stojący wirnik `90s` po biegu z `45Hz` i `43–63s` po biegu z `10–21Hz`, a model staje w `82s` i `27–52s`.
-
+Komparator `25.8A` amplitudy jest ze schematu płytki: `peak` przy 0.8Hz przychodził z prądem osi d 17–25A, ponad prądem postoju 18A.
+Szyna ma `60µF`.
 Przy przejęciu prądu obserwator rusza od kąta pola, z prędkością rampy, tak jak w napędzie, więc przez pierwsze ułamki sekundy kąt do pola jest bliski zera.
-
-Model nie odtwarza porażek startu napędu 4kW.
-Napęd przy przejęciu `12.5Hz` z mapy padał `hv+` przy `18–29Hz`, a model dojeżdża czysto.
-Prąd V/f przy `5–12Hz` to w modelu około `1A` wobec `7–9A` na napędzie, ta sama słabość straty mostka co w 1.5kW, więc catch w modelu jest łagodniejszy niż na napędzie.
-`SIM 4kW` sprawdza więc ławkę, a nie nastawy startu.
 
 ## Odwzorowane zachowania
 
@@ -88,31 +115,36 @@ Model obejmuje:
 - zabezpieczenia `peak`, `irms`, `imax`, `temp`, `hv-`, `hv+`, `stall`, `spin` i `sync`
 - dwa poziomy filtrowania pomiarów oraz obwiednie i średnie publikowane przez `scope.py`
 
-Kalibracja z 3 września 2026 r. obejmuje pracę I/f do `80Hz`: prądy wynikające z tabeli, moc pozorną w kolejnych punktach, współczynnik modulacji, przebieg rampy i bramkę prędkości.
-Obciążenie wentylatora `LOAD_CURVE` pochodzi z zamkniętej pętli z 25 i 27 września: prąd momentu `Foc:IqCmd` na schodkach `40–105Hz` zgadza się z modelem co do `0.04A`.
-`py check_model.py` zestawia model z pomiarami z 3, 23, 25 i 27 września; liczby do porównania są w opisie każdego scenariusza.
 Zabezpieczenie `spin` używa tego samego wskaźnika mocy co napęd.
 Podczas pracy z wymuszonym kątem jest aktywne, gdy `Curr:40Hz` nie jest mniejsze niż `Curr:15Hz`; po przekroczeniu `40Hz` zgłasza błąd, jeżeli moc nie wzrośnie o wartość wymaganą dla danego wariantu napędu.
 
 ## Znane ograniczenia
 
-Przy nastawach z 23 września obserwator w modelu jest dziesięć razy czystszy niż na stanowisku: `Sync:Err` około `1°` i `Sync:ErrPeak` około `3°` wobec `12°` i `30°`.
-Strumień ISR pokazuje w kącie i w `w_hat` prążek o częstotliwości elektrycznej, ale jego amplituda zmienia się między przebiegami przy tych samych nastawach od `3°` do `9°` i nie zależy od `Obs:HpHz` tak, jak zależałoby stałe przesunięcie napięcia mostka; jego przyczyna nie jest znana i model go nie zawiera.
-Brakuje też wolnego pływania kąta: odchylenie standardowe kąta w strumieniu ISR wynosiło `14–17°`.
-`Obs:AngleErr` w I/f to na stanowisku głównie błąd obserwatora: przy `45Hz` i `1.55A` kąt obciążenia wynosi około `19°`, a rejestr pokazuje od `−51°` do `−76°`.
-Model ma prawdziwy kąt obciążenia i prawie żadnego błędu obserwatora, więc pokazuje od `−35°` przy `45Hz` do `−28°` przy `55Hz`.
-Model nie zna też drugiego stanu I/f, w którym napęd przy tych samych nastawach pracował z modulacją `9%` i kątem około `−120°`.
-Najważniejsza rozbieżność: w modelu zamknięta pętla trzyma, a na stanowisku każde przejęcie z 23 września kończyło się `slip` po `30ms` do `4s`.
-Mechanizm tego rozpadu jest nieznany, więc model nie może być traktowany jako potwierdzenie marginesu stabilności rzeczywistego napędu.
+Obserwator porównuje strumień z końca kroku z kątem PLL z jego początku, jak napęd.
+Krok napędu to okres PWM, 0.1ms, a podkrok modelu 0.5ms, więc bez poprawki model wyprzedzał wirnik pięć razy bardziej: 17° przy 195Hz zamiast 3.7°, z `id` około −1.1A i napięciem closed o 15V niższym niż na napędzie.
+Kąt, z którym model porównuje strumień, idzie więc naprzód o różnicę połówek obu kroków, a reszta wyprzedzenia jest taka jak w napędzie: 1.4° przy 50Hz i 6.2° przy 195Hz wobec 1.0° i 3.7° modelu na kroku 0.1ms.
+
+Strata mostka modelu to fala prostokątna wzdłuż znaku prądu każdej fazy.
+1.5kW trafia w ruszenie, bo to je czyta `stall`, a align czyta 13–18% za nisko.
+Kąt obserwatora w I/f 1.5kW stoi przy 12–18Hz o 8° bliżej pola niż w zapisie stanowiska z 10.11, a amplituda i okres kołysania po catch, ±25° co 0.75s, się zgadzają.
+To ten sam ślad co w 4kW, strata, której obserwator nie kompensuje; nachylenie align 1.5kW z trzech odczytów trzyma jednak rezystancję, więc para nie jest przestawiona.
+
+Dojście 4kW po zatrzymaniu rampy czyta −12.5° wobec −9.7° na stanowisku: obciążenie przy 45–55Hz jest z pomiaru w closed, a kąt zawiera jeszcze błąd obserwatora.
+Pod 45Hz obciążenia 4kW nikt nie zmierzył: krzywa łączy tam tylko 0.45Nm przy 25rad/s z pomiarem przy 47rad/s, bez podstawy fizycznej.
+Kąty I/f stanowiska dawałyby moment malejący z obrotami, który w modelu rozkołysał I/f, więc go nie ma.
+Po catch 4kW kołysze w modelu mocniej niż na stanowisku: wygładzony kąt od −4 do −24° wobec −6 do −17°; mechanizmu tłumienia, którego brakuje, dane nie pokazują.
+Start z align wektorem i I/f od około 1Hz model ocenia czysto, a jedyny taki start 4kW na stanowisku pompował szynę o 149V i skończył `peak`.
+
+W zawieszeniu I/f 1.5kW przy 40Hz stanowisko trzyma kołysanie ±48° co 0.8s i pompuje szynę do 736V przy każdym wahnięciu.
+Model zaczyna od tej samej amplitudy, ale kołysanie gaśnie, a szyna nie rośnie nawet przy pojemności `60µF`: strata mostka zjada oddaną energię.
+
+Zjazd w closed pod punkt przejęcia przy małym prądzie gubi w modelu pętlę 1.5kW przy 35Hz i 4kW przy 25Hz, a stanowisko 1.5kW przejeżdżało 30Hz.
+Przejęcie 1.5kW przy 40Hz z `SpeedCtrl:Kp` 225 gubi w modelu pętlę po 2–6s, a stanowisko 11.11 trzymało ją na tej nastawie.
+
+Obserwator modelu jest czystszy niż na stanowisku: nie ma prążka 1× w kącie i w `w_hat`, który na stanowisku zmieniał się między przebiegami od 3° do 9°, ani wolnego pływania kąta.
+Nie ma też drugiego stanu I/f, w którym napęd przy tych samych nastawach pracował z modulacją 9% i kątem około −120°.
+Model nie może więc potwierdzać marginesu stabilności zamkniętej pętli.
 
 Model nie ma tętnienia prądu: pętle odtwarzają zadany prąd, a `NOISE_A` wynosi zero.
 Na stanowisku 1.5kW przy `190Hz` szczyty prądu sięgały `7.0A`, tuż pod progiem wyłączenia, a napięcie w pojedynczych okresach dochodziło do sufitu.
 Model pokazuje tam gładki prąd, więc nie odtworzy błędów `peak` ani chwilowego `sat` z góry zakresu.
-
-Strata mostka `LOSS_V` odpowiada postojowi, a nie zamkniętej pętli.
-W closed napięcie pętli na stanowisku to prawie sama siła elektromotoryczna (`35.7V` przy `60Hz`, `65.5V` przy `105Hz`), a w modelu jest o `11–12V` wyższe.
-Przy małym prądzie w closed obserwator modelu jest też wrażliwszy na `Obs:DtComp` niż napęd: zjazd do `40Hz` przy `0.47A` gubi pętlę przy `100%` i `78%`, a trzyma dopiero przy `60%`; napęd trzymał `40Hz` przy `100%`.
-Bezwładność wentylatora zmierzona na rampach regulatora prędkości to `0.24kg·m²`, a model liczy `0.05`.
-Przy stracie mostka z modelu start V/f daje `1.3A` przy `2.4Hz` zamiast zmierzonych `3.35A` i nie wciąga cięższego wirnika w synchronizm, a napęd go wciąga.
-Z tą samą stratą praca V/f w modelu kończy się faultem `stall` przy około `31Hz`, poniżej okna silnika 1.5kW.
-Rampy w closed dokładają więc w modelu `0.05–0.1A` zamiast `0.3A`, a wybieg z `45Hz` trwa około `4s` zamiast około `20s`.

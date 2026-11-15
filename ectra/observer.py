@@ -137,7 +137,13 @@ class Observer:
     self.psi_b += (vb - self.rs * ib) * h - self.psi_b * k
     self.psi_ra = self.psi_a - self.lq * ia
     self.psi_rb = self.psi_b - self.lq * ib
-    c, s = cos(self.theta_hat), sin(self.theta_hat)
+    # The flux is the step's end, the PLL angle its start, as in the drive,
+    # whose step is one PWM period: half of one is its own lead,
+    # and half a 0.5ms sub-step is five times it.
+    # The angle compared runs ahead by the rest, so the model leads as the drive does:
+    # without it, 17° at 195Hz where a 0.1ms step gives 3.7°, and the loops' volts 15V low
+    ahead = 0.5 * max(0.0, h - 1.0 / PWM_Hz) * self.w_hat
+    c, s = cos(self.theta_hat + ahead), sin(self.theta_hat + ahead)
     err = (self.psi_rb * c - self.psi_ra * s) / self.psi_nom
     # clamped to unity, so a railed flux cannot overflow the loop
     self.err = max(-1.0, min(1.0, err))

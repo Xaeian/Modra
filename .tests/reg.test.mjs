@@ -142,4 +142,28 @@ function setup({ mode = "Hz", connected = false } = {}) {
     ["ok", "Saved 1 register to device"]);
 }
 
+//------------------------------------------------------------------------------------------ Import
+
+// A config file opens with the registers that name its device.
+// One the factory can still write must never come back from a file, or the next drive wears it.
+// Both file kinds as the export writes them, read by the library the page reads them with.
+const SERIAL = { id: 8, name: "Serial:Number", type: "hex", rws: "RWs", unit: null, scale: 1,
+  min: null, max: null, info: "true", span: WORD16 };
+const FILES = {
+  "drive.ini": "[Serial]\nNumber = 0x2A17\n[Pwm]\nDeadtime = 250\n",
+  "drive.csv": "id,hex,name,value,unit,desc\n8,0x08,Serial:Number,0x2A17,,\n"
+    + "2,0x02,Pwm:Deadtime,250,ns,\n",
+};
+
+for(const [name, text] of Object.entries(FILES)) {
+  const app = createApp();
+  const { S, importConfig } = app.load(["../.r2/scripts/files.js", ...LOGIC],
+    ["S", "importConfig"]);
+  S.regs = [SERIAL, WORD];
+  app.ctx._pickFile = async () => ({ name, text: async () => text });
+  await importConfig();
+  eq(`${name}: the settings come in, the device's own number stays out`, { ...S.dirty },
+    { "Pwm:Deadtime": 250 });
+}
+
 done();

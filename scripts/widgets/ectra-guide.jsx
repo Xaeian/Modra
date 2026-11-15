@@ -86,9 +86,9 @@ const EC_BIG = ["Feedback:RenderFreq"];
 // What each `Sync:ExitCause` means, worded to follow "<cause>, gdy".
 // The motor faults topic lists them and the live note names the one standing.
 const EC_EXIT = {
-  slip: "prędkość obserwatora przekroczyła częstotliwość rampy o więcej niż Foc:SlipMax "
-    + "albo spadła poniżej jej połowy",
-  unlock: "średni błąd kąta z ostatniego obrotu był za duży",
+  slip: "prędkość wyznaczona przez obserwator przekroczyła częstotliwość rampy "
+    + "o więcej niż Foc:SlipMax albo spadła poniżej jej połowy",
+  unlock: "średni błąd kąta z ostatniego obrotu był zbyt duży",
   weak: "średni strumień aktywny z ostatniego obrotu zanikł",
   config: "zmiana nastaw wyłączyła obserwator",
 };
@@ -107,11 +107,11 @@ const EC_FAULTS = [
     codes: ["peak"], topic: "bledy",
     text:
       "Sprzętowe zabezpieczenie nadprądowe zadziałało Thresh:PeakCount razy; "
-      + "zadziałania liczy Fault:PeakEvents. "
-      + "Prąd w punkcie pracy jest za duży: "
-      + "w V/f napięcie z tabeli Volt odbiega od minimum prądu, "
-      + "w I/f za duży jest prąd z tabeli Curr, a w FOC Foc:IqMax. "
-      + "Przyczyną może być też za duże obciążenie.",
+      + "zadziałania zlicza Fault:PeakEvents. "
+      + "Prąd w punkcie pracy jest zbyt duży: "
+      + "w V/f napięcie z tabeli Volt odbiega od punktu najmniejszego prądu, "
+      + "w I/f zbyt duży jest prąd z tabeli Curr, a w FOC Foc:IqMax. "
+      + "Przyczyną może być również zbyt duże obciążenie.",
   },
   {
     codes: ["imax"], topic: "bledy",
@@ -130,21 +130,21 @@ const EC_FAULTS = [
   {
     codes: ["stall"], topic: "bledy",
     text:
-      "Podczas rozpędzania z tabelą V/f, przez Thresh:StallTime, "
-      + "prąd przekraczał Thresh:StallCurr poniżej Thresh:StallFreq "
-      + "albo wirnik stał pod wirującym polem. "
-      + "Fault:Freq poniżej 10Hz oznacza za duży prąd: "
+      "Podczas rozpędzania z tabelą V/f prąd przez Thresh:StallTime "
+      + "przekraczał Thresh:StallCurr poniżej Thresh:StallFreq "
+      + "albo wirnik stał w wirującym polu. "
+      + "Fault:Freq poniżej 10Hz oznacza zbyt duży prąd: "
       + "należy zmniejszyć punkty od Volt:0Hz do Volt:10Hz. "
-      + "Fault:Freq od Thresh:StallFreq w górę oznacza stojący wirnik: "
+      + "Fault:Freq równa co najmniej Thresh:StallFreq oznacza stojący wirnik: "
       + "należy zwiększyć Volt:0Hz, zwolnić rampę w tabeli Rise albo wydłużyć Drive:AlignTime.",
   },
   {
     codes: ["spin"], topic: "bledy",
     text:
       "Wirnik nie nadąża za polem w etapie forced. "
-      + "Prędkość obserwatora przez 2s była mniejsza od połowy częstotliwości rampy "
-      + "albo od 40Hz moc czynna nie wzrosła w czasie Thresh:SpinTime "
-      + "o Thresh:SpinPower ponad poziom z 15Hz. "
+      + "Prędkość wyznaczona przez obserwator przez 2s była mniejsza "
+      + "od połowy częstotliwości rampy albo powyżej 40Hz moc czynna nie wzrosła "
+      + "w czasie Thresh:SpinTime o Thresh:SpinPower ponad wartość przy 15Hz. "
       + "Należy zwiększyć prąd w tabeli Curr w tym zakresie albo zwolnić rampę w tabeli Rise. "
       + "Silnik bez wentylatora może nie dać takiego przyrostu mocy; "
       + "Thresh:SpinPower = 0 wyłącza to kryterium.",
@@ -152,20 +152,20 @@ const EC_FAULTS = [
   {
     codes: ["sync"], topic: "bledy",
     text:
-      "Napęd stracił zamkniętą pętlę FOC, wykrył w niej brak fazy "
-      + "albo nie przejął sterowania w czasie Foc:EntryTimeout. "
-      + "Przyczynę utraty pętli podaje Sync:ExitCause.",
+      "Zamknięta pętla FOC została przerwana, wykryła brak fazy "
+      + "albo nie przejęła sterowania w czasie Foc:EntryTimeout. "
+      + "Przyczynę przerwania pętli podaje Sync:ExitCause.",
   },
   {
     codes: ["rpm"], topic: "bledy",
     text:
-      "Przed rozruchem wirnik obracał się za szybko, by go zahamować zwarciem, "
-      + "dłużej niż Brake:WaitMax czasu wybiegu; "
+      "Przed rozruchem wirnik obracał się zbyt szybko, by zahamować go zwarciem, "
+      + "dłużej niż przez część wybiegu ustawioną w Brake:WaitMax; "
       + "obroty z ostatniego sprawdzenia podaje Estim:Freq. "
       + "Wirnik może napędzać przeciąg albo drugi wentylator w kanale. "
-      + "Na dłuższy wybieg pozwala większy Brake:Coast albo Brake:WaitMax, "
-      + "a na hamowanie zwarciem od wyższych obrotów większy Brake:ShortCurr, "
-      + "najwyżej równy Thresh:CurrPeak.",
+      + "Dłuższe oczekiwanie umożliwia większy Brake:Coast albo Brake:WaitMax, "
+      + "a hamowanie zwarciem przy wyższych obrotach większy Brake:ShortCurr, "
+      + "nie większy jednak niż Thresh:CurrPeak.",
   },
   {
     codes: ["temp"], topic: "naped",
@@ -184,8 +184,9 @@ const EC_FAULTS = [
     text:
       "Napięcie szyny DC MeasCtrl:DcBus przekraczało Thresh:DcBusMax przez 1s "
       + "albo przekroczyło próg szybkiej ochrony szyny, o 30V niższy. "
-      + "Przy zwalnianiu w V/f i I/f pomaga niższy Freeze:VdcHigh albo wolniejsza tabela Fall. "
-      + "Szybki wzrost do progu ochrony oznacza energię spoza rampy, "
+      + "Jeżeli błąd występuje przy zwalnianiu w V/f lub I/f, "
+      + "należy obniżyć Freeze:VdcHigh albo zwolnić tabelę Fall. "
+      + "Szybki wzrost napięcia do progu ochrony oznacza dopływ energii spoza rampy, "
       + "na przykład od wirnika, który wypadł z synchronizmu.",
   },
   {
@@ -205,14 +206,14 @@ const EC_FAULTS = [
   {
     codes: ["link"], topic: "naped",
     text:
-      "Procesor sig przez 1.5s nie dostał poprawnej ramki łącza wewnętrznego. "
-      + "Błąd znika, gdy łącze wróci, "
+      "Procesor sig przez 1.5s nie otrzymał poprawnej ramki łącza wewnętrznego. "
+      + "Błąd ustępuje po przywróceniu łącza, "
       + "a częste błędy, zliczane w Counter:Link, wskazują na usterkę sprzętu.",
   },
   {
     codes: ["feed"], topic: "naped",
     text:
-      "Zdarzenie trafia tylko do dziennika, nie do Fault:Code. "
+      "Zdarzenie jest zapisywane tylko w dzienniku, nie w Fault:Code. "
       + "Kontrola toru pomiaru prądu przełączyła napęd na tabelę V/f bez zatrzymania silnika, "
       + "a Drive:Stage wskazuje guard.",
   },
@@ -233,7 +234,7 @@ const EC_WHY = {
     + "(Sense:ShuntRes, Sense:ShuntGain), więc mostkiem steruje tabela V/f.",
   obs: "Drive:Stage = obs: obserwator nie jest gotowy, więc mostkiem steruje tabela V/f. "
     + "Należy sprawdzić Motor:Rs, Motor:Lq i Motor:Ke.",
-  volts: "Drive:Stage = volts: Foc:ModCeil jest za niski, "
+  volts: "Drive:Stage = volts: Foc:ModCeil jest zbyt niski, "
     + "by sprawdzić tor pomiaru prądu przed rozruchem, więc mostkiem steruje tabela V/f.",
   guard: "Drive:Stage = guard: kontrola toru pomiaru prądu przed sterowaniem wektorowym "
     + "nie powiodła się, więc mostkiem steruje tabela V/f. "
@@ -244,10 +245,10 @@ const EC_WHY = {
 const EC_FREEZE = {
   "hv-": "Rampa nie przyspiesza: napięcie szyny DC jest niższe od Freeze:VdcLow.",
   "hv+": "Rampa nie zwalnia: napięcie szyny DC przekracza Freeze:VdcHigh.",
-  hold: "Rampa nie przyspiesza: wektor napięcia jest na ograniczeniu Foc:ModCeil, "
+  hold: "Rampa nie przyspiesza: wektor napięcia osiągnął ograniczenie Foc:ModCeil, "
     + "które obniżają też Pwm:Deadtime i Pwm:MinPulse. "
     + "Freeze:HoldCount liczy takie wstrzymania.",
-  lim: "Rampa czeka na wirnik: regulator prędkości doszedł do Foc:IqMax.",
+  lim: "Rampa czeka na wirnik: regulator prędkości osiągnął Foc:IqMax.",
 };
 
 // `Sync:Lock` at which the takeover arms
@@ -348,28 +349,31 @@ const EC_TOPICS = [
       "Sterowanie I/f i FOC opiera się na danych silnika. "
       + "Bez Motor:Rs i Motor:Lq napęd pracuje tylko z tabelą V/f, "
       + "a bez Motor:Ke nie przechodzi do FOC; przyczynę podaje Drive:Stage. "
-      + "Parametry silnika i toru pomiaru zapisuje się z poziomem dostępu admin, "
-      + "a Drive:Mode i Motor:Invert z poziomem service; bieżący poziom podaje Auth:Access."
+      + "Zapis parametrów silnika i toru pomiaru wymaga poziomu dostępu admin, "
+      + "a zapis Drive:Mode i Motor:Invert poziomu service; bieżący poziom podaje Auth:Access."
       + "\n"
-      + "Motor:Type to wariant napędu, dla którego zbudowano firmware; "
+      + "Motor:Type to wariant napędu, dla którego przeznaczony jest firmware; "
       + "jego zmiana nie wczytuje nastaw innego wariantu. "
-      + "Motor:Rotor to średnica wirnika wentylatora. "
-      + "Napęd jej nie używa; służy do porównywania zapisów z instalacji z tym samym wirnikiem."
+      + "Motor:RotorSize to średnica wirnika wentylatora, "
+      + "a Motor:RotorVariant jego wersja z karty wentylatora. "
+      + "Motor:Mount to położenie wentylatora, od którego zależą chłodzenie napędu i silnika, "
+      + "obciążenie łożysk i rezonanse zabudowy. "
+      + "Napęd tych rejestrów nie używa; służą do porównywania danych z różnych instalacji."
       + "\n"
       + "Motor:PolePairs przepisuje się z karty silnika. "
       + "Motor:Rs to połowa rezystancji zmierzonej omomierzem między dwoma zaciskami, "
       + "razem z kablem silnika. "
       + "Motor:Ld i Motor:Lq to połowa najmniejszego i największego wskazania miernika LCR "
       + "między dwoma zaciskami przy obracaniu wału. "
-      + "Motor:Ke to skuteczne napięcie międzyfazowe na zaciskach odłączonego silnika "
-      + "obracanego z zewnątrz, przeliczone na 1000rpm."
+      + "Motor:Ke to wartość skuteczna napięcia międzyfazowego "
+      + "na zaciskach odłączonego silnika obracanego z zewnątrz, przeliczona na 1000rpm."
       + "\n"
       + "Sense:ShuntRes, Sense:ShuntGain i Sense:ShuntTau to dane płytki: rezystancja bocznika, "
       + "wzmocnienie wzmacniacza i stała czasowa jego sprzężenia zwrotnego. "
       + "Napęd wykrywa tylko brak skali; przy błędnej wartości "
       + "prąd rzeczywisty różni się od tabeli Curr, progów prądu i odczytów. "
-      + "MeasCtrl:CurrAvg i Meas:CurrAvg to skuteczny prąd fazy, "
-      + "taki jak wskazanie miernika cęgowego; niewielką różnicę koryguje Trim:CurrScale."
+      + "MeasCtrl:CurrAvg i Meas:CurrAvg to wartość skuteczna prądu fazy, "
+      + "odpowiadająca wskazaniu miernika cęgowego; niewielką różnicę koryguje Trim:CurrScale."
       + "\n"
       + "Meas:Speed to prędkość wału wyznaczona z częstotliwości i Motor:PolePairs, "
       + "więc rozbieżność ze wskazaniem tachometru oznacza błędną liczbę par biegunów. "
@@ -421,8 +425,12 @@ const EC_TOPICS = [
       + "od Speed:Min do Speed:Max. "
       + "Wejście cyfrowe ustawione w Digital:InputMode jako zezwolenie na pracę, "
       + "allow-high albo allow-low, zatrzymuje silnik rampą, gdy nie jest aktywne. "
-      + "Po utracie komunikacji RS-485 na dłużej niż Failsafe:Delay "
-      + "wartość zadaną wyznaczają Failsafe:Mode i Failsafe:Setpoint."
+      + "Po utracie komunikacji RS-485 na dłużej niż Failsafe:Delay napęd reaguje "
+      + "według Failsafe:Mode: przy off nie reaguje, przy ai przechodzi na wejście analogowe, "
+      + "przy %, rpm i Hz utrzymuje Failsafe:Setpoint, "
+      + "a przy cut odcina mostek i silnik wybiega. "
+      + "Failsafe nie zmienia Ctrl:Setpoint, "
+      + "więc po powrocie komunikacji napęd wraca do ostatniej wartości zadanej."
       + "\n"
       + "Szczegóły podaje dokument \"Rampa i szyna DC\" (PMSM-006).",
   },
@@ -442,8 +450,8 @@ const EC_TOPICS = [
       + "\n"
       + "Brake:ShortCurr ogranicza amplitudę prądu zwarcia przy sprawdzaniu obrotów i hamowaniu, "
       + "najwyżej do Thresh:CurrPeak; 0 wyłącza sprawdzenie. "
-      + "Gdy w czasie Brake:WaitMax wybiegu wirnik nie zwolni na tyle, by go zahamować zwarciem, "
-      + "napęd zgłasza błąd rpm."
+      + "Gdy w części wybiegu ustawionej w Brake:WaitMax wirnik nie zwolni na tyle, "
+      + "by można go było zahamować zwarciem, napęd zgłasza błąd rpm."
       + "\n"
       + "If:CatchFreq wybiera sposób rozruchu w trybach if i foc. "
       + "Wartość 0 to ustawienie wirnika prądem Curr:0Hz przez Drive:AlignTime "
@@ -452,11 +460,11 @@ const EC_TOPICS = [
       + "po którym sterowanie przejmują regulatory prądu. "
       + "Rampa zaczyna się od Drive:InitFreq."
       + "\n"
-      + "W trybie foc rampa dochodzi do Foc:EntryFreq i zostaje na tej częstotliwości "
+      + "W trybie foc rampa dochodzi do Foc:EntryFreq i pozostaje na tej częstotliwości "
       + "do przejęcia kąta przez obserwator, także gdy wartość zadana jest mniejsza. "
       + "Postęp przejęcia pokazuje Sync:Lock. "
       + "Gdy przejęcie nie nastąpi w czasie Foc:EntryTimeout, napęd zgłasza błąd sync; "
-      + "0 oznacza czekanie bez ograniczenia."
+      + "0 oznacza oczekiwanie bez ograniczenia czasu."
       + "\n"
       + "Wartość zadana 0 albo mniejsza od Speed:Min sprowadza częstotliwość tabelą Fall "
       + "do progu trybu pracy (Brake:CutoffVf, Brake:CutoffIf albo Brake:CutoffFoc) "
@@ -486,7 +494,7 @@ const EC_TOPICS = [
       + "Prędkość obrotową napęd przelicza na częstotliwość elektryczną według Motor:PolePairs."
       + "\n"
       + "Trzy pasma rezonansu, od Resonance:0Low do Resonance:0High i dwa kolejne, "
-      + "wyłączają z pracy ustalonej prędkości, "
+      + "wykluczają pracę ustaloną przy prędkościach, "
       + "przy których wentylator albo jego konstrukcja wpada w rezonans. "
       + "Wartość zadana wewnątrz pasma jest przesuwana do bliższej granicy, "
       + "a pasmo, którego granica wynosi zero, jest wyłączone."
@@ -502,12 +510,12 @@ const EC_TOPICS = [
       + "i podnosi napięcie szyny DC. "
       + "W zamkniętej pętli FOC regulator prędkości nie hamuje, "
       + "więc szybsza rampa nie przyspiesza zwalniania. "
-      + "Gdy rampa dojdzie do wartości zadanej, a wirnik jest nadal szybszy "
-      + "o więcej niż Foc:SlipMax, pętla kończy się błędem sync, a Sync:ExitCause wskazuje slip."
+      + "Gdy rampa schodzi szybciej, niż zwalnia wirnik, wirnik zwalnia swobodnie "
+      + "do jej częstotliwości, a do tego czasu kryterium Foc:SlipMax nie obowiązuje."
       + "\n"
       + "Napięcie szyny DC poniżej Freeze:VdcLow wstrzymuje przyspieszanie, "
       + "a powyżej Freeze:VdcHigh zwalnianie; przyczynę wstrzymania podaje Freeze:State. "
-      + "Częste wstrzymania przy zwalnianiu oznaczają za szybką tabelę Fall. "
+      + "Częste wstrzymania przy zwalnianiu oznaczają zbyt szybką tabelę Fall. "
       + "Bus:Max podaje najwyższe napięcie szyny od ostatniego rozruchu."
       + "\n"
       + "Szczegóły podaje dokument \"Rampa i szyna DC\" (PMSM-006).",
@@ -534,20 +542,20 @@ const EC_TOPICS = [
       + "Gdy w zamkniętej pętli FOC regulator prędkości dojdzie do Foc:IqMax, "
       + "rampa czeka na wirnik, Freeze:State wskazuje lim, a Foc:Flags flagę limit. "
       + "Większą prędkość daje wtedy większy Foc:IqMax, "
-      + "o ile szczyty prądu zostają poniżej Thresh:CurrPeak."
+      + "o ile szczyty prądu pozostają poniżej Thresh:CurrPeak."
       + "\n"
       + "Foc:ModCeil ogranicza wektor napięcia w sterowaniu wektorowym, "
       + "najwyżej do granicy liniowej SVPWM 115.47%, "
       + "a Pwm:Deadtime i Pwm:MinPulse obniżają tę granicę. "
-      + "Gdy wektor zostaje na ograniczeniu, rampa przestaje przyspieszać, "
+      + "Gdy wektor pozostaje na ograniczeniu, rampa przestaje przyspieszać, "
       + "Freeze:State wskazuje hold, a Foc:Flags flagę sat; "
       + "Freeze:HoldCount liczy takie wstrzymania."
       + "\n"
-      + "W zamkniętej pętli FOC, gdy wektor napięcia przekroczy Foc:WeakCeil okręgu Foc:ModCeil, "
-      + "napęd osłabia pole: prąd osi d, widoczny w Estim:Id, schodzi poniżej zera, "
-      + "a wirnik osiąga prędkości wyższe niż bez osłabiania. "
+      + "W zamkniętej pętli FOC, gdy wektor napięcia przekroczy część okręgu Foc:ModCeil "
+      + "ustawioną w Foc:WeakCeil, napęd osłabia pole: prąd osi d, widoczny w Estim:Id, "
+      + "przyjmuje wartości ujemne, a wirnik osiąga prędkości wyższe niż bez osłabiania. "
       + "Foc:WeakTime to stała czasowa osłabiania; "
-      + "krótsza reaguje szybciej, ale może wywołać kołysanie."
+      + "krótsza przyspiesza reakcję, ale może wywołać kołysanie."
       + "\n"
       + "Przy osłabianiu pola szczyt BEMF może przekroczyć napięcie szyny DC. "
       + "Gdy szczyt wyznaczony z Motor:Ke dojdzie do progu szybkiej ochrony szyny, "
@@ -575,7 +583,7 @@ const EC_TOPICS = [
       + "a Fault:Freq i Fault:Curr zapamiętują częstotliwość i prąd z chwili błędu."
       + ecFaultLines("bledy")
       + "\n"
-      + "Sync:ExitCause podaje przyczynę utraty pętli FOC: " + EC_EXIT_LIST + "."
+      + "Sync:ExitCause podaje przyczynę przerwania pętli FOC: " + EC_EXIT_LIST + "."
       + "\n"
       + "Kasowanie błędów i automatyczne ponawianie opisuje temat \"Błędy napędu\", "
       + "a objawy i nastawy, które je usuwają, "
@@ -597,9 +605,10 @@ const EC_TOPICS = [
       + "jego wartość podaje MeasCtrl:Ripple."
       + "\n"
       + "Zapis 1 do Fault:Clear kasuje aktywny błąd i zeruje licznik ponowień; "
-      + "jeżeli przyczyna trwa, błąd wróci. "
-      + "Napęd kasuje błędy także sam: po wybiegu odlicza Fault:RetryDelay i kasuje błąd, "
-      + "a po Fault:RetryCount ponowieniach kolejny błąd zostaje do ręcznego skasowania. "
+      + "jeżeli przyczyna nie ustąpiła, błąd wystąpi ponownie. "
+      + "Napęd kasuje błędy również samoczynnie: "
+      + "po wybiegu odlicza Fault:RetryDelay i kasuje błąd, "
+      + "a po Fault:RetryCount ponowieniach kolejny błąd pozostaje do ręcznego skasowania. "
       + "Licznik ponowień zeruje się po Fault:RetryTimeout pracy bez błędu, "
       + "a Fault:RetryCount = 0 wyłącza ponawianie. "
       + "Rozruch po błędzie jest możliwy po upływie części wybiegu ustawionej w Brake:Wait "
@@ -618,7 +627,7 @@ const EC_TOPICS = [
     text:
       "Te nastawy dobiera się przy strojeniu silnika danego wariantu, "
       + "a mapa rejestrów podaje je jako wartości fabryczne. "
-      + "Na instalacji się ich nie zmienia, chyba że wymaga tego objaw opisany w dokumencie "
+      + "Na instalacji nie zmienia się ich, chyba że wymaga tego objaw opisany w dokumencie "
       + "\"Strojenie według objawów\" (PMSM-008)."
       + "\n"
       + "Tabela Volt działa tylko przy pracy z tabelą V/f: w trybie vf, "
@@ -627,9 +636,11 @@ const EC_TOPICS = [
       + "If:Damp tłumi kołysania wirnika w pracy I/f."
       + "\n"
       + "Rejestry grup Obs i Pll dotyczą obserwatora: "
-      + "Obs:DtComp określa kompensowaną część czasu martwego zmierzonego w Obs:DtMeas, "
+      + "Obs:DtComp określa kompensowaną część czasu martwego, "
       + "Obs:HpHz częstotliwość graniczną filtru całkującego, "
-      + "a Pll:Bw i Pll:Damp dynamikę pętli PLL."
+      + "a Pll:Bw i Pll:Damp dynamikę pętli PLL. "
+      + "Podstawą kompensacji jest Obs:DtMeas, gdy praca rozpoczęła się od ustawienia wirnika, "
+      + "a po rozruchu z tabelą Pwm:Deadtime."
       + "\n"
       + "Foc:EntryFreq, Foc:LockErr i Foc:LockSpeed określają warunki przejęcia kąta, "
       + "a Foc:SlipMax dopuszczalną różnicę prędkości wirnika i rampy w zamkniętej pętli. "
@@ -721,7 +732,7 @@ const Ectra = {
     const now = ecNow();
     const missing = EC_USES.filter(name => !Reg.byName(name));
     const gap = missing.length > 0
-      && `Tej mapie brakuje rejestrów, których używa przewodnik: ${missing.join(", ")}.`;
+      && `W tej mapie brakuje rejestrów używanych przez przewodnik: ${missing.join(", ")}.`;
     return (
       <div class="ec ec-book">
         <div class="ec-tabs">

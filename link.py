@@ -1,3 +1,5 @@
+# link.py
+
 """
 Thread+async wrapper around ModbusMaster. Owns the read loop, port scan,
 write queue, SQLite store, and the auto-unlock that holds the device at
@@ -121,7 +123,8 @@ class ModbusLink:
   def close(self):
     self._stop_reads()
     if self.mb:
-      self.run_async(self.mb.disconnect())
+      self.run_async(self._close_port())
+    self._drop_device()
     self._loop.call_soon_threadsafe(self._loop.stop)
     self._thread.join(timeout=2)
     log.inf("ModbusLink closed")
@@ -141,6 +144,25 @@ class ModbusLink:
       self._sim_client = config.sim_client(self.mb, self._sim_client)
       self.mb.client = self._sim_client
       self.mb.client_factory = lambda _mb: self._sim_client
+
+  async def _close_port(self):
+    """Close the port, never the simulated device behind it.
+    The device is the link's: closing it would stop a coupled model's clock,
+    and the next open would hand back a drive frozen at its last image.
+    It keeps running until `_drop_device`."""
+    if self._sim: self.mb.client = None
+    await self.mb.disconnect()
+
+  async def _reopen(self):
+    """Close and reopen the port, which resets the framer after a stalled frame.
+    A simulated device has no framer to reset."""
+    if self._sim: return
+    await self.mb.reconnect()
+
+  def _drop_device(self):
+    """Stop the simulated device for good, when a new map or the app's end retires it."""
+    if self._sim_client: self._sim_client.close()
+    self._sim_client = None
 
   def _save_state(self):
     if not self.mb: return
@@ -202,12 +224,12 @@ class ModbusLink:
     slow_warned = False
     async with self._mb_lock:
       try:
-        await self.mb.reconnect()
+        await self._reopen()
         await self.mb.read_registers(self._sync_ids())
         log.ok("Initial sync done")
       except Exception as e:
         log.wrn(f"Initial sync failed | {e}")
-        try: await self.mb.reconnect()
+        try: await self._reopen()
         except Exception: pass
     # Only cancellation (`_stop_reads`) ends this loop. `connected` reports
     # whether the device answers; it never decides whether to keep trying.
@@ -234,7 +256,7 @@ class ModbusLink:
           except Exception as e:
             errors += 1
             log.wrn(f"Read error ({errors}) | {e}")
-            try: await self.mb.reconnect()
+            try: await self._reopen()
             except Exception: pass
             if errors >= READ_ERR_LIMIT and self.connected:
               log.err("Too many read errors, device unreachable")
@@ -251,7 +273,7 @@ class ModbusLink:
         await self.store.log(cache, self.store_key())
       # Retention + downsampling run on the same loop between polls, once a
       # minute. Prune only deletes the ~60s that just aged out; roll only
-      # aggregates the minute bucket that just completed - both stay cheap.
+      # aggregates the minute bucket that just completed, so both stay cheap.
       if (Time() - self._last_prune).total_seconds() >= 60:
         self._last_prune = Time()
         await self.store.prune(self.history_days())
@@ -439,7 +461,7 @@ class ModbusLink:
       self._stop_reads()
       self.connected = False
     if self.serial_open:
-      self.run_async(self.mb.disconnect())
+      self.run_async(self._close_port())
       self.serial_open = False
     self._clear_cache()
     self._port_miss = 0
@@ -460,7 +482,7 @@ class ModbusLink:
     self.serial_open = False
     self._port_miss = 0
     if self.mb:
-      self.run_async(self.mb.disconnect())
+      self.run_async(self._close_port())
       self.mb = None
 
   def set_addr(self, addr:int):
@@ -522,7 +544,7 @@ class ModbusLink:
     regs = config.save_regs(text)
     if not regs: return False
     self.disconnect()
-    self._sim_client = None
+    self._drop_device()
     self.regs = regs
     self.store.reload(regs)
     log.ok(f"Register map loaded: {len(regs)} registers")
@@ -540,7 +562,7 @@ class ModbusLink:
       self._stop_reads()
       self.connected = False
       self.serial_open = False
-      self.run_async(self.mb.disconnect())
+      self.run_async(self._close_port())
       self._clear_cache()
       self._init_mb(self.mb.port)
       log.inf("Serial params changed, reconnect needed")
@@ -650,6 +672,6 @@ class ModbusLink:
         return self.mb.cache
       except Exception as e:
         log.err(f"Write error | {e}")
-        try: await self.mb.reconnect()
+        try: await self._reopen()
         except Exception: pass
         return None

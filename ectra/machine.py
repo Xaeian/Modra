@@ -28,6 +28,9 @@ from math import atan2, cos, exp, pi as PI, sin, sqrt
 from .command import Command
 from .curve import clamp, interp
 
+# A sine's amplitude over its RMS, voltage or current alike
+SQRT2 = sqrt(2.0)
+
 #-------------------------------------------------------------------------------- The 1500W machine
 
 # The bench's 1.5kW motor on its 400 rotor, 10-12.11 on 0.13.4, the release that reads
@@ -90,7 +93,7 @@ DAMP_HP_s = 0.0512
 DAMP_LP_s = 0.0064
 DAMP_VEL_s = 0.0064
 DAMP_VEL_MAX = 4096.0
-DAMP_V_PER_COUNT = 580.0 / 3200.0 / 1.4142136 # one vq count at the reference bus, RMS scale
+DAMP_V_PER_COUNT = 580.0 / 3200.0 / SQRT2 # one vq count at the reference bus, RMS scale
 DAMP_RAD_PER_COUNT = 120.0 * 2.0 * PI / 65536.0 # at 100%, per count of velocity
 DAMP_MAX_rad = 8.0 * PI / 180.0
 # The drive leans the frame by `-vel × k`, and the q axis means the same thing in both frames
@@ -134,7 +137,6 @@ LINK_DRAIN_W = 10.0
 # The pump guard arms this far under the ceiling outside a closed loop.
 BUS_MARGIN_V = 30.0
 
-V_PEAK = 1.4142136 # RMS phase volts to vector peak
 TWO_PI = 2.0 * PI
 
 #------------------------------------------------------------------------------------------ Sensors
@@ -150,7 +152,6 @@ RIPPLE_BASE_V = 1.5
 RIPPLE_PER_A = 0.4
 VCE_V = 1.5
 FLYBACK_V = 17.0
-PEAK_FACTOR = 2.828 # sine phase RMS to peak-to-peak
 PEAK_TRIP_A = 40.0
 
 #------------------------------------------------------------------------------------------ Helpers
@@ -227,6 +228,39 @@ BUS_C_4000W_F = 60e-6
 # Its stage on its heatsink: 40°C at 4A and 47°C at 6.5A held in closed, from 20°C
 RTH_4000W_CW = 0.6
 
+#-------------------------------------------------------------------------------- The 7500W machine
+
+# The station's 7.5kW motor on its 560 rotor, 13.11 on 0.13.5.
+# Card: Rs 0.380Ω, Lq 9.24mH, Ke 219.8V/krpm line-to-line RMS, 1.27 per electrical Hz;
+# the loops' volts, in I/f and in closed, read 4% under the card's, so 1.22.
+# The align's DC by `Volt:0Hz`, 20.36A, 22.98A, 25.57A and 28.35A at 18.43V, 19.4V, 20.37V
+# and 21.34V, the median of every start on each, rises √2/0.5Ω a volt: the winding with
+# the bridge's resistive drop, as in the other two
+RS_7500W_ohm = 0.5
+LQ_7500W_H = 0.00924
+KE_7500W_V_Hz = 1.22
+LOSS_7500W_V = 8.5
+# The PWM ripple on this winding is 9.24/6.6 smaller than on the 4kW's, and so is where
+# the dead time's loss is whole
+LOSS_7500W_A1 = 0.6
+# Over 135Hz the drive weakens the field on `Foc:WeakCeil`, 187V at 155Hz and 195V at 175Hz,
+# which this model does not: on the bus a full load leaves it, 557V, the ramp holds near 159Hz
+# The rotor weighed on 1933 samples of the closed loop's climbs, `J α = kt Δiq`,
+# the drag on the fan's square law: 0.50kgm² in the median, quartiles 0.46-0.55
+INERTIA_7500W_kgm2 = 0.5
+# The fan from `Foc:IqCmd` held in closed: 0.25A at 30Hz, 0.52A at 55Hz, 1.18A at 95Hz,
+# 2.22A at 135Hz, 3.68A at 175Hz, the top of its window; `0.49Nm + 3.68e-4 × w²`
+# within 6% from 30Hz, and on that law over the window
+#   mechanical rad/s → Nm
+LOAD_7500W = [(0.0, 0.49), (31.4, 0.88), (36.7, 1.1), (41.9, 1.22), (47.1, 1.29), (57.6, 1.82),
+  (78.5, 2.8), (99.5, 4.13), (120.4, 5.83), (141.4, 7.75), (162.3, 10.09), (183.3, 12.87),
+  (209.4, 16.62), (235.6, 20.94), (261.8, 25.74), (314.2, 36.79)]
+# Its comparator, from the board: 3.22V against 1.65V + 21.277 × 2mΩ × i
+PEAK_TRIP_7500W_A = 36.9
+# The link and the stage on its heatsink have no reading of their own: the 4kW's
+BUS_C_7500W_F = BUS_C_4000W_F
+RTH_7500W_CW = RTH_4000W_CW
+
 # Every machine the simulator knows, by `Motor:Type`: the 1500W one is the constants up top
 IRON = {
   "1500W": {},
@@ -234,6 +268,10 @@ IRON = {
     "inertia": INERTIA_4000W_kgm2, "load": LOAD_4000W, "loss": LOSS_4000W_V,
     "loss_a1": LOSS_4000W_A1, "peak_trip": PEAK_TRIP_4000W_A, "bus_c": BUS_C_4000W_F,
     "rth": RTH_4000W_CW},
+  "7500W": {"rs": RS_7500W_ohm, "lq": LQ_7500W_H, "ke": KE_7500W_V_Hz,
+    "inertia": INERTIA_7500W_kgm2, "load": LOAD_7500W, "loss": LOSS_7500W_V,
+    "loss_a1": LOSS_7500W_A1, "peak_trip": PEAK_TRIP_7500W_A, "bus_c": BUS_C_7500W_F,
+    "rth": RTH_7500W_CW},
 }
 
 #------------------------------------------------------------------------------------------ Machine
@@ -306,7 +344,8 @@ class Machine:
 
   @property
   def peak(self) -> float:
-    return max(self.curr, self.curr_hi) * PEAK_FACTOR
+    """Phase amplitude, the crest of the heaviest current: what `Meas*:Peak*` read."""
+    return max(self.curr, self.curr_hi) * SQRT2
 
   @property
   def power(self) -> float:
@@ -347,7 +386,7 @@ class Machine:
   def dead_v(self, cmd:Command, share:float) -> float:
     """Per-phase dead-time volts, phase RMS scale: `td/T × Vdc` times a share."""
     dtpu = max(0.0, cmd.deadtime_ns) * 1e-9 * PWM_Hz
-    return share / 100.0 * dtpu * self.vdc / V_PEAK
+    return share / 100.0 * dtpu * self.vdc / SQRT2
 
   def loss_ab(self, i_a:float, i_b:float) -> tuple:
     """
@@ -378,7 +417,7 @@ class Machine:
     The vector core speaks half the bus; the table reads through `Pwm:Shape`.
     """
     shape = 1.0 if vector else SHAPE_K[int(clamp(cmd.shape, 0, len(SHAPE_K) - 1))]
-    per_volt = V_PEAK * shape * 2.0 / max(1.0, self.vdc) * 100.0
+    per_volt = SQRT2 * shape * 2.0 / max(1.0, self.vdc) * 100.0
     mod = 0.0 if f <= 0.0 else self.volt * per_volt
     self.mod_index = min(ceiling, mod)
     if mod > ceiling: self.volt = self.mod_index / per_volt
@@ -398,7 +437,7 @@ class Machine:
 
   def vmax(self, cmd:Command) -> float:
     """Phase RMS volts the loops may ask for under the vector ceiling."""
-    return self.ceiling(cmd) * self.vdc / 2.0 / V_PEAK
+    return self.ceiling(cmd) * self.vdc / 2.0 / SQRT2
 
   def forced_mag(self, cmd:Command, hz:float) -> float:
     """The forced vector's magnitude off the `Curr` table, under `Foc:IqMax`."""

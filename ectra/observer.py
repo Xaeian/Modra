@@ -22,7 +22,7 @@ ripple and bias included.
 
 from math import asin, atan, cos, log2, pi as PI, sin
 from .command import Command
-from .machine import PWM_Hz, V_PEAK, dead_ab, wrap
+from .machine import PWM_Hz, SQRT2, dead_ab, wrap
 
 TWO_PI = 2.0 * PI
 # The observer runs at the PWM rate; the leak shift is quantised on that grid
@@ -61,7 +61,7 @@ class Observer:
     self.ki = wn * wn
     # Dead-time reconstruction: the operator's share of the nominal loss
     dtpu = max(0.0, cmd.deadtime_ns) * 1e-9 * PWM_Hz
-    self.v_dt = max(0.0, cmd.dtcomp_pct) / 100.0 * dtpu * vdc / V_PEAK
+    self.v_dt = max(0.0, cmd.dtcomp_pct) / 100.0 * dtpu * vdc / SQRT2
     self.lock_sin = sin(min(89.9, max(0.0, cmd.lock_err_deg)) * PI / 180.0)
     self.unlock_sin = min(UNLOCK_MAX, max(UNLOCK_MIN, 2.0 * self.lock_sin))
 

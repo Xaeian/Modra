@@ -81,7 +81,7 @@ class Protect:
     if self._comparator(cmd, dt, m): return "peak"
     if self._hold("irms", bool(cmd.curr_rms_a) and uvw > cmd.curr_rms_a,
       dt, TRIP_s): return "irms"
-    if self._hold("imax", bool(cmd.curr_peak_a) and ctrl.peak / 2.0 > cmd.curr_peak_a,
+    if self._hold("imax", bool(cmd.curr_peak_a) and ctrl.peak > cmd.curr_peak_a,
       dt, TRIP_s): return "imax"
     if self._hold("temp", bool(cmd.temp_max_c) and ctrl.temp > cmd.temp_max_c,
       dt, TRIP_s): return "temp"
@@ -98,7 +98,7 @@ class Protect:
     Its counter drains one detector tick per quiet tick,
     so single spikes fade between attempts and only bursts denser than the drain ever add up.
     """
-    over = m.peak / 2.0 > m.peak_trip
+    over = m.peak > m.peak_trip
     ticks = max(1, int(dt / DET_s))
     self.peaks = min(0xFFFF, self.peaks + ticks) if over else max(0, self.peaks - ticks)
     return bool(cmd.peak_count) and self.peaks >= cmd.peak_count

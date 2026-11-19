@@ -46,7 +46,7 @@ METERS = (
 # Readings with no model behind them that still have a sensible standing value.
 # The version this model follows: a bench checks it as on the drive.
 STANDING = {
-  "Version:Software": "0.13.5", "Version:Abi": 38, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
+  "Version:Software": "0.13.7", "Version:Abi": 39, "Counter:PowerUp": 1, "Counter:Watchdog": 0,
   "Counter:RS485": 0, "Counter:Link": 0, "Journal:Count": 0,
   "Digital:InputState": 0, "Digital:RelayState": 0,
   "AnalogInput:Value": 0, "AnalogInput:SensValue": 0, "Flow:Value": 0,
@@ -64,13 +64,13 @@ STANDING = {
 OWNED = (
   "Feedback:RenderFreq", "Feedback:RenderSpeed", "Feedback:SetpointFreq",
   "Feedback:SetpointSpeed", "Feedback:Volt", "Feedback:ModIndex", "Feedback:State",
-  "Drive:Stage", "Bus:Max",
+  "Drive:Stage",
   "Estim:Freq", "Estim:Id", "Estim:Iq",
   "Obs:OmegaHat", "Obs:OmegaRipple", "Obs:AngleErr", "Obs:Bias",
   "Sync:Err", "Sync:ErrPeak", "Sync:Lock",
   "Sync:Takeovers", "Sync:ExitCause", "Sync:ExitTime",
   "Foc:TakeoverDelta", "Foc:Flags", "Foc:IqCmd",
   "Freeze:State", "Freeze:HoldCount",
-  "Fault:Code", "Fault:PeakEvents", "Counter:Hours",
+  "Fault:Code", "Fault:PeakEvents", "Fault:DcBusMax", "Counter:Hours",
   "Link:ConfigTarget", "Link:ConfigApplied", "Auth:Access",
 ) + tuple(f"{t}:{m}" for t in TIERS for m in METERS) + tuple(STANDING)

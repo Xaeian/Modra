@@ -45,8 +45,8 @@ class Command:
   cutoff_foc_hz: float = 0.0                # Brake:CutoffFoc
   # Machine constants in SI, converted at the binding:
   # nothing here knows a nameplate unit or a pole count it was not handed.
-  rs_ohm: float = 0.0                       # Motor:Rs, 0 sheds the vector
-  lq_h: float = 0.0                         # Motor:Lq
+  rs_ohm: float = 0.0                       # half of Motor:Rs, one phase; 0 sheds the vector
+  lq_h: float = 0.0                         # half of Motor:Lq, one phase
   ke_v_hz: float = 0.0                      # phase RMS volts per electrical Hz
   shunt_ok: bool = True                     # Sense:ShuntRes and ShuntGain set
   shape: int = 1                            # Pwm:Shape
@@ -77,7 +77,7 @@ class Command:
   derate_temp_c: float = 0.0                # Speed:DerateTemp
   derate_curr_a: float = 0.0                # Speed:DerateCurr
   derate_hz: float = 0.0                    # Speed:DerateLimit
-  freeze_low_v: float = 0.0                 # Freeze:VdcLow
-  freeze_high_v: float = 0.0                # Freeze:VdcHigh
-  freeze_hyst_v: float = 5.0                # Freeze:VdcHyst
+  freeze_low_v: float = 0.0                 # Freeze:DcBusLow
+  freeze_high_v: float = 0.0                # Freeze:DcBusHigh
+  freeze_hyst_v: float = 5.0                # Freeze:DcBusHyst
   clear_fault: bool = False                 # Fault:Clear

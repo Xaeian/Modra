@@ -10,7 +10,6 @@ Reads a register cache into a `Command`, writes plant state back out.
 import math
 from sim import SimulatedClient
 from .command import Command
-from .machine import V_PEAK
 from .meter import CURR_CTRL_s, CURR_VIEW_s, phase_rms
 from .names import (
   AUTH_KEYS, CURVE_GROUPS, CURVE_NAME, OWNED, REQUIRED, STANDING, TIERS,
@@ -202,8 +201,9 @@ class Binding:
       cutoff_vf_hz=self._eng(values, "Brake:CutoffVf", 0.0),
       cutoff_if_hz=self._eng(values, "Brake:CutoffIf", 0.0),
       cutoff_foc_hz=self._eng(values, "Brake:CutoffFoc", 0.0),
-      rs_ohm=self._eng(values, "Motor:Rs", 0.0) / 1000.0,
-      lq_h=self._eng(values, "Motor:Lq", 0.0) / 1e6,
+      # A reading between two terminals spans two phases: one is half of it
+      rs_ohm=self._eng(values, "Motor:Rs", 0.0) / 2000.0,
+      lq_h=self._eng(values, "Motor:Lq", 0.0) / 2e6,
       ke_v_hz=self._ke_v_hz(values, poles),
       shunt_ok=bool(self._eng(values, "Sense:ShuntRes", 1.0))
         and bool(self._eng(values, "Sense:ShuntGain", 1.0)),
@@ -234,9 +234,9 @@ class Binding:
       derate_temp_c=self._eng(values, "Speed:DerateTemp", 0.0),
       derate_curr_a=self._eng(values, "Speed:DerateCurr", 0.0),
       derate_hz=self._eng(values, "Speed:DerateLimit", 0.0) * rpm_hz,
-      freeze_low_v=self._eng(values, "Freeze:VdcLow", 0.0),
-      freeze_high_v=self._eng(values, "Freeze:VdcHigh", 0.0),
-      freeze_hyst_v=self._eng(values, "Freeze:VdcHyst", 5.0),
+      freeze_low_v=self._eng(values, "Freeze:DcBusLow", 0.0),
+      freeze_high_v=self._eng(values, "Freeze:DcBusHigh", 0.0),
+      freeze_hyst_v=self._eng(values, "Freeze:DcBusHyst", 5.0),
       clear_fault=bool(values.get(clear, 0)),
     )
     if clear is not None: values[clear] = 0
@@ -252,7 +252,6 @@ class Binding:
     but a standing field puts DC through them, the aligned phase carrying the vector's peak,
     and each phase register reads what its window holds, as the drive's do.
     The average is the average of the three.
-    `Estim:Id` and `Estim:Iq` are the exceptions: they publish vector amplitude, not phase RMS.
     """
     m = plant.machine
     # `Meas` is the slow trend, `MeasCtrl` the fast one the protections read.
@@ -277,13 +276,12 @@ class Binding:
       put(f"{tier}:Flyback", t.flyback)
       put(f"{tier}:Ripple", t.ripple)
       put(f"{tier}:Power", t.power)
-    put("Bus:Max", plant.scope.bus_max)
+    put("Fault:DcBusMax", plant.scope.bus_max)
     # The estimator is the measurement the drive does not overwrite,
     # so it can disagree with the command and say so.
-    # Amplitudes, not phase RMS, on the `Estim:*` axes.
     put("Estim:Freq", plant.estim_hz)
-    put("Estim:Id", m.id * V_PEAK)
-    put("Estim:Iq", m.iq * V_PEAK)
+    put("Estim:Id", m.id)
+    put("Estim:Iq", m.iq)
 
   #------------------------------------------------------------------------------------- Write side
 
@@ -338,7 +336,7 @@ class Binding:
     put("Foc:IqCmd", plant.iq_ref if plant.vec == "closed" else m.curr)
     put("Fault:Code", plant.fault or "ok")
     put("Fault:PeakEvents", plant.prot.peaks)
-    for name, key in (("Freq", "freq"), ("Curr", "curr"), ("Vdc", "vdc"), ("Temp", "temp")):
+    for name, key in (("Freq", "freq"), ("Curr", "curr"), ("DcBus", "vdc"), ("Temp", "temp")):
       if key in plant.trip: put(f"Fault:{name}", plant.trip[key])
     put("Counter:Hours", plant.hours)
     # Nothing in the model defers a configuration, so the two revisions agree.
